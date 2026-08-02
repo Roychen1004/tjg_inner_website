@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div style="max-width:640px">
+  <h1 style="margin-bottom:4px">{{ title }}</h1>
+  <p style="color:#64748b;margin-top:0">{{ subtitle }}</p>
+
+  {% if hint %}
+  <div style="background:#eff6ff;border-left:4px solid #2a78d6;padding:12px 16px;
+              margin:16px 0;border-radius:4px;white-space:pre-line;line-height:1.7">{{ hint }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ action_url }}">
+    {% csrf_token %}
+    <table style="width:100%">
+      {{ form.as_table }}
+    </table>
+    <div style="margin-top:20px">
+      <button type="submit" class="default"
+              style="padding:10px 24px;font-size:14px">確認送出</button>
+      <a href="{% url 'admin:tracking_trackingunit_change' object.pk %}"
+         style="margin-left:12px;color:#64748b">取消</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

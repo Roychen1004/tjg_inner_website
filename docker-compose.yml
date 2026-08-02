@@ -1,0 +1,100 @@
+# 鐵正綱工程 內部管理系統
+#
+# 平常只跑 3 個服務（web / api / db），常駐約 1.1GB —— 8GB 主機的設計目標
+#   docker compose up -d
+# 需要看資料庫時才加 pgAdmin（多 300MB）
+#   docker compose --profile tools up -d pgadmin
+
+name: tjg-inner
+
+services:
+  db:
+    image: postgres:16-alpine
+    env_file: [deploy/.env]
+    ports:
+      - "127.0.0.1:30432:5432"          # 只綁本機，給 DBeaver/psql 等工具用
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: 1g
+
+  api:
+    build:
+      context: .
+      args:
+        REQUIREMENTS: production
+    env_file: [deploy/.env]
+    environment:
+      POSTGRES_HOST: db
+      # 映像是用 production.txt 建的，settings 必須跟著用 production，
+      # 否則 local.py 會找不到只有開發環境才裝的套件
+      DJANGO_SETTINGS_MODULE: main.settings.production
+      # 內部區網先跑 HTTP；要對外開放時改 True 並裝憑證
+      USE_HTTPS: "False"
+      AUTO_MIGRATE: "true"
+    ports:
+      - "127.0.0.1:30800:8000"          # 只綁本機，繞過 nginx 直接除錯用
+    volumes:
+      - media:/app/media
+      - static:/app/staticfiles
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v0.1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: 1g
+
+  web:
+    build: ./web                        # 多階段建置：React → 靜態檔 → nginx
+    ports:
+      - "30080:80"                      # 對外服務埠（區網可連）
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - media:/app/media:ro
+      - static:/app/staticfiles:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+    mem_limit: 128m
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles: ["tools"]                       # 平常不啟動
+    ports:
+      - "127.0.0.1:30050:80"                  # 只綁本機，不對外
+    env_file: [deploy/.env]
+    environment:
+      PGADMIN_CONFIG_SERVER_MODE: "False"                # 開啟即用，不跳登入
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+      - ./deploy/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    # pgAdmin 要求 pgpass 權限 0600 且屬於容器內的 pgadmin(uid 5050)。
+    # 直接從環境變數在容器內產生，宿主機就不需要留一份明文密碼檔。
+    entrypoint: ["/bin/sh", "-c", "echo \"$${POSTGRES_HOST:-db}:$${POSTGRES_PORT:-5432}:*:$$POSTGRES_USER:$$POSTGRES_PASSWORD\" > /var/lib/pgadmin/pgpass && chmod 600 /var/lib/pgadmin/pgpass && exec /entrypoint.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 512m
+
+volumes:
+  pgdata:
+  media:
+  static:
+  pgadmin:

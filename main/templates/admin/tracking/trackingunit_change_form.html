@@ -1,0 +1,17 @@
+{% extends "admin/change_form.html" %}
+{% block object-tools-items %}
+  {% if original %}
+    {% if original.is_awaiting_signoff %}
+      <li><a href="{% url 'admin:tracking_trackingunit_signoff' original.pk %}"
+             style="background:#d97706">✍ 登錄進場簽收</a></li>
+    {% elif original.can_advance %}
+      <li><a href="{% url 'admin:tracking_trackingunit_advance' original.pk %}"
+             style="background:#2a78d6">推進至下一階段 →</a></li>
+    {% endif %}
+    {% if original.can_rollback %}
+      <li><a href="{% url 'admin:tracking_trackingunit_rollback' original.pk %}"
+             style="background:#94a3b8">← 回退階段</a></li>
+    {% endif %}
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

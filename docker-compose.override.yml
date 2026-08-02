@@ -1,0 +1,30 @@
+# 開發用覆寫（docker compose 會自動載入這個檔案）
+#
+# 解決的問題：Dockerfile 的 COPY . /app/ 把程式碼烤進映像，
+# 改一行 Python 就要 docker compose build 才會生效。開發時很痛。
+#
+# 做法：把原始碼 bind mount 進去，並讓 gunicorn 開 --reload。
+# 改完存檔，worker 會自己重啟。
+#
+# ⚠️ 正式部署時要明確排除這個檔案：
+#     docker compose -f docker-compose.yml up -d
+# 否則會把宿主機的原始碼掛進正式環境。
+
+services:
+  api:
+    volumes:
+      - .:/app                        # 原始碼即時反映
+      - media:/app/media              # named volume 優先，不會被上面蓋掉
+      - static:/app/staticfiles
+      - ./logs:/app/logs
+    command:
+      - gunicorn
+      - main.wsgi:application
+      - --bind=0.0.0.0:8000
+      - --workers=2                   # 開發時 2 個就夠，省記憶體
+      - --threads=2
+      - --worker-class=gthread
+      - --reload                      # ★ 改程式碼自動重啟 worker
+      - --timeout=120                 # 除錯時放寬，避免中斷
+      - --access-logfile=-
+      - --error-logfile=-

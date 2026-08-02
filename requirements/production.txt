@@ -1,0 +1,4 @@
+-r base.txt
+
+# 正式部署
+gunicorn==23.0.0

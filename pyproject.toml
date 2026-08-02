@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = [".venv", "*/migrations/*", "web"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "C4"]
+ignore = [
+    "E501",   # 行長由 formatter 處理
+    "B008",   # Django 常見的 function call in default
+    "DJ012",  # model 方法順序：本專案把 save() 放在業務方法之後，較好讀
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 這些腳本必須先 django.setup() 才能 import Django 元件
+"shell/*.py" = ["E402"]
+"main/settings/*.py" = ["F403", "F405"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["main"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "main.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["main/apps"]
+addopts = "-q --reuse-db"

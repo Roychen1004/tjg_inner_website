@@ -1,0 +1,8 @@
+from django.apps import AppConfig
+
+
+class CoreConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "main.apps.core"
+    label = "core"
+    verbose_name = "平台基礎"

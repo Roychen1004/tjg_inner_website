@@ -1,0 +1,7 @@
+-r base.txt
+
+# 本地開發
+django-extensions==3.2.3
+nplusone==1.0.0          # 自動偵測 N+1 查詢並拋錯
+ipython==8.31.0
+ruff==0.9.2

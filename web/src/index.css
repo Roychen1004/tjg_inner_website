@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────────
+   設計代幣
+
+   依 docs/08_UI設計原則.md §4。配色經過色盲安全驗證（OKLab ΔE ＋
+   Machado 色盲模擬），不是憑感覺挑的。
+
+   核心原則：顏色分工
+     · 階段    → 3 段序數藍色階（表達「離完成多遠」）
+     · 狀態    → 保留色，且永遠伴隨圓點與文字
+     · 特殊語意 → 圖示，不用顏色
+   ────────────────────────────────────────────────────────────── */
+@theme {
+  /* 狀態燈號（保留色，絕不挪作他用） */
+  --color-ontrack: #059669;
+  --color-ontrack-bg: #ecfdf5;
+  --color-atrisk: #d97706;
+  --color-atrisk-bg: #fffbeb;
+  --color-delayed: #b91c1c;
+  --color-delayed-bg: #fef2f2;
+
+  /* 階段序數色階：廠內 → 中繼 → 交付 */
+  --color-stage-1: #86b6ef;
+  --color-stage-2: #2a78d6;
+  --color-stage-3: #104281;
+
+  /* 介面 */
+  --color-page: #f1f5f9;
+  --color-card: #ffffff;
+  --color-line: #e2e8f0;
+  --color-ink: #0f172a;
+  --color-ink-2: #475569;
+  --color-ink-3: #94a3b8;
+
+  /* 品牌（頁首，非資料編碼） */
+  --color-brand-from: #1e293b;
+  --color-brand-to: #334155;
+  --color-brand-accent: #f59e0b;
+
+  --font-sans: "Noto Sans TC", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* 頁面本身絕不橫捲——寬內容放在自己的 overflow-x 容器裡 */
+  overflow-x: hidden;
+}
+
+/* 手機表單欄位小於 16px 時 iOS 會自動縮放整頁 */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* 觸控目標 ≥ 44px（Apple HIG） */
+button,
+[role="button"],
+a.btn {
+  min-height: 44px;
+}
+
+@media (min-width: 640px) {
+  button,
+  [role="button"],
+  a.btn {
+    min-height: 36px;
+  }
+}
+
+/* 看板等寬內容的橫向捲動容器 */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* 只保留必要的狀態變化過渡，不做裝飾性動畫 */
+@media (prefers-reduced-motion: no-preference) {
+  .transition-base {
+    transition:
+      background-color 150ms,
+      border-color 150ms,
+      opacity 150ms;
+  }
+}

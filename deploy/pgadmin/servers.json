@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "TJG PostgreSQL (tjg-inner)",
+      "Group": "鐵正綱 ERP",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "tjg",
+      "Username": "tjg",
+      "SSLMode": "prefer",
+      "PassFile": "/var/lib/pgadmin/pgpass",
+      "Comment": "由 deploy/pgadmin/servers.json 自動註冊，不需手動輸入連線資訊"
+    }
+  }
+}

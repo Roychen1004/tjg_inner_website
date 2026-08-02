@@ -1,0 +1,37 @@
+# 環境變數（含密碼）
+.env
+deploy/.env
+
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Django
+*.log
+logs/
+media/
+staticfiles/
+db.sqlite3
+
+# Node / 前端建置產物
+node_modules/
+web/dist/
+web/.vite/
+
+# 備份
+backups/
+*.dump
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 文件暫存
+~$*.xlsx
+~$*.docx
+openapi.yaml
