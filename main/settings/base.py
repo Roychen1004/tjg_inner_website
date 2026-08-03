@@ -1,7 +1,7 @@
 """
 共用設定（所有環境繼承此檔）
 
-依 docs/django_rules.md：settings 分 base / local / production / test
+依 docs/開發/07_Django程式規範.md：settings 分 base / local / production / test
 """
 import os
 from pathlib import Path

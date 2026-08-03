@@ -35,7 +35,7 @@ def check(project):
         _check_phases(project, phases, milestones),
         _check_unit_phase(project, phases, units),
         _check_weight(project, milestones, units),
-        _check_signoff_stage(project, units),
+        _check_signoff_stage(project, milestones, units),
     ]
     items = [i for i in items if i is not None]
 
@@ -233,34 +233,71 @@ def _check_weight(project, milestones, units):
     }
 
 
-def _check_signoff_stage(project, units):
-    """流程裡有沒有需簽收的站。沒有的話自動觸發永遠不會發生"""
-    if not units:
+def _check_signoff_stage(project, milestones, units):
+    """自動觸發的里程碑，它涵蓋的批次走的流程有沒有需簽收的站。
+
+    ⚠️ 這一項必須**按里程碑的範圍**判斷，不能只看整個專案。
+
+    四種請款觸發方式裡有三種靠 `signoff_date` 判斷。流程裡沒有 ✍ 的站，
+    那些追蹤單元**永遠不會有簽收日期**——里程碑就永遠卡在「還差 N 批」，
+    而畫面上完全看不出原因。這是會讓整條請款線靜默失效的設定錯誤，
+    所以是 BLOCK 不是 WARN。
+    """
+    auto = [m for m in milestones if m.trigger_type != TriggerType.MANUAL]
+    if not auto or not units:
         return None
-    templates = {u.template_id: u.template for u in units}
-    without = [
-        tpl.name for tpl in templates.values()
-        if not tpl.stages.filter(is_active=True, requires_signoff=True).exists()
-    ]
-    if not without:
+
+    # {模板 id: 有沒有需簽收的站}
+    signable = {}
+    for unit in units:
+        if unit.template_id not in signable:
+            signable[unit.template_id] = any(
+                s.is_active and s.requires_signoff for s in unit.template.stages.all()
+            )
+
+    broken = []  # (里程碑, 卡住的流程名稱集合, 受影響批次數)
+    for milestone in auto:
+        scope = [
+            u for u in units
+            if milestone.phase_id is None or u.phase_id == milestone.phase_id
+        ]
+        bad = [u for u in scope if not signable.get(u.template_id)]
+        if bad:
+            broken.append((
+                milestone,
+                sorted({u.template.name for u in bad}),
+                len(bad),
+            ))
+
+    if not broken:
         return {
             "key": "signoff_stage",
             "title": "流程含「需簽收」站",
             "status": OK,
-            "detail": "追蹤單元的流程都有需要業主簽收的站",
+            "detail": "自動觸發的里程碑，涵蓋的批次都走得到簽收站",
             "why": "", "action": "", "link": "",
         }
+
+    lines = [
+        f"「{m.label}」涵蓋的 {n} 個單元走「{'、'.join(names)}」，這條流程沒有需簽收的站"
+        for m, names, n in broken[:3]
+    ]
     return {
         "key": "signoff_stage",
         "title": "流程含「需簽收」站",
-        "status": WARN,
-        "detail": "這些流程沒有需簽收的站：" + "、".join(without),
+        "status": BLOCK,
+        "detail": "；".join(lines),
         "why": (
-            "自動觸發請款的動作是「登錄簽收」。流程裡沒有標記 ✍ 的站，"
-            "就永遠不會有簽收，請款只能手動建立"
+            "「該期全部簽收」「累計重量達門檻」「每批按量分批請」三種都靠簽收日期判斷。"
+            "流程裡沒有標記 ✍ 的站，那些單元永遠不會有簽收日期——"
+            "**里程碑會永遠卡在「還差 N 批」，而且看不出原因**"
         ),
-        "action": "請系統管理員到 /admin/masters/stagetemplate/ 把對應的站勾選「需簽收」",
-        "link": "",
+        "action": (
+            "兩條路：① 請系統管理員到 /admin/masters/stagetemplate/ "
+            "把該流程的驗收站勾選「需簽收」（土建建議勾在「監造查驗」）；"
+            "② 或把這筆里程碑改成「手動」，由會計自己按"
+        ),
+        "link": f"/billing?project={project.pk}&tab=milestones",
     }
 
 

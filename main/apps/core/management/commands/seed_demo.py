@@ -508,5 +508,5 @@ class Command(BaseCommand):
 
   南投案示範第四種：每批簽收就按噸數佔比產生一筆可請款
 
-  操作步驟見 docs/11_系統操作說明.md
+  操作步驟見 docs/員工手冊.md
 """)

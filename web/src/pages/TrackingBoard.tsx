@@ -11,31 +11,43 @@
  */
 import { Filter, Layers, PenLine, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+
 
 import { useBoard, useOptions } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
-import type { TrackingCard } from "@/api/types";
+import type { BoardColumn, TrackingCard } from "@/api/types";
 import UnitForm from "@/components/forms/UnitForm";
 import TrackingCardView from "@/components/tracking/TrackingCard";
 import UnitPanel from "@/components/tracking/UnitPanel";
 import { Button, EmptyState, ErrorState, Select, Spinner } from "@/components/ui";
+import { useStickyParams } from "@/lib/stickyParams";
 
 const UNIT_TYPES = [
   { value: "batch", label: "構件批次（鋼構）" },
   { value: "work_item", label: "土建工項" },
 ];
 
+// unit 不記——那是「從連結點進來要打開哪張卡」，不是篩選條件
+const BOARD_KEYS = ["project", "unit_type", "status"];
+
 export default function TrackingBoard() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useStickyParams("board.filters", BOARD_KEYS);
   const { data: options } = useOptions();
   const { data: user } = useCurrentUser();
   const [selected, setSelected] = useState<TrackingCard | null>(null);
   const [creating, setCreating] = useState(false);
 
   const project = searchParams.get("project") ?? "";
-  const unitType = searchParams.get("unit_type") ?? (project ? "" : "batch");
   const status = searchParams.get("status") ?? "";
+
+  // ★ 看板的欄位＝某一條流程的站。鋼構 9 站、土建 5 站，欄位根本不一樣，
+  // 「全部專案＋全部類型」畫不出一個有意義的看板——
+  // 只能挑一條當主軌道，另一種全部擠進「其他流程」那一欄。
+  //
+  // 所以：沒選專案時，類型是必選（預設構件批次）。
+  // 選了專案就可以選「全部類型」——混合案的兩種流程放在同一個案子裡看是合理的。
+  const typeRequired = !project;
+  const unitType = searchParams.get("unit_type") ?? (typeRequired ? "batch" : "");
 
   function setParam(name: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -60,7 +72,10 @@ export default function TrackingBoard() {
   const deepLinkUnit = searchParams.get("unit");
   const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
   if (deepLinkUnit && openedDeepLink !== deepLinkUnit && data) {
-    const found = data.columns.flatMap((c) => c.units).find((u) => String(u.id) === deepLinkUnit);
+    const found = data.boards
+      .flatMap((b) => b.columns)
+      .flatMap((c) => c.units)
+      .find((u) => String(u.id) === deepLinkUnit);
     setOpenedDeepLink(deepLinkUnit);
     if (found) setSelected(found);
   }
@@ -81,7 +96,9 @@ export default function TrackingBoard() {
           value={unitType}
           onChange={(v) => setParam("unit_type", v)}
           options={UNIT_TYPES}
-          placeholder="全部類型"
+          // 沒選專案時不給「全部類型」——給了會靜默跳回構件批次，
+          // 使用者以為壞掉。不能選就不要顯示成可以選
+          placeholder={typeRequired ? undefined : "全部類型（混合案）"}
         />
         <Select
           value={status}
@@ -105,6 +122,14 @@ export default function TrackingBoard() {
         )}
       </div>
 
+      {typeRequired && (
+        <p className="mb-3 text-[11px] leading-relaxed text-ink-3">
+          看全部專案時必須指定類型——鋼構走 9 站、土建走 5 站，
+          欄位不一樣，混在一起畫不出有意義的看板。
+          <strong className="text-ink-2">選定一個專案</strong>後就可以看「全部類型」。
+        </p>
+      )}
+
       {data?.truncated_hint && (
         <p
           className="mb-3 rounded-lg px-3 py-2 text-xs"
@@ -124,26 +149,39 @@ export default function TrackingBoard() {
         <EmptyState
           title="這個範圍內沒有追蹤單元"
           hint={
-            data.template
-              ? `流程「${data.template.name}」共 ${data.template.stages.length} 站，目前沒有東西在跑`
+            data.boards[0]
+              ? `流程「${data.boards[0].template.name}」共 ${data.boards[0].columns.length} 站，目前沒有東西在跑`
               : undefined
           }
         />
       ) : (
         <>
-          {/* 桌機：所有欄並排。手機：橫向捲動，一次看到 1.5 欄提示還有更多 */}
-          <div className="scroll-x -mx-4 px-4 pb-2">
-            <div className="flex gap-3">
-              {data.columns.map((column, index) => (
-                <Column
-                  key={column.stage?.id ?? `other-${index}`}
-                  column={column}
-                  showProject={!project}
-                  onOpen={setSelected}
-                />
-              ))}
-            </div>
-          </div>
+          {/* 一條流程一個看板。混合案有兩條流程，就上下堆疊兩個——
+              鋼構 9 站、土建 5 站，硬畫在同一排的話位置就沒有意義了 */}
+          {data.boards.map((board) => (
+            <section key={board.template.id} className="mb-4">
+              {data.boards.length > 1 && (
+                <h2 className="mb-1.5 text-xs font-bold text-ink-2">
+                  {board.template.name}
+                  <span className="ml-1.5 font-normal text-ink-3">
+                    {board.count} 筆 · {board.columns.length} 站
+                  </span>
+                </h2>
+              )}
+              <div className="scroll-x -mx-4 px-4 pb-2">
+                <div className="flex gap-3">
+                  {board.columns.map((column) => (
+                    <Column
+                      key={column.stage.id}
+                      column={column}
+                      showProject={!project}
+                      onOpen={setSelected}
+                    />
+                  ))}
+                </div>
+              </div>
+            </section>
+          ))}
 
           <Legend />
         </>
@@ -170,7 +208,7 @@ function Column({
   showProject,
   onOpen,
 }: {
-  column: { stage: { id: number; name: string; color: string; requires_signoff: boolean; is_billing_trigger: boolean; is_hold: boolean; is_outsource: boolean } | null; count: number; units: TrackingCard[] };
+  column: BoardColumn;
   showProject: boolean;
   onOpen: (unit: TrackingCard) => void;
 }) {
@@ -179,16 +217,16 @@ function Column({
     <section className="flex w-[260px] shrink-0 flex-col rounded-xl bg-page/60 sm:w-[240px]">
       <header
         className="sticky top-0 flex items-center gap-1.5 rounded-t-xl px-3 py-2"
-        style={{ background: stage?.color ?? "var(--color-ink-3)" }}
+        style={{ background: stage.color }}
       >
         <h2 className="min-w-0 flex-1 truncate text-xs font-bold text-white">
-          {stage?.name ?? "其他流程"}
+          {stage.name}
         </h2>
         {/* 特殊語意用圖示，不用顏色——顏色已經被階段序位用掉了 */}
-        {stage?.requires_signoff && <PenLine size={12} className="text-white" aria-label="需簽收" />}
-        {stage?.is_billing_trigger && <span className="text-[11px]" aria-label="觸發請款">💰</span>}
-        {stage?.is_outsource && <span className="text-[11px]" aria-label="外包">🚚</span>}
-        {stage?.is_hold && <span className="text-[11px]" aria-label="等待中">⏸</span>}
+        {stage.requires_signoff && <PenLine size={12} className="text-white" aria-label="需簽收" />}
+        {stage.is_billing_trigger && <span className="text-[11px]" aria-label="觸發請款">💰</span>}
+        {stage.is_outsource && <span className="text-[11px]" aria-label="外包">🚚</span>}
+        {stage.is_hold && <span className="text-[11px]" aria-label="等待中">⏸</span>}
         <span className="shrink-0 rounded-full bg-white/25 px-1.5 text-[11px] font-bold text-white tabular-nums">
           {column.count}
         </span>

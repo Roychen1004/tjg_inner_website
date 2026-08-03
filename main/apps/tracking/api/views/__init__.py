@@ -104,36 +104,39 @@ class TrackingUnitViewSet(BaseModelViewSet):
         truncated = total > LIMIT
         units = list(qs.order_by("current_stage__seq", "-updated_at")[:LIMIT])
 
-        # 階段軌道：從實際用到的模板取，不寫死
-        template = self._board_template(units, project_id, unit_type)
-        stages = (
-            list(template.stages.filter(is_active=True).order_by("seq")) if template else []
-        )
-
-        by_stage = {s.pk: [] for s in stages}
-        orphans = []
+        # ★ 每條流程各一個看板。
+        #
+        # 混合案同時有鋼構（9 站）與土建（5 站），欄位根本不一樣。
+        # 硬畫成一個看板只能挑一條當主軌道，另一種全部擠進「其他流程」那一欄——
+        # 而位置正是看板唯一的重點，擠在一起就什麼都看不出來了。
         cards = TrackingUnitCardSerializer(
             units, many=True, context=self.get_serializer_context()
         ).data
-        for card in cards:
-            bucket = by_stage.get(card["stage_id"])
-            (bucket if bucket is not None else orphans).append(card)
+        card_by_id = {c["id"]: c for c in cards}
 
-        columns = [
-            {
-                "stage": StageSerializer(s).data,
-                "count": len(by_stage[s.pk]),
-                "units": by_stage[s.pk],
-            }
-            for s in stages
+        grouped = {}
+        for unit in units:
+            grouped.setdefault(unit.template_id, []).append(card_by_id[unit.pk])
+
+        templates = {
+            t.pk: t
+            for t in StageTemplate.objects.filter(pk__in=grouped).prefetch_related("stages")
+        } if grouped else {}
+
+        boards = [
+            self._build_board(templates[tid], group)
+            for tid, group in sorted(grouped.items(), key=lambda kv: -len(kv[1]))
+            if tid in templates
         ]
-        if orphans:
-            # 混合案：有些單元走的是另一條模板。誠實顯示，不默默丟掉
-            columns.append({"stage": None, "count": len(orphans), "units": orphans})
+
+        # 沒有資料時也要畫出空的軌道，否則使用者不知道流程長什麼樣
+        if not boards:
+            empty = self._default_template(unit_type)
+            if empty:
+                boards = [self._build_board(empty, [])]
 
         return Response({
-            "template": StageTemplateSerializer(template).data if template else None,
-            "columns": columns,
+            "boards": boards,
             "total": total,
             "shown": len(units),
             "truncated": truncated,
@@ -142,17 +145,29 @@ class TrackingUnitViewSet(BaseModelViewSet):
             ),
         })
 
-    def _board_template(self, units, project_id, unit_type):
-        """決定看板要用哪一條階段軌道"""
-        if units:
-            # 用出現最多次的模板當主軌道
-            counter = {}
-            for unit in units:
-                counter[unit.template_id] = counter.get(unit.template_id, 0) + 1
-            best = max(counter, key=counter.get)
-            return StageTemplate.objects.prefetch_related("stages").filter(pk=best).first()
+    @staticmethod
+    def _build_board(template, cards):
+        stages = sorted(
+            (s for s in template.stages.all() if s.is_active), key=lambda s: s.seq
+        )
+        by_stage = {s.pk: [] for s in stages}
+        for card in cards:
+            by_stage.setdefault(card["stage_id"], []).append(card)
+        return {
+            "template": StageTemplateSerializer(template).data,
+            "count": len(cards),
+            "columns": [
+                {
+                    "stage": StageSerializer(s).data,
+                    "count": len(by_stage[s.pk]),
+                    "units": by_stage[s.pk],
+                }
+                for s in stages
+            ],
+        }
 
-        # 沒有資料時也要畫出空的軌道，否則使用者不知道流程長什麼樣
+    @staticmethod
+    def _default_template(unit_type):
         applies = (
             TemplateAppliesTo.CIVIL_WORK_ITEM
             if unit_type == UnitType.WORK_ITEM

@@ -17,7 +17,7 @@ class Status(models.TextChoices):
 
 
 # 顏色與燈號一律成對出現，且永遠伴隨文字標籤——
-# 顏色不單獨傳達意義（見 docs/08_UI設計原則.md §4.4）
+# 顏色不單獨傳達意義（見 docs/開發/04_UI設計原則.md §4.4）
 STATUS_COLORS = {
     Status.ONTRACK: "#059669",
     Status.ATRISK: "#d97706",

@@ -91,7 +91,7 @@ export default function Settings() {
   const list = useQuery({
     queryKey: ["admin", tab, q],
     queryFn: () =>
-      api.get<{ count: number; results: unknown[] }>(`/admin/${tab}`, {
+      api.get<{ count: number; results: unknown[] }>(`/${tab}`, {
         q: q || undefined,
         page_size: 100,
       }),
@@ -326,7 +326,7 @@ function CustomerForm({
   }
   if (!open && loadedKey !== null) setLoadedKey(null);
 
-  const save = useSave<Customer>("/admin/customers", customer?.id, (saved) => {
+  const save = useSave<Customer>("/customers", customer?.id, (saved) => {
     toast.success(customer ? `${saved.name} 已更新` : `已新增客戶「${saved.name}」`);
     onClose();
   });
@@ -405,7 +405,7 @@ function VendorForm({
   }
   if (!open && loadedKey !== null) setLoadedKey(null);
 
-  const save = useSave<Vendor>("/admin/vendors", vendor?.id, (saved) => {
+  const save = useSave<Vendor>("/vendors", vendor?.id, (saved) => {
     toast.success(vendor ? `${saved.name} 已更新` : `已新增廠商「${saved.name}」`);
     onClose();
   });
@@ -540,12 +540,12 @@ function EmployeeForm({
 
   const departments = useQuery({
     queryKey: ["admin", "departments"],
-    queryFn: () => api.get<Array<{ id: number; name: string }>>("/admin/departments"),
+    queryFn: () => api.get<Array<{ id: number; name: string }>>("/departments"),
     enabled: open,
     staleTime: 10 * 60 * 1000,
   });
 
-  const save = useSave<Employee>("/admin/employees", employee?.id, (saved) => {
+  const save = useSave<Employee>("/employees", employee?.id, (saved) => {
     toast.success(
       employee ? `${saved.name} 已更新` : `已新增員工「${saved.name}」`,
       employee ? [] : [`帳號 ${saved.username}，預設密碼 28494320，首次登入必須自行修改`],
@@ -554,7 +554,7 @@ function EmployeeForm({
   });
 
   const reset = useMutation({
-    mutationFn: () => api.post<{ message: string }>(`/admin/employees/${employee!.id}/reset-password`),
+    mutationFn: () => api.post<{ message: string }>(`/employees/${employee!.id}/reset-password`),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["admin"] });
       toast.warn(r.message, ["密碼重設會留下系統紀錄"]);

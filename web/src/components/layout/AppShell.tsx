@@ -22,7 +22,7 @@ import { Modal } from "@/components/ui";
 /**
  * 導航分頁
  *
- * 依 docs/08_UI設計原則.md：導航最多 6 個分頁。
+ * 依 docs/開發/04_UI設計原則.md：導航最多 6 個分頁。
  * 實際顯示哪幾個由後端的 visible_nav 決定——
  * 現場人員只會看到「我的工作」，其餘分頁根本不出現（不是 disable）。
  */

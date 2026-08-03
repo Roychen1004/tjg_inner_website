@@ -24,7 +24,7 @@
 
 ### 1.1 Base URL 與版本
 
-依貴公司 `docs/django_rules.md` 規範：
+依貴公司 `docs/../開發/07_Django程式規範.md` 規範：
 
 ```
 <domain>/api/<version>/<模組>/<資源>
@@ -341,7 +341,7 @@ GET /api/tracking-units/?project=1&status=delayed&q=鋼柱&ordering=-stage_enter
 }
 ```
 
-**可見範圍**（依 `01_營運流程盤點與角色權限.md` §9）
+**可見範圍**（依 `../開發/01_業務流程與權限.md` §9）
 
 - `owner`/`admin`/`finance` → 全部，含金額
 - `pm` → 自己負責的完整；其他案的 `contract_amount`、`received_amount`、`collection_rate` 回 `null`
@@ -494,7 +494,7 @@ GET /api/tracking-units/?project=1&status=delayed&q=鋼柱&ordering=-stage_enter
 | 欄位 | 必填 | 說明 |
 |---|---|---|
 | `direction` | ✅ | `forward` / `backward`（**一次只能一階**） |
-| `reason_category` | `backward` 時✅ | 見 `04_資料庫規劃.md` §5.4 |
+| `reason_category` | `backward` 時✅ | 見 `../開發/02_資料模型.md` §5.4 |
 | `note` | `backward` 時✅ | 說明文字 |
 
 **200 OK**
@@ -853,7 +853,7 @@ create_notifications(...)
 
 ### 6.0 ⚠️ 套件選擇待確認
 
-貴公司規範（`docs/django_rules.md` § Swagger API）指定 **`drf_yasg`**，路徑為
+貴公司規範（`docs/../開發/07_Django程式規範.md` § Swagger API）指定 **`drf_yasg`**，路徑為
 `{API_ROOT}/{API_VERSION}/swagger/` 與 `/redoc/`。但兩者有實質差異：
 
 | | `drf_yasg`（規範指定） | `drf-spectacular`（建議） |
@@ -959,4 +959,4 @@ api-types:
 
 ## 相關文件
 
-`02_Use_Case規格.md`｜`03_User_Story與驗收條件.md`｜`04_資料庫規劃.md`｜`07_系統架構與開發路線圖.md`
+`../封存/02_Use_Case規格.md`｜`../封存/03_User_Story與驗收條件.md`｜`../開發/02_資料模型.md`｜`../開發/03_架構與部署.md`

@@ -100,6 +100,22 @@ export interface ProjectDetail extends ProjectRow {
   can_view_amounts: boolean;
 }
 
+export interface ChangeOrder {
+  id: number;
+  code: string;
+  project: number;
+  title: string;
+  /** 沒有看金額權限時為 null。追加為正、減帳為負 */
+  amount: string | null;
+  reason: string;
+  status: "draft" | "submitted" | "approved" | "rejected";
+  status_label: string;
+  is_approved: boolean;
+  approved_by_name: string;
+  approved_at: string | null;
+  created_at: string;
+}
+
 export interface ProjectSummary {
   unit_counts: { total: number; ontrack: number; atrisk: number; delayed: number };
   by_stage: Array<{ name: string; seq: number; count: number }>;
@@ -179,15 +195,20 @@ export interface TrackingDetail extends TrackingCard {
 }
 
 export interface BoardColumn {
-  /** null 代表這一欄的單元走的是另一條模板（混合案）。誠實顯示，不默默丟掉 */
-  stage: Stage | null;
+  stage: Stage;
   count: number;
   units: TrackingCard[];
 }
 
-export interface BoardData {
-  template: StageTemplate | null;
+/** 一條流程一個看板。混合案有兩條流程，就有兩個看板上下堆疊 */
+export interface Board {
+  template: StageTemplate;
+  count: number;
   columns: BoardColumn[];
+}
+
+export interface BoardData {
+  boards: Board[];
   total: number;
   shown: number;
   truncated: boolean;

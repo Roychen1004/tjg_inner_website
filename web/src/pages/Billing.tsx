@@ -12,7 +12,7 @@
  */
 import { AlertTriangle, Lock, Pencil, Plus } from "lucide-react";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { ApiError, api } from "@/api/client";
 import { useBillingSummary, useClaims, useMilestones, useOptions, useTransitionClaim } from "@/api/hooks";
@@ -36,14 +36,18 @@ import {
   Select,
   Spinner,
 } from "@/components/ui";
+import { useStickyParams } from "@/lib/stickyParams";
 import { useToast } from "@/components/ui/Toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+const BILLING_KEYS = ["project", "tab"];
 
 export default function Billing() {
   const { data: options } = useOptions();
   const { data: user } = useCurrentUser();
-  // 專案與分頁放在網址上，「該做的」那些連結才能把人帶到正確的位置
-  const [searchParams, setSearchParams] = useSearchParams();
+  // 專案與分頁放在網址上，「該做的」那些連結才能把人帶到正確的位置；
+  // 同時記住上次的選擇，從導航列點進來時還原
+  const [searchParams, setSearchParams] = useStickyParams("billing.filters", BILLING_KEYS);
   const project = searchParams.get("project") ?? "";
   const tab = (searchParams.get("tab") as "claims" | "milestones") ?? "claims";
 

@@ -4,7 +4,6 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from main.utils.choices import STATUS_COLORS, UnitType
 
-from .admin_actions import TrackingUnitActionsMixin
 from .models import ProgressLog, TrackingUnit, TrackingUnitStageLog
 
 
@@ -35,10 +34,10 @@ class ProgressLogInline(admin.TabularInline):
 
 
 @admin.register(TrackingUnit)
-class TrackingUnitAdmin(TrackingUnitActionsMixin, SimpleHistoryAdmin):
+class TrackingUnitAdmin(SimpleHistoryAdmin):
     list_display = (
         "name", "project", "stage_display", "progress_display",
-        "weight_display", "status_display", "signoff_display", "actions_display",
+        "weight_display", "status_display", "signoff_display",
     )
     list_filter = ("unit_type", "status", "work_mode", "project", "current_stage")
     search_fields = ("code", "name", "project__name")

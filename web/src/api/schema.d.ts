@@ -195,10 +195,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 客戶（唯讀）。主檔維護走 Django Admin（決策 T03）。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
         get: operations["customers_list"];
         put?: never;
-        post?: never;
+        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        post: operations["customers_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -212,14 +213,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 客戶（唯讀）。主檔維護走 Django Admin（決策 T03）。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
         get: operations["customers_retrieve"];
-        put?: never;
+        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        put: operations["customers_update"];
         post?: never;
-        delete?: never;
+        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        delete: operations["customers_destroy"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        patch: operations["customers_partial_update"];
         trace?: never;
     };
     "/api/v0.1/vendors": {
@@ -229,10 +233,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 廠商（唯讀）。分包商、外包加工、運輸行都在這裡。 */
+        /** @description 廠商（供應商／分包商／外包加工／運輸行）。一家可以身兼多種。 */
         get: operations["vendors_list"];
         put?: never;
-        post?: never;
+        /** @description 廠商（供應商／分包商／外包加工／運輸行）。一家可以身兼多種。 */
+        post: operations["vendors_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -246,14 +251,170 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 廠商（唯讀）。分包商、外包加工、運輸行都在這裡。 */
+        /** @description 廠商（供應商／分包商／外包加工／運輸行）。一家可以身兼多種。 */
         get: operations["vendors_retrieve"];
+        /** @description 廠商（供應商／分包商／外包加工／運輸行）。一家可以身兼多種。 */
+        put: operations["vendors_update"];
+        post?: never;
+        /** @description 廠商（供應商／分包商／外包加工／運輸行）。一家可以身兼多種。 */
+        delete: operations["vendors_destroy"];
+        options?: never;
+        head?: never;
+        /** @description 廠商（供應商／分包商／外包加工／運輸行）。一家可以身兼多種。 */
+        patch: operations["vendors_partial_update"];
+        trace?: never;
+    };
+    "/api/v0.1/employees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 員工。
+         *
+         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
+         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
+         */
+        get: operations["employees_list"];
+        put?: never;
+        /**
+         * @description 員工。
+         *
+         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
+         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
+         */
+        post: operations["employees_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/employees/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 員工。
+         *
+         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
+         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
+         */
+        get: operations["employees_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * @description 員工。
+         *
+         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
+         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
+         */
+        patch: operations["employees_partial_update"];
+        trace?: never;
+    };
+    "/api/v0.1/employees/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 把密碼重設回預設值，並要求對方下次登入時修改。 */
+        post: operations["employees_reset_password_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 全系統 ViewSet 的基底。
+         *
+         *     子類別設定：
+         *         read_permission  / write_permission  → 功能權限
+         *         scope_function                        → 資料可見範圍
+         *         write_serializer_class                → 建立與修改用的序列化器
+         */
+        get: operations["departments_list"];
+        put?: never;
+        /**
+         * @description 全系統 ViewSet 的基底。
+         *
+         *     子類別設定：
+         *         read_permission  / write_permission  → 功能權限
+         *         scope_function                        → 資料可見範圍
+         *         write_serializer_class                → 建立與修改用的序列化器
+         */
+        post: operations["departments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/departments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 全系統 ViewSet 的基底。
+         *
+         *     子類別設定：
+         *         read_permission  / write_permission  → 功能權限
+         *         scope_function                        → 資料可見範圍
+         *         write_serializer_class                → 建立與修改用的序列化器
+         */
+        get: operations["departments_retrieve"];
+        /**
+         * @description 全系統 ViewSet 的基底。
+         *
+         *     子類別設定：
+         *         read_permission  / write_permission  → 功能權限
+         *         scope_function                        → 資料可見範圍
+         *         write_serializer_class                → 建立與修改用的序列化器
+         */
+        put: operations["departments_update"];
+        post?: never;
+        /**
+         * @description 全系統 ViewSet 的基底。
+         *
+         *     子類別設定：
+         *         read_permission  / write_permission  → 功能權限
+         *         scope_function                        → 資料可見範圍
+         *         write_serializer_class                → 建立與修改用的序列化器
+         */
+        delete: operations["departments_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description 全系統 ViewSet 的基底。
+         *
+         *     子類別設定：
+         *         read_permission  / write_permission  → 功能權限
+         *         scope_function                        → 資料可見範圍
+         *         write_serializer_class                → 建立與修改用的序列化器
+         */
+        patch: operations["departments_partial_update"];
         trace?: never;
     };
     "/api/v0.1/items": {
@@ -263,7 +424,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 物品主檔（唯讀） */
+        /**
+         * @description 物品主檔。
+         *
+         *     維護留在 Django Admin：欄位依料型不同（鋼板問厚寬長、H型鋼問腹板翼板厚），
+         *     Admin 的表單處理這種情況比自己刻一個好（決策 D26）。
+         */
         get: operations["items_list"];
         put?: never;
         post?: never;
@@ -280,7 +446,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 物品主檔（唯讀） */
+        /**
+         * @description 物品主檔。
+         *
+         *     維護留在 Django Admin：欄位依料型不同（鋼板問厚寬長、H型鋼問腹板翼板厚），
+         *     Admin 的表單處理這種情況比自己刻一個好（決策 D26）。
+         */
         get: operations["items_retrieve"];
         put?: never;
         post?: never;
@@ -288,235 +459,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/admin/customers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 客戶維護 */
-        get: operations["admin_customers_list"];
-        put?: never;
-        /** @description 客戶維護 */
-        post: operations["admin_customers_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/admin/customers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 客戶維護 */
-        get: operations["admin_customers_retrieve"];
-        /** @description 客戶維護 */
-        put: operations["admin_customers_update"];
-        post?: never;
-        /** @description 客戶維護 */
-        delete: operations["admin_customers_destroy"];
-        options?: never;
-        head?: never;
-        /** @description 客戶維護 */
-        patch: operations["admin_customers_partial_update"];
-        trace?: never;
-    };
-    "/api/v0.1/admin/vendors": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 廠商維護（供應商／分包商／外包加工／運輸行） */
-        get: operations["admin_vendors_list"];
-        put?: never;
-        /** @description 廠商維護（供應商／分包商／外包加工／運輸行） */
-        post: operations["admin_vendors_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/admin/vendors/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 廠商維護（供應商／分包商／外包加工／運輸行） */
-        get: operations["admin_vendors_retrieve"];
-        /** @description 廠商維護（供應商／分包商／外包加工／運輸行） */
-        put: operations["admin_vendors_update"];
-        post?: never;
-        /** @description 廠商維護（供應商／分包商／外包加工／運輸行） */
-        delete: operations["admin_vendors_destroy"];
-        options?: never;
-        head?: never;
-        /** @description 廠商維護（供應商／分包商／外包加工／運輸行） */
-        patch: operations["admin_vendors_partial_update"];
-        trace?: never;
-    };
-    "/api/v0.1/admin/employees": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 員工維護。
-         *
-         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
-         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
-         */
-        get: operations["admin_employees_list"];
-        put?: never;
-        /**
-         * @description 員工維護。
-         *
-         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
-         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
-         */
-        post: operations["admin_employees_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/admin/employees/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 員工維護。
-         *
-         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
-         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
-         */
-        get: operations["admin_employees_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * @description 員工維護。
-         *
-         *     ⚠️ 不提供刪除。離職的人要「停用」而不是刪掉——
-         *     他做過的階段推進、簽收、請款異動都掛在他名下，刪了歷史就斷了。
-         */
-        patch: operations["admin_employees_partial_update"];
-        trace?: never;
-    };
-    "/api/v0.1/admin/employees/{id}/reset-password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description 把密碼重設回預設值，並要求對方下次登入時修改。 */
-        post: operations["admin_employees_reset_password_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/admin/departments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 全系統 ViewSet 的基底。
-         *
-         *     子類別設定：
-         *         read_permission  / write_permission  → 功能權限
-         *         scope_function                        → 資料可見範圍
-         *         write_serializer_class                → 建立與修改用的序列化器
-         */
-        get: operations["admin_departments_list"];
-        put?: never;
-        /**
-         * @description 全系統 ViewSet 的基底。
-         *
-         *     子類別設定：
-         *         read_permission  / write_permission  → 功能權限
-         *         scope_function                        → 資料可見範圍
-         *         write_serializer_class                → 建立與修改用的序列化器
-         */
-        post: operations["admin_departments_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/admin/departments/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 全系統 ViewSet 的基底。
-         *
-         *     子類別設定：
-         *         read_permission  / write_permission  → 功能權限
-         *         scope_function                        → 資料可見範圍
-         *         write_serializer_class                → 建立與修改用的序列化器
-         */
-        get: operations["admin_departments_retrieve"];
-        /**
-         * @description 全系統 ViewSet 的基底。
-         *
-         *     子類別設定：
-         *         read_permission  / write_permission  → 功能權限
-         *         scope_function                        → 資料可見範圍
-         *         write_serializer_class                → 建立與修改用的序列化器
-         */
-        put: operations["admin_departments_update"];
-        post?: never;
-        /**
-         * @description 全系統 ViewSet 的基底。
-         *
-         *     子類別設定：
-         *         read_permission  / write_permission  → 功能權限
-         *         scope_function                        → 資料可見範圍
-         *         write_serializer_class                → 建立與修改用的序列化器
-         */
-        delete: operations["admin_departments_destroy"];
-        options?: never;
-        head?: never;
-        /**
-         * @description 全系統 ViewSet 的基底。
-         *
-         *     子類別設定：
-         *         read_permission  / write_permission  → 功能權限
-         *         scope_function                        → 資料可見範圍
-         *         write_serializer_class                → 建立與修改用的序列化器
-         */
-        patch: operations["admin_departments_partial_update"];
         trace?: never;
     };
     "/api/v0.1/projects": {
@@ -3133,21 +3075,6 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["CustomerDetail"][];
         };
-        PaginatedCustomerList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["Customer"][];
-        };
         PaginatedEmployeeList: {
             /** @example 123 */
             count: number;
@@ -3237,21 +3164,6 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["VendorDetail"][];
-        };
-        PaginatedVendorList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["Vendor"][];
         };
         PatchedAssetUnitWriteRequest: {
             /**
@@ -4583,20 +4495,6 @@ export interface components {
             /** 職稱 */
             title?: string;
         };
-        Vendor: {
-            readonly id: number;
-            /** 廠商代號 */
-            code: string;
-            /** 廠商名稱 */
-            name: string;
-            readonly type_display: string;
-            /** 聯絡人 */
-            contact_name?: string;
-            /** 聯絡電話 */
-            contact_phone?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
         VendorDetail: {
             readonly id: number;
             /** 廠商代號 */
@@ -4943,7 +4841,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedCustomerList"];
+                    "application/json": components["schemas"]["PaginatedCustomerDetailList"];
+                };
+            };
+        };
+    };
+    customers_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerWriteRequest"];
+                "multipart/form-data": components["schemas"]["CustomerWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerWrite"];
                 };
             };
         };
@@ -4965,7 +4888,84 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Customer"];
+                    "application/json": components["schemas"]["CustomerDetail"];
+                };
+            };
+        };
+    };
+    customers_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 客戶. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomerWriteRequest"];
+                "multipart/form-data": components["schemas"]["CustomerWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerWrite"];
+                };
+            };
+        };
+    };
+    customers_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 客戶. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    customers_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 客戶. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCustomerWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCustomerWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCustomerWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerWrite"];
                 };
             };
         };
@@ -4993,7 +4993,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedVendorList"];
+                    "application/json": components["schemas"]["PaginatedVendorDetailList"];
+                };
+            };
+        };
+    };
+    vendors_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["VendorWriteRequest"];
+                "multipart/form-data": components["schemas"]["VendorWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorWrite"];
                 };
             };
         };
@@ -5015,7 +5040,363 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Vendor"];
+                    "application/json": components["schemas"]["VendorDetail"];
+                };
+            };
+        };
+    };
+    vendors_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 廠商. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["VendorWriteRequest"];
+                "multipart/form-data": components["schemas"]["VendorWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorWrite"];
+                };
+            };
+        };
+    };
+    vendors_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 廠商. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    vendors_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 廠商. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedVendorWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedVendorWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedVendorWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorWrite"];
+                };
+            };
+        };
+    };
+    employees_list: {
+        parameters: {
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedEmployeeList"];
+                };
+            };
+        };
+    };
+    employees_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EmployeeWriteRequest"];
+                "multipart/form-data": components["schemas"]["EmployeeWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeWrite"];
+                };
+            };
+        };
+    };
+    employees_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 使用者. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Employee"];
+                };
+            };
+        };
+    };
+    employees_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 使用者. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedEmployeeWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedEmployeeWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedEmployeeWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeWrite"];
+                };
+            };
+        };
+    };
+    employees_reset_password_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 使用者. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EmployeeRequest"];
+                "multipart/form-data": components["schemas"]["EmployeeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Employee"];
+                };
+            };
+        };
+    };
+    departments_list: {
+        parameters: {
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Department"][];
+                };
+            };
+        };
+    };
+    departments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepartmentRequest"];
+                "multipart/form-data": components["schemas"]["DepartmentRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Department"];
+                };
+            };
+        };
+    };
+    departments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 部門. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Department"];
+                };
+            };
+        };
+    };
+    departments_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 部門. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepartmentRequest"];
+                "multipart/form-data": components["schemas"]["DepartmentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Department"];
+                };
+            };
+        };
+    };
+    departments_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 部門. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    departments_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 部門. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedDepartmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedDepartmentRequest"];
+                "multipart/form-data": components["schemas"]["PatchedDepartmentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Department"];
                 };
             };
         };
@@ -5066,589 +5447,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Item"];
-                };
-            };
-        };
-    };
-    admin_customers_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedCustomerDetailList"];
-                };
-            };
-        };
-    };
-    admin_customers_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CustomerWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerWriteRequest"];
-                "multipart/form-data": components["schemas"]["CustomerWriteRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerWrite"];
-                };
-            };
-        };
-    };
-    admin_customers_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 客戶. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerDetail"];
-                };
-            };
-        };
-    };
-    admin_customers_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 客戶. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CustomerWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["CustomerWriteRequest"];
-                "multipart/form-data": components["schemas"]["CustomerWriteRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerWrite"];
-                };
-            };
-        };
-    };
-    admin_customers_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 客戶. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    admin_customers_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 客戶. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedCustomerWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedCustomerWriteRequest"];
-                "multipart/form-data": components["schemas"]["PatchedCustomerWriteRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerWrite"];
-                };
-            };
-        };
-    };
-    admin_vendors_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedVendorDetailList"];
-                };
-            };
-        };
-    };
-    admin_vendors_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VendorWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["VendorWriteRequest"];
-                "multipart/form-data": components["schemas"]["VendorWriteRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VendorWrite"];
-                };
-            };
-        };
-    };
-    admin_vendors_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 廠商. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VendorDetail"];
-                };
-            };
-        };
-    };
-    admin_vendors_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 廠商. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VendorWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["VendorWriteRequest"];
-                "multipart/form-data": components["schemas"]["VendorWriteRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VendorWrite"];
-                };
-            };
-        };
-    };
-    admin_vendors_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 廠商. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    admin_vendors_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 廠商. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedVendorWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedVendorWriteRequest"];
-                "multipart/form-data": components["schemas"]["PatchedVendorWriteRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VendorWrite"];
-                };
-            };
-        };
-    };
-    admin_employees_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedEmployeeList"];
-                };
-            };
-        };
-    };
-    admin_employees_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmployeeWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["EmployeeWriteRequest"];
-                "multipart/form-data": components["schemas"]["EmployeeWriteRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmployeeWrite"];
-                };
-            };
-        };
-    };
-    admin_employees_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 使用者. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Employee"];
-                };
-            };
-        };
-    };
-    admin_employees_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 使用者. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedEmployeeWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedEmployeeWriteRequest"];
-                "multipart/form-data": components["schemas"]["PatchedEmployeeWriteRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmployeeWrite"];
-                };
-            };
-        };
-    };
-    admin_employees_reset_password_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 使用者. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmployeeRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["EmployeeRequest"];
-                "multipart/form-data": components["schemas"]["EmployeeRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Employee"];
-                };
-            };
-        };
-    };
-    admin_departments_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Department"][];
-                };
-            };
-        };
-    };
-    admin_departments_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DepartmentRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["DepartmentRequest"];
-                "multipart/form-data": components["schemas"]["DepartmentRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Department"];
-                };
-            };
-        };
-    };
-    admin_departments_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 部門. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Department"];
-                };
-            };
-        };
-    };
-    admin_departments_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 部門. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DepartmentRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["DepartmentRequest"];
-                "multipart/form-data": components["schemas"]["DepartmentRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Department"];
-                };
-            };
-        };
-    };
-    admin_departments_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 部門. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    admin_departments_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 部門. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedDepartmentRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedDepartmentRequest"];
-                "multipart/form-data": components["schemas"]["PatchedDepartmentRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Department"];
                 };
             };
         };

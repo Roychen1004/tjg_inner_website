@@ -83,7 +83,10 @@ export default function ProjectForm({
 
   const customers = useQuery({
     queryKey: ["customers"],
-    queryFn: () => api.get<{ results: Array<{ id: number; name: string }> }>("/customers"),
+    queryFn: () => api.get<{ results: Array<{ id: number; name: string }> }>("/customers", {
+        active: "true",
+        page_size: 100,
+      }),
     enabled: open,
     staleTime: 10 * 60 * 1000,
   });
@@ -163,7 +166,7 @@ export default function ProjectForm({
         required
         hint={
           customers.data && customers.data.results.length === 0
-            ? "客戶清單是空的。客戶屬於主檔，請先由系統管理員在 /admin/ 建立"
+            ? "客戶清單是空的。到「設定 → 客戶」新增（限經營者與系統管理員）"
             : undefined
         }
         error={error?.fieldError("customer")}

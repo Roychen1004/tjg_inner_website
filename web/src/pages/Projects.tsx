@@ -13,6 +13,7 @@ import { useSearchParams } from "react-router-dom";
 import { ApiError, api } from "@/api/client";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import SetupCheck from "@/components/billing/SetupCheck";
+import ChangeOrderSection from "@/components/forms/ChangeOrderForm";
 import ProjectForm from "@/components/forms/ProjectForm";
 import UnitForm from "@/components/forms/UnitForm";
 import {
@@ -260,6 +261,8 @@ function ProjectDetailPanel({ id }: { id: number }) {
       )}
 
       <PhaseManager project={detail} />
+
+      <ChangeOrderSection project={detail} />
 
       {milestones && milestones.results.length > 0 && (
         <div className="mt-4">
