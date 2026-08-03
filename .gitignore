@@ -11,7 +11,9 @@ venv/
 
 # Django
 *.log
-logs/
+# 保留目錄本身（見 logs/.gitkeep），只忽略內容
+logs/*
+!logs/.gitkeep
 media/
 staticfiles/
 db.sqlite3
@@ -35,3 +37,5 @@ backups/
 ~$*.xlsx
 ~$*.docx
 openapi.yaml
+
+.ruff_cache

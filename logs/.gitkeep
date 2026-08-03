@@ -1,0 +1,9 @@
+# 這個目錄要進版控（只留這個檔），原因：
+#
+# logs/ 被 .gitignore 排除，若 git clone 出來沒有這個目錄，
+# docker compose 會用 root 建一個 bind mount 來源，
+# 而容器跑非 root 的 tjg(uid 1000) —— 寫不進去。
+#
+# 讓 git 建立它，擁有者就是 clone 的人，多數情況直接可用。
+# 萬一 uid 還是對不上，settings/base.py 會自動退回只輸出到 stdout，
+# 服務不會因此起不來。

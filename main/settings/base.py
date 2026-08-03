@@ -217,7 +217,34 @@ SPECTACULAR_SETTINGS = {
 
 # ── 日誌（依 django_rules.md：logs 按日分檔）───────────────────────────
 LOGS_DIR = Path(os.environ.get("LOGS_FOLDER_PATH", BASE_DIR / "logs"))
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _logs_writable(path):
+    """日誌目錄能不能寫。
+
+    ⚠️ 這個檢查存在的理由是一次真實的部署失敗：
+
+    `./logs` 被 .gitignore 排除，所以 git clone 出來沒有這個目錄。
+    docker compose 遇到不存在的 bind mount 來源會**用 root 建一個**，
+    而容器跑的是非 root 的 tjg(uid 1000)——寫不進去。
+    Django 在 setup() 階段就因為建不了 FileHandler 而炸掉，
+    api 容器陷入無限重啟，錯誤訊息埋在 log 裡看不見。
+
+    日誌寫不了是運維問題，不該讓整個系統起不來。
+    寫得了就寫檔案（公司慣例：按日分檔），寫不了就退回只輸出到 stdout——
+    `docker compose logs` 一樣看得到，服務照常運作。
+    """
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write_probe"
+        probe.touch()
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+LOGS_WRITABLE = _logs_writable(LOGS_DIR)
 
 LOGGING = {
     "version": 1,
@@ -258,6 +285,23 @@ LOGGING = {
         "tjg": {"handlers": ["console", "app_file", "error_file"], "level": "INFO", "propagate": False},
     },
 }
+
+if not LOGS_WRITABLE:
+    # 目錄不可寫 → 拿掉檔案 handler，只留 console。
+    # 在 stderr 講一聲，因為這是需要有人去修的環境問題
+    import sys
+
+    LOGGING["handlers"].pop("app_file")
+    LOGGING["handlers"].pop("error_file")
+    LOGGING["root"]["handlers"] = ["console"]
+    for logger in LOGGING["loggers"].values():
+        logger["handlers"] = ["console"]
+    print(
+        f"[warn] 日誌目錄 {LOGS_DIR} 不可寫，改為只輸出到 stdout。\n"
+        f"[warn] 要恢復檔案日誌：在宿主機執行 "
+        f"`mkdir -p logs && sudo chown -R 1000:1000 logs`",
+        file=sys.stderr,
+    )
 
 # ── 系統業務常數（可被 core_systemparameter 覆寫）─────────────────────
 SIGNOFF_OVERDUE_DAYS = 7        # 進場簽收逾時

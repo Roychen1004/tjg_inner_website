@@ -1,31 +1,48 @@
 # 鐵正綱工程 內部管理系統 — 排程
-# 安裝：crontab -e 後貼上，並把 /opt/tjg-inner 換成實際路徑
+#
+# 安裝：crontab -e 後貼上，並把 TJG 換成實際路徑
 #
 # 設計原則（決策 D05）：不養常駐 worker，全部用 cron + management command，
 # 省下 Redis + Celery 約 350MB 記憶體。
+#
+# ⚠️ 現在只有【備份】與【資源監控】能用。
+#    其餘指令標著「P2/P3 才實作」，現在裝上去每天只會在 log 裡噴
+#    "Unknown command"。等對應階段做完再取消註解。
 
 TJG=/opt/tjg-inner
 
-# ── 每日 02:00 計算前一日 KPI 快照（P2 起有作用）────────────────────
-0 2 * * * cd $TJG && docker compose exec -T api python manage.py calc_daily_kpi >> logs/cron.log 2>&1
+# ═══════════════════════════════════════════════════════════════
+# 現在就該裝
+# ═══════════════════════════════════════════════════════════════
 
-# ── 工作日 08:00 掃描逾期與異常 ─────────────────────────────────────
-# 專案逾期／階段停滯／待簽收逾 7 天／外包逾期未回廠／
-# 可請款逾 7 天未開單／已請款逾 60 天未收款／呆滯料／證照到期
-0 8 * * 1-5 cd $TJG && docker compose exec -T api python manage.py scan_alerts >> logs/cron.log 2>&1
-
-# ── 每日 01:00 備份 ─────────────────────────────────────────────────
+# ── 每日 01:00 備份（資料庫 + 附件，本機保留 14 天）─────────────────
 0 1 * * * $TJG/deploy/backup.sh >> $TJG/logs/backup.log 2>&1
 
-# ── 每月 1 日 03:00 月度彙總 ────────────────────────────────────────
-0 3 1 * * cd $TJG && docker compose exec -T api python manage.py calc_monthly_kpi >> logs/cron.log 2>&1
-
-# ── 每月 1 日 03:30 月底庫存快照（庫存週轉率的分母）─────────────────
-30 3 1 * * cd $TJG && docker compose exec -T api python manage.py snapshot_inventory >> logs/cron.log 2>&1
-
-# ── 每月 1 日 04:00 清理過期動態與通知 ──────────────────────────────
-# ActivityLog 保留 2 年、已讀通知保留 6 個月
-0 4 1 * * cd $TJG && docker compose exec -T api python manage.py purge_old_logs >> logs/cron.log 2>&1
-
-# ── 每小時記錄資源用量（監控用，目標常駐 < 1.5GB）──────────────────
+# ── 每小時記錄資源用量（目標常駐 < 1.5GB，超了要知道）───────────────
 0 * * * * docker stats --no-stream --format "{{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}" >> $TJG/logs/resources.log
+
+
+# ═══════════════════════════════════════════════════════════════
+# 等對應階段做完再取消註解
+# ═══════════════════════════════════════════════════════════════
+
+# ── 工作日 08:00 掃描逾期與異常［W8 實作］──────────────────────────
+# 專案逾期／階段停滯／待簽收逾 7 天／外包逾期未回廠／
+# 可請款逾 7 天未開單／已請款逾 60 天未收款／呆滯料／證照到期
+#
+# 註：這些判斷目前已經在「總覽 → 需要關注」即時算出來，
+#     這支 cron 的用途是【主動發通知】，不是產生清單。
+# 0 8 * * 1-5 cd $TJG && docker compose exec -T api python manage.py scan_alerts >> logs/cron.log 2>&1
+
+# ── 每日 02:00 計算前一日 KPI 快照［P2 實作］────────────────────────
+# 0 2 * * * cd $TJG && docker compose exec -T api python manage.py calc_daily_kpi >> logs/cron.log 2>&1
+
+# ── 每月 1 日 03:00 月度彙總［P2 實作］──────────────────────────────
+# 0 3 1 * * cd $TJG && docker compose exec -T api python manage.py calc_monthly_kpi >> logs/cron.log 2>&1
+
+# ── 每月 1 日 03:30 月底庫存快照（庫存週轉率的分母）［P2 實作］──────
+# 30 3 1 * * cd $TJG && docker compose exec -T api python manage.py snapshot_inventory >> logs/cron.log 2>&1
+
+# ── 每月 1 日 04:00 清理過期動態與通知［P2 實作］────────────────────
+# ActivityLog 保留 2 年、已讀通知保留 6 個月
+# 0 4 1 * * cd $TJG && docker compose exec -T api python manage.py purge_old_logs >> logs/cron.log 2>&1
