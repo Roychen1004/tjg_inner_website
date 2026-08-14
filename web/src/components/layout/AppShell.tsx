@@ -2,12 +2,9 @@ import {
   Bell,
   Boxes,
   Building2,
-  ClipboardList,
-  Factory,
   FolderKanban,
   LayoutDashboard,
   LogOut,
-  Package,
   SlidersHorizontal,
   Wallet,
 } from "lucide-react";
@@ -20,11 +17,9 @@ import { type CurrentUser, useLogout } from "@/api/hooks/useAuth";
 import { Modal } from "@/components/ui";
 
 /**
- * 導航分頁
- *
- * 依 docs/開發/04_UI設計原則.md：導航最多 6 個分頁。
- * 實際顯示哪幾個由後端的 visible_nav 決定——
- * 現場人員只會看到「我的工作」，其餘分頁根本不出現（不是 disable）。
+ * 導航分頁——五個，各回答一個問題。
+ * 實際顯示哪幾個由後端的 visible_nav 決定：
+ * 檢視角色看不到「金流」，分頁根本不出現（不是 disable）。
  */
 const NAV_ITEMS: Array<{
   key: string;
@@ -32,13 +27,10 @@ const NAV_ITEMS: Array<{
   question: string;
   icon: ComponentType<{ size?: number | string }>;
 }> = [
-  { key: "my-work", label: "我的工作", question: "今天我該做什麼", icon: ClipboardList },
-  { key: "dashboard", label: "總覽", question: "公司現在整體狀況如何", icon: LayoutDashboard },
+  { key: "dashboard", label: "總覽", question: "今天有什麼要處理", icon: LayoutDashboard },
   { key: "projects", label: "專案", question: "這個案子進行到哪", icon: FolderKanban },
   { key: "tracking", label: "追蹤看板", question: "東西現在卡在哪一站", icon: Boxes },
-  { key: "billing", label: "請款收款", question: "錢收得回來嗎", icon: Wallet },
-  { key: "assets", label: "資產", question: "公司有什麼東西、在哪", icon: Package },
-  { key: "lines", label: "產線", question: "機台現在在忙什麼", icon: Factory },
+  { key: "finance", label: "金流", question: "錢進來、錢出去、會不會缺", icon: Wallet },
   {
     key: "settings",
     label: "設定",

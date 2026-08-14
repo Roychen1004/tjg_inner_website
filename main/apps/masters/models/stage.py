@@ -7,8 +7,8 @@ from main.utils.choices import TemplateAppliesTo
 class StageTemplate(TimeStampedModel):
     """階段模板：一條可設定的流程
 
-    這是「一張表吃兩種業務」的關鍵——鋼構走 9 階段、土建走 5 階段、
-    專案主線走 7 階段，全部靠這裡設定，改流程不用改程式。
+    這是「一張表吃兩種業務」的關鍵——鋼構、土建、專案主線各一條，
+    全部靠這裡設定，改流程不用改程式。
     """
 
     code = models.CharField("模板代號", max_length=30, unique=True)
@@ -46,13 +46,9 @@ class StageTemplate(TimeStampedModel):
 
 
 class Stage(models.Model):
-    """階段：流程裡的一站
-
-    五個旗標決定系統在這一站要做什麼事。其中
-    `is_billing_trigger` 與 `requires_signoff` 的組合是請款自動化的核心：
-      · 只有 is_billing_trigger        → 進入階段即觸發（土建「完成」）
-      · 兩者併用                        → 登錄簽收後才觸發（鋼構「進場簽收」）
-    """
+    """階段：流程裡的一站。只有名字、順序、顏色與停滯門檻——
+    2026-08-13 簡化拿掉了觸發請款／簽收／外包等旗標，
+    進度與請款各自獨立維護，站就只是站。"""
 
     template = models.ForeignKey(
         StageTemplate, verbose_name="所屬模板",
@@ -62,25 +58,6 @@ class Stage(models.Model):
     code = models.CharField("階段代號", max_length=30)
     name = models.CharField("階段名稱", max_length=30)
     color = models.CharField("顏色", max_length=7, default="#64748b", help_text="#RRGGBB")
-
-    is_billing_trigger = models.BooleanField(
-        "觸發請款", default=False,
-        help_text="此階段的完成條件達成時，把對應請款里程碑轉為「可請款」",
-    )
-    requires_signoff = models.BooleanField(
-        "需登錄簽收", default=False,
-        help_text="需填簽收日／簽收人／單號。與「觸發請款」併用時，"
-                  "改為登錄簽收後才觸發，而非進入階段就觸發",
-    )
-    is_outsource = models.BooleanField(
-        "需填協力廠", default=False, help_text="表單自動展開協力廠與進出廠日欄位",
-    )
-    is_hold = models.BooleanField(
-        "等待中", default=False, help_text="此階段不計入產能佔用（如置料區）",
-    )
-    is_core = models.BooleanField(
-        "核心加值", default=False, help_text="工時計入 OEE 與加工成本（手冊第 10 章）",
-    )
 
     stall_days = models.SmallIntegerField(
         "停滯天數門檻", null=True, blank=True,
@@ -100,11 +77,6 @@ class Stage(models.Model):
 
     def __str__(self):
         return f"{self.seq}. {self.name}"
-
-    def clean(self):
-        if self.requires_signoff and not self.is_billing_trigger:
-            # 允許，但多數情況是設定錯誤——簽收若不觸發請款，通常沒有意義
-            pass
 
     # ── 流程導航 ───────────────────────────────────────────────────
     @property

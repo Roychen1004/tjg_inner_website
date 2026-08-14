@@ -6,33 +6,27 @@ import { useCurrentUser } from "@/api/hooks/useAuth";
 import AppShell from "@/components/layout/AppShell";
 import { ToastProvider } from "@/components/ui/Toast";
 import Login from "@/pages/Login";
-import MyWork from "@/pages/MyWork";
 
 /**
- * 路由
+ * 路由——五個分頁，各回答一個問題：
+ *   總覽：今天有什麼要處理　　專案：這個案子進行到哪
+ *   追蹤看板：東西卡在哪一站　金流：錢進來、錢出去、會不會缺
+ *   設定：基礎資料
  *
- * 分頁由後端的 `visible_nav` 決定——現場人員的路由表裡根本沒有 /billing，
- * 不是「有但擋住」。前端不重寫一次「哪個角色能看什麼」的邏輯。
- *
- * 除了「我的工作」外全部 lazy 載入：現場人員只會用到那一頁，
- * 沒必要讓他的手機下載儀表板與看板的程式碼。
+ * 分頁由後端的 `visible_nav` 決定——檢視角色的路由表裡根本沒有 /finance，
+ * 不是「有但擋住」。全部 lazy 載入，用不到的頁不下載。
  */
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Projects = lazy(() => import("@/pages/Projects"));
 const TrackingBoard = lazy(() => import("@/pages/TrackingBoard"));
-const Billing = lazy(() => import("@/pages/Billing"));
-const Assets = lazy(() => import("@/pages/Assets"));
-const Lines = lazy(() => import("@/pages/Lines"));
+const Finance = lazy(() => import("@/pages/Finance"));
 const Settings = lazy(() => import("@/pages/Settings"));
 
 const SCREENS: Record<string, React.ComponentType> = {
-  "my-work": MyWork,
   dashboard: Dashboard,
   projects: Projects,
   tracking: TrackingBoard,
-  billing: Billing,
-  assets: Assets,
-  lines: Lines,
+  finance: Finance,
   settings: Settings,
 };
 

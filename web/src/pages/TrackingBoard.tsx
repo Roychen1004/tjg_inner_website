@@ -9,7 +9,7 @@
  * 手機用橫向捲動（POC 已驗證可行），不改成清單——
  * 改成清單就失去「哪一欄比較高」這個唯一的重點。
  */
-import { Filter, Layers, PenLine, Plus } from "lucide-react";
+import { Filter, Layers, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 
 
@@ -40,7 +40,7 @@ export default function TrackingBoard() {
   const project = searchParams.get("project") ?? "";
   const status = searchParams.get("status") ?? "";
 
-  // ★ 看板的欄位＝某一條流程的站。鋼構 9 站、土建 5 站，欄位根本不一樣，
+  // ★ 看板的欄位＝某一條流程的站。鋼構與土建的流程不一樣，
   // 「全部專案＋全部類型」畫不出一個有意義的看板——
   // 只能挑一條當主軌道，另一種全部擠進「其他流程」那一欄。
   //
@@ -114,7 +114,7 @@ export default function TrackingBoard() {
             )}
           </span>
         )}
-        {user?.permissions.create_tracking && (
+        {user?.permissions.edit_tracking && (
           <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus size={15} />
             新增
@@ -124,8 +124,8 @@ export default function TrackingBoard() {
 
       {typeRequired && (
         <p className="mb-3 text-[11px] leading-relaxed text-ink-3">
-          看全部專案時必須指定類型——鋼構走 9 站、土建走 5 站，
-          欄位不一樣，混在一起畫不出有意義的看板。
+          看全部專案時必須指定類型——鋼構與土建走的流程不一樣，
+          欄位不同，混在一起畫不出有意義的看板。
           <strong className="text-ink-2">選定一個專案</strong>後就可以看「全部類型」。
         </p>
       )}
@@ -157,7 +157,7 @@ export default function TrackingBoard() {
       ) : (
         <>
           {/* 一條流程一個看板。混合案有兩條流程，就上下堆疊兩個——
-              鋼構 9 站、土建 5 站，硬畫在同一排的話位置就沒有意義了 */}
+              兩條流程站數不同，硬畫在同一排的話位置就沒有意義了 */}
           {data.boards.map((board) => (
             <section key={board.template.id} className="mb-4">
               {data.boards.length > 1 && (
@@ -222,11 +222,6 @@ function Column({
         <h2 className="min-w-0 flex-1 truncate text-xs font-bold text-white">
           {stage.name}
         </h2>
-        {/* 特殊語意用圖示，不用顏色——顏色已經被階段序位用掉了 */}
-        {stage.requires_signoff && <PenLine size={12} className="text-white" aria-label="需簽收" />}
-        {stage.is_billing_trigger && <span className="text-[11px]" aria-label="觸發請款">💰</span>}
-        {stage.is_outsource && <span className="text-[11px]" aria-label="外包">🚚</span>}
-        {stage.is_hold && <span className="text-[11px]" aria-label="等待中">⏸</span>}
         <span className="shrink-0 rounded-full bg-white/25 px-1.5 text-[11px] font-bold text-white tabular-nums">
           {column.count}
         </span>
@@ -252,18 +247,9 @@ function Column({
 
 function Legend() {
   return (
-    <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-3">
-      <span className="flex items-center gap-1">
-        <Layers size={12} />
-        欄位高度＝堆在那一站的數量
-      </span>
-      <span className="flex items-center gap-1">
-        <PenLine size={12} />
-        需業主簽收
-      </span>
-      <span>💰 進入即觸發請款</span>
-      <span>🚚 外包加工</span>
-      <span>⏸ 等待中，不計產能</span>
+    <p className="mt-3 flex items-center gap-1 text-[11px] text-ink-3">
+      <Layers size={12} />
+      欄位高度＝堆在那一站的數量，特別高的那一欄就是瓶頸
     </p>
   );
 }

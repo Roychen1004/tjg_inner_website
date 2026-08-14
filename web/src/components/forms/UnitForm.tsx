@@ -2,18 +2,16 @@
  * 新增／修改追蹤單元
  *
  * ★ 使用者選的是**階段模板**，不是寫死的兩種類型。
- * 系統管理員在 Admin 建一條新模板（例如「鋼構－免表面處理 7 站」），
- * 它立刻出現在這個下拉裡——加流程不用改程式、不用重新部署。
+ * 在 Admin 建一條新模板，它立刻出現在這個下拉裡——加流程不用改程式。
  *
  * 選了模板之後，問的問題就跟著變：
- *   走構件批次類的模板 → 幾支？幾噸？（數量與重量）
+ *   走構件批次類的模板 → 幾支？（數量）
  *   走土建工項類的模板 → 目前完成幾 %？
  */
 import { useState } from "react";
 
 import { ApiError, api } from "@/api/client";
 import { useOptions } from "@/api/hooks";
-import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { StageTemplate, TrackingDetail } from "@/api/types";
 import { Button, Field, FormErrors, inputClass, Modal, Select } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -23,25 +21,21 @@ const UNITS = ["支", "組", "片", "件", "噸", "式", "m", "m²", "m³"];
 
 interface FormState {
   project: string;
-  phase: string;
   template: string;
   name: string;
-  assignee: string;
   qty_total: string;
   unit_of_measure: string;
-  total_weight_kg: string;
   progress_pct: string;
-  work_mode: string;
-  outsource_vendor: string;
-  outsource_due_date: string;
+  subcontractor: string;
+  subcontract_amount: string;
   plan_end: string;
   note: string;
 }
 
 const EMPTY: FormState = {
-  project: "", phase: "", template: "", name: "", assignee: "",
-  qty_total: "", unit_of_measure: "支", total_weight_kg: "", progress_pct: "0",
-  work_mode: "self", outsource_vendor: "", outsource_due_date: "", plan_end: "", note: "",
+  project: "", template: "", name: "",
+  qty_total: "", unit_of_measure: "支", progress_pct: "0",
+  subcontractor: "", subcontract_amount: "", plan_end: "", note: "",
 };
 
 export default function UnitForm({
@@ -57,7 +51,6 @@ export default function UnitForm({
   unit?: TrackingDetail | null;
 }) {
   const { data: options } = useOptions();
-  const { data: user } = useCurrentUser();
   const toast = useToast();
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -71,6 +64,17 @@ export default function UnitForm({
     staleTime: 10 * 60 * 1000,
   });
 
+  // 分包商下拉（土建工項用）
+  const vendors = useQuery({
+    queryKey: ["vendors", "subcontractor"],
+    queryFn: () =>
+      api.get<{ results: Array<{ id: number; name: string }> }>("/vendors", {
+        type: "subcontractor", active: true, page_size: 100,
+      }),
+    enabled: open,
+    staleTime: 10 * 60 * 1000,
+  });
+
   const key = unit ? `edit-${unit.id}` : `new-${defaultProject ?? ""}`;
   if (open && loadedKey !== key) {
     setLoadedKey(key);
@@ -78,17 +82,13 @@ export default function UnitForm({
       unit
         ? {
             project: String(unit.project),
-            phase: unit.phase ? String(unit.phase) : "",
             template: "",
             name: unit.name,
-            assignee: unit.assignee ? String(unit.assignee.id) : "",
             qty_total: unit.qty_total ?? "",
             unit_of_measure: unit.unit_of_measure || "支",
-            total_weight_kg: unit.total_weight_kg ?? "",
             progress_pct: unit.progress_pct ?? "0",
-            work_mode: unit.work_mode,
-            outsource_vendor: "",
-            outsource_due_date: unit.outsource_due_date ?? "",
+            subcontractor: unit.subcontractor ? String(unit.subcontractor) : "",
+            subcontract_amount: "",
             plan_end: unit.plan_end ?? "",
             note: unit.note,
           }
@@ -104,30 +104,40 @@ export default function UnitForm({
     : selected
       ? selected.applies_to !== "civil_work_item"
       : true;
-  const canEditWeight = Boolean(user?.permissions.edit_weight);
-  const projectId = form.project ? Number(form.project) : null;
-
-  // 期別決定簽收時觸發哪一筆請款里程碑，所以要跟著專案帶出來
-  const detail = useQuery({
-    queryKey: ["project", projectId],
-    queryFn: () =>
-      api.get<{ phases: Array<{ id: number; name: string }> }>(`/projects/${projectId}`),
-    enabled: open && projectId !== null,
-  });
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unit
         ? api.patch<TrackingDetail>(`/tracking-units/${unit.id}`, body)
         : api.post<TrackingDetail>("/tracking-units", body),
-    onSuccess: (saved) => {
-      for (const k of ["tracking-units", "board", "tracking-unit", "project", "projects", "dashboard", "my-work"]) {
+    onSuccess: async (saved) => {
+      const lines = unit
+        ? []
+        : [`編號 ${saved.code}，起始於「${saved.stage_name}」（共 ${saved.stage_total} 站）`];
+
+      // 填了分包金額就順手建立分包合約——錢的家在「金流 → 應付」，
+      // 但輸入的入口跟著工作走：建工項的當下就是知道分包價的時候
+      if (!unit && form.subcontractor && form.subcontract_amount) {
+        try {
+          await api.post("/subcontracts", {
+            project: Number(form.project),
+            vendor: Number(form.subcontractor),
+            title: `${form.name.trim()}（分包）`,
+            category: "subcontract",
+            contract_amount: form.subcontract_amount,
+          });
+          lines.push(`分包合約 ${Number(form.subcontract_amount).toLocaleString()} 元已建立，在金流→應付`);
+          qc.invalidateQueries({ queryKey: ["subcontracts"] });
+          qc.invalidateQueries({ queryKey: ["pnl"] });
+        } catch {
+          lines.push("⚠️ 分包合約建立失敗，請到專案明細的分包合約區塊補建");
+        }
+      }
+
+      for (const k of ["tracking-units", "board", "tracking-unit", "project", "projects", "dashboard"]) {
         qc.invalidateQueries({ queryKey: [k] });
       }
-      toast.success(
-        unit ? `${saved.name} 已更新` : `已建立「${saved.name}」`,
-        unit ? [] : [`編號 ${saved.code}，起始於「${saved.stage_name}」（共 ${saved.stage_total} 站）`],
-      );
+      toast.success(unit ? `${saved.name} 已更新` : `已建立「${saved.name}」`, lines);
       close();
     },
   });
@@ -141,22 +151,12 @@ export default function UnitForm({
 
   function submit() {
     const common = {
-      phase: form.phase ? Number(form.phase) : null,
       name: form.name.trim(),
-      assignee: form.assignee ? Number(form.assignee) : null,
-      work_mode: form.work_mode,
-      outsource_vendor: form.outsource_vendor ? Number(form.outsource_vendor) : null,
-      outsource_due_date: form.outsource_due_date || null,
+      subcontractor: form.subcontractor ? Number(form.subcontractor) : null,
       plan_end: form.plan_end || null,
       note: form.note,
       ...(isBatch
-        ? {
-            qty_total: form.qty_total,
-            unit_of_measure: form.unit_of_measure,
-            ...(canEditWeight && form.total_weight_kg
-              ? { total_weight_kg: form.total_weight_kg }
-              : {}),
-          }
+        ? { qty_total: form.qty_total, unit_of_measure: form.unit_of_measure }
         : { progress_pct: form.progress_pct }),
     };
     save.mutate(
@@ -219,27 +219,6 @@ export default function UnitForm({
         </>
       )}
 
-      {projectId !== null &&
-        (detail.data?.phases?.length ? (
-          <Field
-            label="期別（標段）"
-            hint="這是【工程的分期】，不是分期付款。合約寫「第一期全數簽收後請款」時，系統靠它判斷哪些批次算第一期"
-          >
-            <Select
-              value={form.phase}
-              onChange={set("phase")}
-              options={detail.data.phases.map((p) => ({ value: p.id, label: p.name }))}
-              placeholder="不分期（以全案為範圍）"
-              className="w-full"
-            />
-          </Field>
-        ) : (
-          <p className="mb-3 rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
-            這個專案還沒有分期。若合約是分期請款（第一期／第二期…），
-            請到<strong>專案頁展開該案 → 期別</strong>建立，建好後這裡就會出現選項。
-          </p>
-        ))}
-
       <Field label="名稱" required error={error?.fieldError("name")}>
         <input
           value={form.name}
@@ -272,90 +251,62 @@ export default function UnitForm({
           </div>
           <p className="-mt-1 mb-3 text-[11px] leading-relaxed text-ink-3">
             這是<strong>整批的總量</strong>。完成度算的是「目前這一站做了幾支」，
-            換站會歸零重新算——24 支在「加工」做完，到「品檢」是要重新檢 24 支。
+            換站會歸零重新算。
           </p>
-
-          <Field
-            label="總重量 (kg)"
-            hint={
-              canEditWeight
-                ? "★ 分批請款的計算基數。首次觸發後會被鎖定，之後要改必須綁變更追加單"
-                : "你的角色不能填總重量（決策 D19：職能分離）。請由廠長或專案負責人填寫"
-            }
-            error={error?.fieldError("total_weight_kg")}
-          >
+        </>
+      ) : (
+        <>
+          <Field label="目前這一站的完成度 (%)">
             <input
               type="number"
               inputMode="decimal"
-              value={form.total_weight_kg}
-              onChange={(e) => set("total_weight_kg")(e.target.value)}
-              disabled={!canEditWeight}
+              min={0}
+              max={100}
+              value={form.progress_pct}
+              onChange={(e) => set("progress_pct")(e.target.value)}
               className={inputClass}
             />
           </Field>
+          <Field label="分包商" hint="做這個工項的是誰">
+            <Select
+              value={form.subcontractor}
+              onChange={set("subcontractor")}
+              options={(vendors.data?.results ?? []).map((v) => ({ value: v.id, label: v.name }))}
+              placeholder="未指定"
+              className="w-full"
+            />
+          </Field>
+          {!unit && form.subcontractor && (
+            <Field
+              label="分包金額（未稅）"
+              hint="填了會自動建立分包合約（金流→應付），這個案子的成本從此算得出來。之後包商每期送單，在那裡登錄計價"
+            >
+              <input
+                type="number"
+                inputMode="numeric"
+                value={form.subcontract_amount}
+                onChange={(e) => set("subcontract_amount")(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          )}
         </>
-      ) : (
-        <Field label="目前這一站的完成度 (%)" hint="土建以監造查驗通過的完成度為準">
-          <input
-            type="number"
-            inputMode="decimal"
-            min={0}
-            max={100}
-            value={form.progress_pct}
-            onChange={(e) => set("progress_pct")(e.target.value)}
-            className={inputClass}
-          />
-        </Field>
       )}
 
-      <Field label="指派給" hint="被指派的人會在「我的工作」看到這一筆">
-        <Select
-          value={form.assignee}
-          onChange={set("assignee")}
-          options={(options?.users ?? []).map((u) => ({ value: u.id, label: u.name }))}
-          placeholder="未指派"
-          className="w-full"
+      <Field label="預計完成">
+        <input
+          type="date"
+          value={form.plan_end}
+          onChange={(e) => set("plan_end")(e.target.value)}
+          className={inputClass}
         />
       </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="施作方式">
-          <Select
-            value={form.work_mode}
-            onChange={set("work_mode")}
-            options={options?.work_mode ?? []}
-            className="w-full"
-          />
-        </Field>
-        <Field label="預計完成">
-          <input
-            type="date"
-            value={form.plan_end}
-            onChange={(e) => set("plan_end")(e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      {form.work_mode === "outsource" && (
-        <Field label="預計出廠日" hint="超過這一天還沒回廠，會出現在「需要關注」">
-          <input
-            type="date"
-            value={form.outsource_due_date}
-            onChange={(e) => set("outsource_due_date")(e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-      )}
 
       <Field label="備註">
         <input value={form.note} onChange={(e) => set("note")(e.target.value)} className={inputClass} />
       </Field>
 
-      <FormErrors
-        error={error}
-        handled={["project", "template", "name", "qty_total", "total_weight_kg"]}
-      />
+      <FormErrors error={error} handled={["project", "template", "name", "qty_total"]} />
 
       <div className="flex gap-2">
         <Button onClick={close} className="flex-1">

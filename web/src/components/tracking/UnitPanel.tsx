@@ -1,41 +1,39 @@
 /**
  * 追蹤單元操作面板
  *
- * 這是整個系統實際「做事」的地方——推進、回退、回報進度、登錄簽收
+ * 這是「補登進度」的地方——推進、回退、回報進度
  * 全部收在同一個面板裡，因為使用者心裡想的是「處理這一批」，
  * 不是「我要去回報進度那個功能」。
  *
  * 按鈕顯不顯示由後端的 can_* 決定，前端不重寫一次權限判斷。
  */
-import { ArrowLeft, ArrowRight, History, Minus, Pencil, PenLine, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, History, Minus, Pencil, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { ApiError } from "@/api/client";
 import {
   useMoveStage,
   useReportProgress,
-  useSignoff,
   useStageLogs,
   useTrackingUnit,
 } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { TrackingCard } from "@/api/types";
+import AttachmentSection from "@/components/attachments/AttachmentSection";
 import UnitForm from "@/components/forms/UnitForm";
 import {
   Button,
-  DisabledHint,
   Field,
   FormErrors,
   inputClass,
   Modal,
   ProgressBar,
-  Select,
   Spinner,
   StatusBadge,
 } from "@/components/ui";
-import { describeSideEffects, useToast } from "@/components/ui/Toast";
+import { useToast } from "@/components/ui/Toast";
 
-export type PanelMode = "view" | "advance" | "rollback" | "report" | "signoff" | "history";
+export type PanelMode = "view" | "advance" | "rollback" | "report" | "history";
 type Mode = PanelMode;
 
 export default function UnitPanel({
@@ -76,8 +74,6 @@ export default function UnitPanel({
           <HistoryMode id={detail.id} back={() => setMode("view")} />
         ) : mode === "report" ? (
           <ReportMode detail={detail} back={() => setMode("view")} />
-        ) : mode === "signoff" ? (
-          <SignoffMode detail={detail} back={() => setMode("view")} />
         ) : (
           <MoveMode
             detail={detail}
@@ -113,7 +109,6 @@ function ViewMode({
       <div className="flex flex-wrap items-center gap-2 text-xs text-ink-2">
         <span className="font-mono text-ink-3">{detail.code}</span>
         <span>{detail.project_name}</span>
-        {detail.phase_name && <span className="text-ink-3">· {detail.phase_name}</span>}
         <StatusBadge status={detail.status} size="xs" />
         {user?.permissions.edit_tracking && (
           <button
@@ -145,8 +140,6 @@ function ViewMode({
               aria-current={current ? "step" : undefined}
             >
               {stage.name}
-              {stage.requires_signoff && <PenLine size={10} aria-label="需簽收" />}
-              {stage.is_billing_trigger && <span aria-label="觸發請款">💰</span>}
             </li>
           );
         })}
@@ -170,49 +163,15 @@ function ViewMode({
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
         <Row label="目前階段" value={`${detail.stage_name}（第 ${detail.stage_seq} / ${detail.stage_total} 站）`} />
         <Row label="停留天數" value={`${detail.days_in_stage} 天`} />
-        <Row label="負責人" value={detail.assignee_name || "未指派"} />
+        {detail.subcontractor_name && <Row label="分包商" value={detail.subcontractor_name} />}
         <Row label="預計完成" value={detail.plan_end ?? "未設定"} />
-        {detail.total_weight_kg && (
-          <Row label="總重量" value={`${(Number(detail.total_weight_kg) / 1000).toFixed(1)} 噸`} />
-        )}
-        {detail.outsource_vendor_name && (
-          <Row
-            label="外包協力廠"
-            value={`${detail.outsource_vendor_name}${
-              detail.outsource_due_date ? `（預計 ${detail.outsource_due_date} 回廠）` : ""
-            }`}
-          />
-        )}
-        {detail.signoff_date && (
-          <Row
-            label="簽收"
-            value={`${detail.signoff_date} · ${detail.signoff_by_name}${
-              detail.signoff_doc_no ? ` · ${detail.signoff_doc_no}` : ""
-            }`}
-          />
-        )}
       </dl>
-
-      {detail.is_awaiting_signoff && (
-        <p
-          className="mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed"
-          style={{ background: "var(--color-atrisk-bg)", color: "var(--color-atrisk)" }}
-        >
-          已進場，等待業主／監造簽收。<strong>登錄簽收後才會觸發請款</strong>。
-        </p>
-      )}
 
       <div className="mt-5 grid grid-cols-2 gap-2">
         {detail.can_report && (
           <Button onClick={() => setMode("report")}>
             <Plus size={14} />
             回報進度
-          </Button>
-        )}
-        {detail.can_signoff && (
-          <Button variant="primary" onClick={() => setMode("signoff")}>
-            <PenLine size={14} />
-            登錄簽收
           </Button>
         )}
         {detail.can_advance && (
@@ -231,6 +190,13 @@ function ViewMode({
           <History size={14} />
           查看異動歷程
         </Button>
+      </div>
+
+      {/* 現場照片、檢驗報告、簽收單掃描。
+          簽收單特別重要：日後業主說「沒收到」，系統裡有簽收人、日期、單號，
+          再加上那張單的照片，爭議就結束了 */}
+      <div className="mt-4">
+        <AttachmentSection target="tracking-unit" id={detail.id} defaultCategory="photo" compact />
       </div>
     </div>
   );
@@ -256,14 +222,12 @@ function MoveMode({
   back: () => void;
 }) {
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState("");
   const move = useMoveStage();
   const toast = useToast();
   const target = detail.stages.find(
     (s) => s.seq === detail.stage_seq + (direction === "forward" ? 1 : -1),
   );
   const error = move.error instanceof ApiError ? move.error : null;
-  const blocked = direction === "backward" && (!reason || !note.trim());
 
   function submit() {
     move.mutate(
@@ -271,15 +235,12 @@ function MoveMode({
         id: detail.id,
         direction,
         note,
-        reason_category: reason,
         expected_stage_id: detail.stage_id,
       },
       {
         onSuccess: (result) => {
-          const { severity, lines } = describeSideEffects(result);
-          toast.show(
+          toast.success(
             `${detail.name} ${direction === "forward" ? "已推進至" : "已退回"} ${result.unit.stage_name}`,
-            { severity, lines },
           );
           back();
         },
@@ -293,31 +254,9 @@ function MoveMode({
         {detail.stage_name} → <strong className="text-ink">{target?.name}</strong>
       </p>
 
-      {direction === "backward" && (
-        <>
-          <p
-            className="mb-3 rounded-lg px-3 py-2 text-xs leading-relaxed"
-            style={{ background: "var(--color-atrisk-bg)", color: "var(--color-atrisk)" }}
-          >
-            回退會把這一批標記為「注意」，第二次回退升級為「延誤」，並通知專案負責人。
-            原因會計入品質失敗成本統計。
-          </p>
-          <Field label="回退原因" required>
-            <Select
-              value={reason}
-              onChange={setReason}
-              options={detail.rollback_reasons}
-              placeholder="請選擇"
-              className="w-full"
-            />
-          </Field>
-        </>
-      )}
-
       <Field
         label="說明"
-        required={direction === "backward"}
-        hint={direction === "backward" ? "寫清楚發生什麼事，之後查得回來" : "選填"}
+        hint={direction === "backward" ? "退回原因寫一下，之後查得回來" : "選填"}
       >
         <textarea
           value={note}
@@ -329,10 +268,6 @@ function MoveMode({
 
       <FormErrors error={error} />
 
-      <DisabledHint show={blocked}>
-        {!reason ? "請先選擇回退原因" : "請填寫說明後才能送出"}
-      </DisabledHint>
-
       <div className="flex gap-2">
         <Button onClick={back} className="flex-1">
           取消
@@ -341,7 +276,6 @@ function MoveMode({
           variant={direction === "forward" ? "primary" : "danger"}
           onClick={submit}
           loading={move.isPending}
-          disabled={blocked}
           className="flex-1"
         >
           確定{direction === "forward" ? "推進" : "回退"}
@@ -468,76 +402,6 @@ function ReportMode({ detail, back }: { detail: Detail; back: () => void }) {
   );
 }
 
-// ── 登錄簽收 ───────────────────────────────────────────────────────
-function SignoffMode({ detail, back }: { detail: Detail; back: () => void }) {
-  const [name, setName] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [docNo, setDocNo] = useState("");
-  const signoff = useSignoff();
-  const toast = useToast();
-  const error = signoff.error instanceof ApiError ? signoff.error : null;
-
-  function submit() {
-    signoff.mutate(
-      { id: detail.id, signoff_by_name: name.trim(), signoff_date: date, signoff_doc_no: docNo },
-      {
-        onSuccess: (result) => {
-          const { severity, lines } = describeSideEffects(result);
-          toast.show(`${detail.name} 已登錄簽收`, {
-            severity: result.billing.triggered ? "good" : severity,
-            lines: [result.billing.progress_text, ...lines],
-          });
-          back();
-        },
-      },
-    );
-  }
-
-  return (
-    <div>
-      <p
-        className="mb-4 rounded-lg px-3 py-2 text-xs leading-relaxed"
-        style={{ background: "var(--color-ontrack-bg)", color: "var(--color-ontrack)" }}
-      >
-        這是<strong>業主／監造簽收</strong>的紀錄，不是我們送達的紀錄。
-        簽收後系統會依合約條件判斷要不要轉為可請款。
-      </p>
-
-      <Field label="簽收人" required hint="業主或監造單位實際簽名的人">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
-      </Field>
-      <Field label="簽收日期" required>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className={inputClass}
-        />
-      </Field>
-      <Field label="簽收單號" hint="選填，之後對帳用">
-        <input value={docNo} onChange={(e) => setDocNo(e.target.value)} className={inputClass} />
-      </Field>
-
-      <FormErrors error={error} />
-
-      <div className="flex gap-2">
-        <Button onClick={back} className="flex-1">
-          取消
-        </Button>
-        <Button
-          variant="primary"
-          onClick={submit}
-          loading={signoff.isPending}
-          disabled={!name.trim()}
-          className="flex-1"
-        >
-          登錄簽收
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ── 歷程 ───────────────────────────────────────────────────────────
 function HistoryMode({ id, back }: { id: number; back: () => void }) {
   const { data: logs, isLoading } = useStageLogs(id);
@@ -577,7 +441,6 @@ function HistoryMode({ id, back }: { id: number; back: () => void }) {
                 {log.pct_at_exit != null && (
                   <p className="text-ink-2">離開時完成度 {Number(log.pct_at_exit)}%</p>
                 )}
-                {log.reason_label && <p className="text-ink-2">原因：{log.reason_label}</p>}
                 {log.note && <p className="text-ink-2">{log.note}</p>}
                 <p className="mt-0.5 text-ink-3">
                   {new Date(log.moved_at).toLocaleString("zh-TW")} · {log.moved_by_name}

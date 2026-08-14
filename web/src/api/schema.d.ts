@@ -120,6 +120,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0.1/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 列出某個物件的附件、上傳新附件。 */
+        get: operations["attachments_list"];
+        put?: never;
+        /** @description 列出某個物件的附件、上傳新附件。 */
+        post: operations["attachments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/attachments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 下載、預覽、刪除。 */
+        get: operations["attachments_retrieve"];
+        put?: never;
+        post?: never;
+        /** @description 下載、預覽、刪除。 */
+        delete: operations["attachments_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/attachments/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 下載、預覽、刪除。 */
+        get: operations["attachments_download_retrieve"];
+        put?: never;
+        post?: never;
+        /** @description 下載、預覽、刪除。 */
+        delete: operations["attachments_download_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0.1/notifications": {
         parameters: {
             query?: never;
@@ -417,50 +471,6 @@ export interface paths {
         patch: operations["departments_partial_update"];
         trace?: never;
     };
-    "/api/v0.1/items": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 物品主檔。
-         *
-         *     維護留在 Django Admin：欄位依料型不同（鋼板問厚寬長、H型鋼問腹板翼板厚），
-         *     Admin 的表單處理這種情況比自己刻一個好（決策 D26）。
-         */
-        get: operations["items_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/items/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 物品主檔。
-         *
-         *     維護留在 Django Admin：欄位依料型不同（鋼板問厚寬長、H型鋼問腹板翼板厚），
-         *     Admin 的表單處理這種情況比自己刻一個好（決策 D26）。
-         */
-        get: operations["items_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v0.1/projects": {
         parameters: {
             query?: never;
@@ -564,74 +574,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/project-phases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 期別（標段）。
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-         *     靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-         */
-        get: operations["project_phases_list"];
-        put?: never;
-        /**
-         * @description 期別（標段）。
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-         *     靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-         */
-        post: operations["project_phases_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/project-phases/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 期別（標段）。
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-         *     靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-         */
-        get: operations["project_phases_retrieve"];
-        /**
-         * @description 期別（標段）。
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-         *     靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-         */
-        put: operations["project_phases_update"];
-        post?: never;
-        /**
-         * @description 期別（標段）。
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-         *     靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-         */
-        delete: operations["project_phases_destroy"];
-        options?: never;
-        head?: never;
-        /**
-         * @description 期別（標段）。
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-         *     靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-         */
-        patch: operations["project_phases_partial_update"];
         trace?: never;
     };
     "/api/v0.1/change-orders": {
@@ -754,33 +696,8 @@ export interface paths {
          *     刻意**不分頁**，但改用兩道硬限制守住記憶體：
          *       · 必須指定 project 或 unit_type（不讓人一次撈全公司）
          *       · 單次最多 300 張卡，超過回傳計數並要求縮小範圍
-         *
-         *     原因：看板的意義就是「一眼看完」，分頁的看板沒有意義；
-         *     但無上限查詢在 8GB 主機上是不能開的門（決策 D07）。
          */
         get: operations["tracking_units_board_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/tracking-units/my-work": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 指派給我的工作，依急迫性排序。
-         *
-         *     排序不是給人選的——現場人員打開手機就該看到「最該做的那一件」在最上面。
-         *     順序：延誤 → 注意 → 正常；同級內停滯久的在前。
-         */
-        get: operations["tracking_units_my_work_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -855,13 +772,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * @description 推進或回退一個階段。
-         *
-         *     回傳副作用（觸發請款、需要簽收、狀態變更）——
-         *     前端據此顯示「已觸發第一期請款 210 萬」之類的提示，
-         *     而不是讓使用者按完之後不知道發生了什麼。
-         */
+        /** @description 推進或回退一個階段。 */
         post: operations["tracking_units_move_stage_create"];
         delete?: never;
         options?: never;
@@ -903,33 +814,10 @@ export interface paths {
         /**
          * @description 回報進度。
          *
-         *     用 delta（+5）而不是絕對值——兩個師傅同時回報 +5 會正確加 10；
+         *     用 delta（+5）而不是絕對值——兩個人同時回報 +5 會正確加 10；
          *     用絕對值的話後者會覆蓋前者，少算 5 支。
          */
         post: operations["tracking_units_report_progress_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/tracking-units/{id}/signoff": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description 登錄進場簽收 —— 這是觸發請款的動作。
-         *
-         *     與推進階段分開：進入「進場簽收」是我們的動作，
-         *     簽收是業主的動作。分開後，「已送到但沒簽」的批次會堆在看板上，
-         *     請款卡在哪一眼看見（決策 D12／D13）。
-         */
-        post: operations["tracking_units_signoff_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1009,38 +897,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description 請款里程碑 —— 合約上寫的那幾條。
-         *
-         *     與請款事件（BillingClaim）分兩層，因為 `per_batch` 觸發時
-         *     一條里程碑會產生 N 筆可請款事件。
-         */
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
         get: operations["billing_milestones_list"];
         put?: never;
-        /**
-         * @description 請款里程碑 —— 合約上寫的那幾條。
-         *
-         *     與請款事件（BillingClaim）分兩層，因為 `per_batch` 觸發時
-         *     一條里程碑會產生 N 筆可請款事件。
-         */
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
         post: operations["billing_milestones_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/billing-milestones/setup-check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 請款設定檢查：逐項告訴使用者還缺什麼、為什麼重要、該去哪裡補 */
-        get: operations["billing_milestones_setup_check_retrieve"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1054,7 +915,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 請款總覽：四個狀態各有多少錢。 */
+        /** @description 應收總覽：四個狀態各有多少錢，加上「放著沒開單」的提醒。 */
         get: operations["billing_milestones_summary_retrieve"];
         put?: never;
         post?: never;
@@ -1071,111 +932,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description 請款里程碑 —— 合約上寫的那幾條。
-         *
-         *     與請款事件（BillingClaim）分兩層，因為 `per_batch` 觸發時
-         *     一條里程碑會產生 N 筆可請款事件。
-         */
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
         get: operations["billing_milestones_retrieve"];
-        /**
-         * @description 請款里程碑 —— 合約上寫的那幾條。
-         *
-         *     與請款事件（BillingClaim）分兩層，因為 `per_batch` 觸發時
-         *     一條里程碑會產生 N 筆可請款事件。
-         */
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
         put: operations["billing_milestones_update"];
         post?: never;
-        /**
-         * @description 請款里程碑 —— 合約上寫的那幾條。
-         *
-         *     與請款事件（BillingClaim）分兩層，因為 `per_batch` 觸發時
-         *     一條里程碑會產生 N 筆可請款事件。
-         */
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
         delete: operations["billing_milestones_destroy"];
         options?: never;
         head?: never;
-        /**
-         * @description 請款里程碑 —— 合約上寫的那幾條。
-         *
-         *     與請款事件（BillingClaim）分兩層，因為 `per_batch` 觸發時
-         *     一條里程碑會產生 N 筆可請款事件。
-         */
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
         patch: operations["billing_milestones_partial_update"];
         trace?: never;
     };
-    "/api/v0.1/billing-milestones/{id}/manual-claim": {
+    "/api/v0.1/billing-milestones/{id}/logs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        /**
-         * @description 人工建立一筆可請款事件。
-         *
-         *     給 `trigger_type = manual` 的里程碑用——有些合約條件系統判不出來
-         *     （如「業主內部簽核完成」），就讓會計自己按。
-         */
-        post: operations["billing_milestones_manual_claim_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/billing-milestones/{id}/unlock-weight-basis": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description 解鎖已鎖定的重量分母。
-         *
-         *     分母是「這期總共幾噸」，分批請款的每一筆金額都由它算出來。
-         *     鎖定後要改，必須綁一張**已核准的變更追加單**——
-         *     這是把「要改就得重簽合約」寫成程式碼（決策 D20）。
-         */
-        post: operations["billing_milestones_unlock_weight_basis_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/billing-claims": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 請款事件 —— 實際能開發票的那一筆錢。 */
-        get: operations["billing_claims_list"];
-        put?: never;
-        /** @description 請款事件 —— 實際能開發票的那一筆錢。 */
-        post: operations["billing_claims_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/billing-claims/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 請款事件 —— 實際能開發票的那一筆錢。 */
-        get: operations["billing_claims_retrieve"];
+        /** @description 應收款：未到 → 可請款 → 已請款 → 已收款。 */
+        get: operations["billing_milestones_logs_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1184,24 +962,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v0.1/billing-claims/{id}/logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 請款事件 —— 實際能開發票的那一筆錢。 */
-        get: operations["billing_claims_logs_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/billing-claims/{id}/transition": {
+    "/api/v0.1/billing-milestones/{id}/transition": {
         parameters: {
             query?: never;
             header?: never;
@@ -1211,19 +972,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description 狀態轉換：可請款 → 已請款 → 已收款。
+         * @description 狀態轉換。
          *
          *     往回轉（打錯了）必須填原因，並且留在不可竄改的歷程裡——
          *     錢的狀態被改過而沒人知道，是查帳時最麻煩的事。
          */
-        post: operations["billing_claims_transition_create"];
+        post: operations["billing_milestones_transition_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v0.1/production-lines": {
+    "/api/v0.1/cashflow/forecast": {
         parameters: {
             query?: never;
             header?: never;
@@ -1231,12 +992,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description 產線狀態。
+         * @description 未來哪個月會缺錢。
          *
-         *     P1 由廠長人工更新，回答「機台現在在忙什麼」。
-         *     P3 導入報工後改由系統計算 OEE，這個寫入端點就會退場（誠實標註，避免以為已經自動化）。
+         *     只給經營者與會計——這是全公司的資金狀況。
+         *     專案負責人看得到自己案子的損益（見下面的 ProjectPnlView），
+         *     但不需要看到公司整體的資金部位。
          */
-        get: operations["production_lines_list"];
+        get: operations["cashflow_forecast_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1245,7 +1007,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v0.1/production-lines/{id}": {
+    "/api/v0.1/projects/{id}/pnl": {
         parameters: {
             query?: never;
             header?: never;
@@ -1253,35 +1015,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description 產線狀態。
+         * @description 單一專案的損益：有效合約額 − 該案工程成本。
          *
-         *     P1 由廠長人工更新，回答「機台現在在忙什麼」。
-         *     P3 導入報工後改由系統計算 OEE，這個寫入端點就會退場（誠實標註，避免以為已經自動化）。
+         *     專案負責人看得到自己的案子——他要為這個數字負責，
+         *     所以他必須看得到它。
          */
-        get: operations["production_lines_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * @description 產線狀態。
-         *
-         *     P1 由廠長人工更新，回答「機台現在在忙什麼」。
-         *     P3 導入報工後改由系統計算 OEE，這個寫入端點就會退場（誠實標註，避免以為已經自動化）。
-         */
-        patch: operations["production_lines_partial_update"];
-        trace?: never;
-    };
-    "/api/v0.1/assets/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 資產總覽統計卡片 */
-        get: operations["assets_summary_retrieve"];
+        get: operations["projects_pnl_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1290,7 +1029,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v0.1/assets": {
+    "/api/v0.1/subcontracts": {
         parameters: {
             query?: never;
             header?: never;
@@ -1298,27 +1037,25 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description 個體型資產 —— 工具與設備。
+         * @description 分包合約
          *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
+         *     回答的問題：「這個案子我們要付給誰、多少、什麼時候付」。
          */
-        get: operations["assets_list"];
+        get: operations["subcontracts_list"];
         put?: never;
         /**
-         * @description 個體型資產 —— 工具與設備。
+         * @description 分包合約
          *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
+         *     回答的問題：「這個案子我們要付給誰、多少、什麼時候付」。
          */
-        post: operations["assets_create"];
+        post: operations["subcontracts_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v0.1/assets/{id}": {
+    "/api/v0.1/subcontracts/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1326,39 +1063,142 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description 個體型資產 —— 工具與設備。
+         * @description 分包合約
          *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
+         *     回答的問題：「這個案子我們要付給誰、多少、什麼時候付」。
          */
-        get: operations["assets_retrieve"];
+        get: operations["subcontracts_retrieve"];
         /**
-         * @description 個體型資產 —— 工具與設備。
+         * @description 分包合約
          *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
+         *     回答的問題：「這個案子我們要付給誰、多少、什麼時候付」。
          */
-        put: operations["assets_update"];
+        put: operations["subcontracts_update"];
         post?: never;
         /**
-         * @description 個體型資產 —— 工具與設備。
+         * @description 分包合約
          *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
+         *     回答的問題：「這個案子我們要付給誰、多少、什麼時候付」。
          */
-        delete: operations["assets_destroy"];
+        delete: operations["subcontracts_destroy"];
         options?: never;
         head?: never;
         /**
-         * @description 個體型資產 —— 工具與設備。
+         * @description 分包合約
          *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
+         *     回答的問題：「這個案子我們要付給誰、多少、什麼時候付」。
          */
-        patch: operations["assets_partial_update"];
+        patch: operations["subcontracts_partial_update"];
         trace?: never;
     };
-    "/api/v0.1/assets/{id}/move": {
+    "/api/v0.1/payables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        get: operations["payables_list"];
+        put?: never;
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        post: operations["payables_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/payables/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 三個狀態各有多少錢，以及逾期未付的。 */
+        get: operations["payables_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/payables/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        get: operations["payables_retrieve"];
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        put: operations["payables_update"];
+        post?: never;
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        delete: operations["payables_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        patch: operations["payables_partial_update"];
+        trace?: never;
+    };
+    "/api/v0.1/payables/{id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 應付款項
+         *
+         *     跟應收款對稱：狀態往前推、往回轉要填原因、
+         *     每一步留不可竄改的歷程。
+         */
+        get: operations["payables_logs_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/payables/{id}/transition": {
         parameters: {
             query?: never;
             header?: never;
@@ -1368,169 +1208,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description 派用／歸還／移轉／送修。
+         * @description 狀態轉換：待計價 → 已核可 → 已付款。
          *
-         *     一個動作同時改位置、持有人、專案三者，並留下不可竄改的異動紀錄——
-         *     「這支扭力扳手上個月在誰手上」要查得到。
+         *     兩道權限刻意分開（職能分離）：
+         *       · `approve_payable` 決定「這筆該不該付、付多少」——只有經營者
+         *       · `pay_payable`     執行付款並登錄——經營者與會計
          */
-        post: operations["assets_move_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/assets/{id}/movements": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 個體型資產 —— 工具與設備。
-         *
-         *     問的問題是「在誰手上、用在哪個案子、該校驗了沒」，
-         *     與建材（問「還剩多少」）根本不同，所以是兩個端點而不是一個。
-         */
-        get: operations["assets_movements_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/lots": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 數量型庫存 —— 建材與零件耗材。
-         *
-         *     帶出型號、材質、長寬高與實際餘料尺寸，
-         *     因為「找一支 6M 以上的 H300 餘料」是每天實際會發生的查詢。
-         */
-        get: operations["lots_list"];
-        put?: never;
-        /**
-         * @description 入庫建檔。
-         *
-         *     建立批號的同時寫一筆入庫異動——兩者在同一個交易裡，
-         *     不會出現「有庫存但查不到怎麼來的」。
-         */
-        post: operations["lots_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/lots/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 數量型庫存 —— 建材與零件耗材。
-         *
-         *     帶出型號、材質、長寬高與實際餘料尺寸，
-         *     因為「找一支 6M 以上的 H300 餘料」是每天實際會發生的查詢。
-         */
-        get: operations["lots_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/lots/{id}/adjust": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description 盤點調整 */
-        post: operations["lots_adjust_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/lots/{id}/issue": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description 領用出庫 */
-        post: operations["lots_issue_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/lots/{id}/transactions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 這一批的出入庫歷程 */
-        get: operations["lots_transactions_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/locations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 位置階層。倉庫→儲位、工地、外包廠、車輛。 */
-        get: operations["locations_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/locations/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description 位置階層。倉庫→儲位、工地、外包廠、車輛。 */
-        get: operations["locations_retrieve"];
-        put?: never;
-        post?: never;
+        post: operations["payables_transition_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1598,373 +1282,104 @@ export interface components {
             note?: string;
         };
         /**
-         * @description * `normal` - 正常
-         *     * `slow` - 緩動
-         *     * `stagnant` - 滯銷
-         *     * `dead` - 呆滯
-         *     * `scrap_candidate` - 報廢候選
-         * @enum {string}
-         */
-        AgingStatusEnum: "normal" | "slow" | "stagnant" | "dead" | "scrap_candidate";
-        /**
          * @description * `project_main` - 專案主線
          *     * `steel_batch` - 鋼構構件批次
          *     * `civil_work_item` - 土建工項
          * @enum {string}
          */
         AppliesToEnum: "project_main" | "steel_batch" | "civil_work_item";
-        /**
-         * @description 派用／歸還／移轉。一個動作同時改位置、持有人、專案三者，
-         *     並留下不可竄改的異動紀錄。
-         */
-        AssetMoveRequest: {
-            movement_type: string;
-            to_location?: number | null;
-            to_holder?: number | null;
-            to_project?: number | null;
-            note?: string;
-        };
-        /**
-         * @description * `idle` - 閒置可用
-         *     * `in_use` - 使用中
-         *     * `lent` - 借出
-         *     * `maintenance` - 維修中
-         *     * `calibration` - 校驗中
-         *     * `scrapped` - 報廢
-         *     * `lost` - 遺失
-         * @enum {string}
-         */
-        AssetStatusEnum: "idle" | "in_use" | "lent" | "maintenance" | "calibration" | "scrapped" | "lost";
-        /**
-         * @description 個體型資產 —— 工具與設備。
-         *
-         *     回答的是「在誰手上、用在哪個案子、放在哪、該校驗了沒」。
-         *     與數量型的建材（Lot）分開，因為問的問題根本不同：
-         *     建材問「還剩多少」，工具問「在誰手上」。
-         */
-        AssetUnit: {
+        Attachment: {
             readonly id: number;
+            /** 原始檔名 */
+            original_name: string;
             /**
-             * 財產編號
-             * @description 如 TL-0031
+             * 檔案大小
+             * Format: int64
              */
-            asset_no: string;
-            /** 物品 */
-            item: number;
-            readonly item_code: string;
-            readonly item_name: string;
-            readonly item_kind: string;
-            /** 製造商序號 */
-            serial_no?: string;
-            /** 廠牌 */
-            brand?: string;
-            /** 型號 */
-            model?: string;
-            /** 目前位置 */
-            location: number;
-            readonly location_name: string;
-            readonly location_path: string;
-            /** 目前持有人 */
-            holder?: number | null;
-            /** @default  */
-            readonly holder_name: string;
-            /** 目前用於專案 */
-            current_project?: number | null;
-            /** @default  */
-            readonly current_project_name: string;
-            /** @default  */
-            readonly current_project_code: string;
-            /** 狀態 */
-            asset_status?: components["schemas"]["AssetStatusEnum"];
-            readonly status_label: string;
+            size_bytes: number;
+            readonly size_display: string;
+            /** MIME 類型 */
+            mime_type?: string;
+            readonly ext: string;
             /**
-             * 購置日
-             * Format: date
+             * 分類
+             * @description 一個案子底下可能有二十個檔案。沒有分類就是一坨清單，「合約在哪」會變成一次搜尋而不是一次點擊
+             *
+             *     * `contract` - 合約
+             *     * `drawing` - 圖說
+             *     * `schedule` - 時程表
+             *     * `photo` - 現場照片
+             *     * `inspection` - 檢驗報告
+             *     * `signoff` - 簽收單
+             *     * `invoice` - 發票／請款單
+             *     * `other` - 其他
              */
-            purchase_date?: string | null;
+            category?: components["schemas"]["AttachmentCategoryEnum"];
+            readonly category_label: string;
             /**
-             * 購置成本
-             * Format: decimal
+             * 可預覽
+             * @description 上傳時依**實際** MIME 判定，前端不必再從副檔名猜
              */
-            purchase_cost?: string | null;
+            is_previewable?: boolean;
             /**
-             * 帳面價值
-             * Format: decimal
+             * @description 不能預覽時直接說為什麼，不做「假的預覽按鈕」——
+             *
+             *     按了才跳出「無法預覽」，比一開始就講清楚更糟。
              */
-            book_value?: string | null;
+            readonly no_preview_reason: string;
             /**
-             * 上次保養日
-             * Format: date
+             * SHA-256
+             * @description 同一份合約被傳兩次時看得出來；日後也可用於完整性驗證
              */
-            last_maintenance_date?: string | null;
-            /**
-             * 下次保養日
-             * Format: date
-             */
-            next_maintenance_date?: string | null;
-            /**
-             * 校驗到期日
-             * Format: date
-             * @description 扭力扳手、量具、吊帶、吊具等需定期校驗的器具
-             */
-            calibration_due_date?: string | null;
-            readonly is_calibration_overdue: boolean;
-            readonly is_maintenance_overdue: boolean;
-            /** 照片路徑 */
-            photo?: string;
+            checksum?: string;
             /** 備註 */
             note?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
-        AssetUnitWrite: {
-            /**
-             * 財產編號
-             * @description 如 TL-0031
-             */
-            asset_no: string;
-            /** 物品 */
-            item: number;
-            /** 製造商序號 */
-            serial_no?: string;
-            /** 廠牌 */
-            brand?: string;
-            /** 型號 */
-            model?: string;
-            /** 目前位置 */
-            location: number;
-            /** 目前持有人 */
-            holder?: number | null;
-            /** 目前用於專案 */
-            current_project?: number | null;
-            /** 狀態 */
-            asset_status?: components["schemas"]["AssetStatusEnum"];
-            /**
-             * 購置日
-             * Format: date
-             */
-            purchase_date?: string | null;
-            /**
-             * 購置成本
-             * Format: decimal
-             */
-            purchase_cost?: string | null;
-            /** 折舊年限 */
-            depreciation_years?: number | null;
-            /**
-             * 上次保養日
-             * Format: date
-             */
-            last_maintenance_date?: string | null;
-            /**
-             * 下次保養日
-             * Format: date
-             */
-            next_maintenance_date?: string | null;
-            /**
-             * 校驗到期日
-             * Format: date
-             * @description 扭力扳手、量具、吊帶、吊具等需定期校驗的器具
-             */
-            calibration_due_date?: string | null;
-            /** 照片路徑 */
-            photo?: string;
-            /** 備註 */
-            note?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
-        AssetUnitWriteRequest: {
-            /**
-             * 財產編號
-             * @description 如 TL-0031
-             */
-            asset_no: string;
-            /** 物品 */
-            item: number;
-            /** 製造商序號 */
-            serial_no?: string;
-            /** 廠牌 */
-            brand?: string;
-            /** 型號 */
-            model?: string;
-            /** 目前位置 */
-            location: number;
-            /** 目前持有人 */
-            holder?: number | null;
-            /** 目前用於專案 */
-            current_project?: number | null;
-            /** 狀態 */
-            asset_status?: components["schemas"]["AssetStatusEnum"];
-            /**
-             * 購置日
-             * Format: date
-             */
-            purchase_date?: string | null;
-            /**
-             * 購置成本
-             * Format: decimal
-             */
-            purchase_cost?: string | null;
-            /** 折舊年限 */
-            depreciation_years?: number | null;
-            /**
-             * 上次保養日
-             * Format: date
-             */
-            last_maintenance_date?: string | null;
-            /**
-             * 下次保養日
-             * Format: date
-             */
-            next_maintenance_date?: string | null;
-            /**
-             * 校驗到期日
-             * Format: date
-             * @description 扭力扳手、量具、吊帶、吊具等需定期校驗的器具
-             */
-            calibration_due_date?: string | null;
-            /** 照片路徑 */
-            photo?: string;
-            /** 備註 */
-            note?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
-        /**
-         * @description 請款事件 —— 實際可以開發票的一筆錢。
-         *
-         *     與里程碑分兩層的原因：`per_batch` 觸發時，
-         *     一筆里程碑會產生 N 筆請款事件（每批一筆）。
-         */
-        BillingClaim: {
-            readonly id: number;
-            /** 請款里程碑 */
-            milestone: number;
-            readonly milestone_label: string;
-            readonly project_id: number;
-            readonly project_name: string;
-            /** 序號 */
-            seq: number;
-            /**
-             * 金額
-             * Format: decimal
-             * @description 單位：元。分批請款時＝里程碑金額×(該批噸數÷該期總噸數)
-             */
-            amount: string;
-            /** 來源 */
-            source: components["schemas"]["SourceEnum"];
-            readonly source_label: string;
-            readonly is_auto: boolean;
-            /** 觸發來源批次 */
-            triggered_by_unit?: number | null;
             /** @default  */
-            readonly triggered_by_name: string;
+            readonly uploaded_by_name: string;
             /**
-             * 噸數快照
-             * Format: decimal
-             * @description 產生當時該批的重量，供日後對帳
-             */
-            weight_kg_snapshot?: string | null;
-            /** 狀態 */
-            state?: components["schemas"]["State32fEnum"];
-            readonly state_label: string;
-            /** @description 這筆現在可以轉去哪些狀態。前端不用自己寫狀態機。 */
-            readonly next_states: {
-                [key: string]: unknown;
-            }[];
-            /**
-             * 可請款時間
+             * 上傳時間
              * Format: date-time
              */
-            readonly claimable_at: string;
+            readonly uploaded_at: string;
             /**
-             * 請款日
-             * Format: date
+             * @description 刪除限**上傳者本人或經營者**。
+             *
+             *     合約與簽收單是爭議時的依據。讓任何有編輯權的人都能刪掉別人上傳的合約，
+             *     等於把公司的證據交給運氣。
              */
-            invoice_date?: string | null;
-            /** 請款單號 */
-            invoice_no?: string;
-            /**
-             * 收款日
-             * Format: date
-             */
-            receive_date?: string | null;
-            /** @description 可請款後放幾天了。超過 7 天沒開單就是漏掉的錢。 */
-            readonly days_since_claimable: number | null;
-            /** 備註 */
-            note?: string;
+            readonly can_delete: boolean;
         };
         /**
-         * @description 請款事件 —— 實際可以開發票的一筆錢。
-         *
-         *     與里程碑分兩層的原因：`per_batch` 觸發時，
-         *     一筆里程碑會產生 N 筆請款事件（每批一筆）。
+         * @description * `contract` - 合約
+         *     * `drawing` - 圖說
+         *     * `schedule` - 時程表
+         *     * `photo` - 現場照片
+         *     * `inspection` - 檢驗報告
+         *     * `signoff` - 簽收單
+         *     * `invoice` - 發票／請款單
+         *     * `other` - 其他
+         * @enum {string}
          */
-        BillingClaimRequest: {
-            /** 請款里程碑 */
-            milestone: number;
-            /** 序號 */
-            seq: number;
-            /**
-             * 金額
-             * Format: decimal
-             * @description 單位：元。分批請款時＝里程碑金額×(該批噸數÷該期總噸數)
-             */
-            amount: string;
-            /** 來源 */
-            source: components["schemas"]["SourceEnum"];
-            /** 觸發來源批次 */
-            triggered_by_unit?: number | null;
-            /**
-             * 噸數快照
-             * Format: decimal
-             * @description 產生當時該批的重量，供日後對帳
-             */
-            weight_kg_snapshot?: string | null;
-            /** 狀態 */
-            state?: components["schemas"]["State32fEnum"];
-            /**
-             * 請款日
-             * Format: date
-             */
-            invoice_date?: string | null;
-            /** 請款單號 */
-            invoice_no?: string;
-            /**
-             * 收款日
-             * Format: date
-             */
-            receive_date?: string | null;
-            /** 備註 */
-            note?: string;
-        };
-        /** @description 請款里程碑 —— 合約上寫的那一條。 */
+        AttachmentCategoryEnum: "contract" | "drawing" | "schedule" | "photo" | "inspection" | "signoff" | "invoice" | "other";
+        /** @description 應收款 —— 合約付款條件的一列，同時就是實際請款的那一列。 */
         BillingMilestone: {
             readonly id: number;
             /** 專案 */
             project: number;
             readonly project_name: string;
             readonly project_code: string;
-            /**
-             * 對應期別
-             * @description 決定哪些批次的簽收會觸發它
-             */
-            phase?: number | null;
-            /** @default  */
-            readonly phase_name: string;
             /** 順序 */
             seq: number;
             /**
              * 名稱
-             * @description 如「第一期請款」
+             * @description 如「第一期（簽約）」
              */
             label: string;
             /**
-             * 觸發條件
-             * @description 合約原文，如「第一期構件全數運抵工地並經業主簽收」
+             * 合約條件
+             * @description 合約原文，如「構件全數運抵工地並經業主簽收」。提醒自己何時可以請
              */
-            trigger_desc?: string;
+            condition?: string;
             /**
              * 比例(%)
              * Format: decimal
@@ -1973,268 +1388,121 @@ export interface components {
             /**
              * 金額
              * Format: decimal
-             * @description 系統計算＝有效合約額×比例，唯讀
+             * @description 系統計算＝有效合約額×比例。變更單核准時，尚未請款的列會重算
              */
             amount?: string;
-            /** 觸發方式 */
-            trigger_type?: components["schemas"]["TriggerTypeEnum"];
-            readonly trigger_label: string;
-            /**
-             * 門檻(%)
-             * Format: decimal
-             * @description 觸發方式為「累計重量達門檻」時必填。如 80 表示該期累計簽收噸數達 80%
-             */
-            threshold_pct?: string | null;
-            /**
-             * 指定交貨地點
-             * @description 合約指定的施工案場／業主廠房。簽收地點不符時警告但不阻擋
-             */
-            target_location?: number | null;
-            /** @default  */
-            readonly target_location_name: string;
-            /**
-             * 鎖定分母(kg)
-             * Format: decimal
-             * @description 首次觸發時把該期所有批次的總重量固化。之後新增批次不影響已算過的比例
-             */
-            weight_basis_kg?: string | null;
-            /**
-             * 分母鎖定時間
-             * Format: date-time
-             */
-            weight_basis_locked_at?: string | null;
-            readonly is_weight_basis_locked: boolean;
-            /**
-             * 累計可請金額
-             * Format: decimal
-             */
-            claimable_amount?: string;
-            /**
-             * 累計已請金額
-             * Format: decimal
-             */
-            claimed_amount?: string;
-            /**
-             * 累計已收金額
-             * Format: decimal
-             */
-            received_amount?: string;
-            /** @description 還沒收到的錢＝金額 − 已收款 */
-            readonly outstanding_amount: string;
-            /**
-             * @description 還能再建立多少請款＝金額 − 累計可請。
-             *
-             *     與 outstanding 不同：部分請款後，這筆已經「可請」但還沒「收到」，
-             *     outstanding 還是全額，但已經不能再建新的請款了。
-             */
-            readonly remaining_claimable: string;
-            /** 彙總狀態 */
-            state?: components["schemas"]["BillingMilestoneStateEnum"];
+            /** 狀態 */
+            state?: components["schemas"]["State2f5Enum"];
             readonly state_label: string;
+            /** @description 這筆現在可以轉去哪些狀態。前端不用自己寫狀態機。 */
+            readonly next_states: {
+                [key: string]: unknown;
+            }[];
             /**
-             * 首次可請款時間
+             * 預計請款日
+             * Format: date
+             * @description 現金流預估靠它。填大概的月份即可，之後隨時可改
+             */
+            expected_date?: string | null;
+            /**
+             * 轉可請款時間
              * Format: date-time
-             * @description 用於「可請款逾 7 天未開單」判定
+             * @description 「可請款放了 N 天沒開單」的提醒基準
              */
             claimable_at?: string | null;
+            /**
+             * 請款日
+             * Format: date
+             */
+            invoice_date?: string | null;
+            /** 請款單號 */
+            invoice_no?: string;
+            /**
+             * 預計收款日
+             * Format: date
+             * @description 請款日＋客戶帳期，開單時自動帶入，可覆寫。現金流的收入側靠它落格
+             */
+            due_date?: string | null;
+            /**
+             * 收款日
+             * Format: date
+             */
+            receive_date?: string | null;
+            readonly outstanding_amount: string;
+            /** @description 可請款後放幾天了。超過 7 天沒開單就是漏掉的錢。 */
+            readonly days_since_claimable: number | null;
             /** 備註 */
             note?: string;
-            /**
-             * @description 離觸發還差多少。
-             *
-             *     合約寫「累計 80% 簽收才能請」，這裡就要回答「現在幾 %」——
-             *     否則使用者只知道「還不能請」，不知道還差多遠。
-             */
-            readonly progress: {
-                [key: string]: unknown;
-            };
-            readonly claims: components["schemas"]["BillingClaim"][];
             readonly can_edit: boolean;
         };
-        /** @description 請款里程碑 —— 合約上寫的那一條。 */
-        BillingMilestoneRequest: {
-            /** 專案 */
-            project: number;
-            /**
-             * 對應期別
-             * @description 決定哪些批次的簽收會觸發它
-             */
-            phase?: number | null;
-            /** 順序 */
-            seq: number;
-            /**
-             * 名稱
-             * @description 如「第一期請款」
-             */
-            label: string;
-            /**
-             * 觸發條件
-             * @description 合約原文，如「第一期構件全數運抵工地並經業主簽收」
-             */
-            trigger_desc?: string;
-            /**
-             * 比例(%)
-             * Format: decimal
-             */
-            percentage: string;
-            /**
-             * 金額
-             * Format: decimal
-             * @description 系統計算＝有效合約額×比例，唯讀
-             */
-            amount?: string;
-            /** 觸發方式 */
-            trigger_type?: components["schemas"]["TriggerTypeEnum"];
-            /**
-             * 門檻(%)
-             * Format: decimal
-             * @description 觸發方式為「累計重量達門檻」時必填。如 80 表示該期累計簽收噸數達 80%
-             */
-            threshold_pct?: string | null;
-            /**
-             * 指定交貨地點
-             * @description 合約指定的施工案場／業主廠房。簽收地點不符時警告但不阻擋
-             */
-            target_location?: number | null;
-            /**
-             * 鎖定分母(kg)
-             * Format: decimal
-             * @description 首次觸發時把該期所有批次的總重量固化。之後新增批次不影響已算過的比例
-             */
-            weight_basis_kg?: string | null;
-            /**
-             * 分母鎖定時間
-             * Format: date-time
-             */
-            weight_basis_locked_at?: string | null;
-            /**
-             * 累計可請金額
-             * Format: decimal
-             */
-            claimable_amount?: string;
-            /**
-             * 累計已請金額
-             * Format: decimal
-             */
-            claimed_amount?: string;
-            /**
-             * 累計已收金額
-             * Format: decimal
-             */
-            received_amount?: string;
-            /** 彙總狀態 */
-            state?: components["schemas"]["BillingMilestoneStateEnum"];
-            /**
-             * 首次可請款時間
-             * Format: date-time
-             * @description 用於「可請款逾 7 天未開單」判定
-             */
-            claimable_at?: string | null;
-            /** 備註 */
-            note?: string;
-        };
-        /**
-         * @description * `pending` - 未到
-         *     * `claimable` - 可請款
-         *     * `partial` - 部分請款
-         *     * `invoiced` - 已請款
-         *     * `received` - 已收款
-         * @enum {string}
-         */
-        BillingMilestoneStateEnum: "pending" | "claimable" | "partial" | "invoiced" | "received";
         BillingMilestoneWrite: {
             /** 專案 */
             project: number;
-            /**
-             * 對應期別
-             * @description 決定哪些批次的簽收會觸發它
-             */
-            phase?: number | null;
             /** 順序 */
             seq: number;
             /**
              * 名稱
-             * @description 如「第一期請款」
+             * @description 如「第一期（簽約）」
              */
             label: string;
             /**
-             * 觸發條件
-             * @description 合約原文，如「第一期構件全數運抵工地並經業主簽收」
+             * 合約條件
+             * @description 合約原文，如「構件全數運抵工地並經業主簽收」。提醒自己何時可以請
              */
-            trigger_desc?: string;
+            condition?: string;
             /**
              * 比例(%)
              * Format: decimal
              */
             percentage: string;
-            /** 觸發方式 */
-            trigger_type?: components["schemas"]["TriggerTypeEnum"];
             /**
-             * 門檻(%)
-             * Format: decimal
-             * @description 觸發方式為「累計重量達門檻」時必填。如 80 表示該期累計簽收噸數達 80%
+             * 預計請款日
+             * Format: date
+             * @description 現金流預估靠它。填大概的月份即可，之後隨時可改
              */
-            threshold_pct?: string | null;
-            /**
-             * 指定交貨地點
-             * @description 合約指定的施工案場／業主廠房。簽收地點不符時警告但不阻擋
-             */
-            target_location?: number | null;
+            expected_date?: string | null;
             /** 備註 */
             note?: string;
         };
         BillingMilestoneWriteRequest: {
             /** 專案 */
             project: number;
-            /**
-             * 對應期別
-             * @description 決定哪些批次的簽收會觸發它
-             */
-            phase?: number | null;
             /** 順序 */
             seq: number;
             /**
              * 名稱
-             * @description 如「第一期請款」
+             * @description 如「第一期（簽約）」
              */
             label: string;
             /**
-             * 觸發條件
-             * @description 合約原文，如「第一期構件全數運抵工地並經業主簽收」
+             * 合約條件
+             * @description 合約原文，如「構件全數運抵工地並經業主簽收」。提醒自己何時可以請
              */
-            trigger_desc?: string;
+            condition?: string;
             /**
              * 比例(%)
              * Format: decimal
              */
             percentage: string;
-            /** 觸發方式 */
-            trigger_type?: components["schemas"]["TriggerTypeEnum"];
             /**
-             * 門檻(%)
-             * Format: decimal
-             * @description 觸發方式為「累計重量達門檻」時必填。如 80 表示該期累計簽收噸數達 80%
+             * 預計請款日
+             * Format: date
+             * @description 現金流預估靠它。填大概的月份即可，之後隨時可改
              */
-            threshold_pct?: string | null;
-            /**
-             * 指定交貨地點
-             * @description 合約指定的施工案場／業主廠房。簽收地點不符時警告但不阻擋
-             */
-            target_location?: number | null;
+            expected_date?: string | null;
             /** 備註 */
             note?: string;
         };
         /** @enum {unknown} */
         BlankEnum: "";
         /**
-         * @description * `billing` - 請款
-         *     * `tracking` - 進度
-         *     * `alert` - 警示
-         *     * `asset` - 資產
-         *     * `system` - 系統
+         * @description * `subcontract` - 分包工程
+         *     * `material` - 材料採購
+         *     * `outsource` - 外包加工
+         *     * `transport` - 運輸
          * @enum {string}
          */
-        CategoryEnum: "billing" | "tracking" | "alert" | "asset" | "system";
+        Category651Enum: "subcontract" | "material" | "outsource" | "transport";
         /**
          * @description 金額欄位依角色過濾。
          *
@@ -2338,17 +1606,6 @@ export interface components {
             /** 確認新密碼 */
             confirm_password: string;
         };
-        ClaimTransitionRequest: {
-            to_state: components["schemas"]["ToStateEnum"];
-            /**
-             * Format: date
-             * @description 請款日或收款日
-             */
-            date?: string | null;
-            invoice_no?: string;
-            /** @description 往回轉時必填 */
-            reason?: string;
-        };
         /**
          * @description GET /auth/me 與登入成功時回傳。
          *
@@ -2385,7 +1642,6 @@ export interface components {
             readonly owned_project_ids: number[];
             /** 需修改密碼 */
             must_change_password?: boolean;
-            /** @description 登入後導向哪裡（決策：worker 進「我的工作」，其餘進「營運總覽」） */
             readonly default_route: string;
             /**
              * 超級使用者狀態
@@ -2393,6 +1649,12 @@ export interface components {
              */
             is_superuser?: boolean;
         };
+        /**
+         * @description 客戶。
+         *
+         *     帳期兩欄一起帶：現金流的收入側全靠它推算「錢哪天會到」，
+         *     少了它整個收款側就只能是一片空白。
+         */
         Customer: {
             readonly id: number;
             /** 客戶代號 */
@@ -2405,9 +1667,23 @@ export interface components {
             contact_name?: string;
             /** 聯絡電話 */
             contact_phone?: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90。月結是「請款當月月底再加這些天」，不是從請款日起算
+             */
+            payment_term_days?: number;
+            readonly payment_terms_display: string;
             /** 啟用中 */
             is_active?: boolean;
         };
+        /**
+         * @description 客戶。
+         *
+         *     帳期兩欄一起帶：現金流的收入側全靠它推算「錢哪天會到」，
+         *     少了它整個收款側就只能是一片空白。
+         */
         CustomerDetail: {
             readonly id: number;
             /** 客戶代號 */
@@ -2420,6 +1696,14 @@ export interface components {
             contact_name?: string;
             /** 聯絡電話 */
             contact_phone?: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90。月結是「請款當月月底再加這些天」，不是從請款日起算
+             */
+            payment_term_days?: number;
+            readonly payment_terms_display: string;
             /** 啟用中 */
             is_active?: boolean;
             /** 地址 */
@@ -2441,6 +1725,13 @@ export interface components {
             contact_phone?: string;
             /** 地址 */
             address?: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90。月結是「請款當月月底再加這些天」，不是從請款日起算
+             */
+            payment_term_days?: number;
             /** 備註 */
             note?: string;
             /** 啟用中 */
@@ -2459,6 +1750,13 @@ export interface components {
             contact_phone?: string;
             /** 地址 */
             address?: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90。月結是「請款當月月底再加這些天」，不是從請款日起算
+             */
+            payment_term_days?: number;
             /** 備註 */
             note?: string;
             /** 啟用中 */
@@ -2648,336 +1946,44 @@ export interface components {
              */
             is_active?: boolean;
         };
-        /**
-         * @description 物品主檔。
-         *
-         *     `dimensions` 只回傳該料型用得到、且有填的尺寸——
-         *     鋼板不會出現「腹板厚」，H型鋼不會出現「外徑」。
-         */
-        Item: {
-            readonly id: number;
-            /** 料號 */
-            code: string;
-            /** 品名 */
-            name: string;
-            /** 物品類型 */
-            item_kind: components["schemas"]["ItemKindEnum"];
-            /**
-             * 追蹤方式
-             * @description 數量型用批號管（問還剩多少）；個體型一物一筆（問在誰手上）
-             *
-             *     * `quantity` - 數量型
-             *     * `individual` - 個體型
-             */
-            tracking_mode: components["schemas"]["TrackingModeEnum"];
-            /**
-             * 單位
-             * @description 支／張／組／kg／噸／件
-             */
-            unit_of_measure: string;
-            /** 分類 */
-            category: number;
-            /** @default  */
-            readonly category_name: string;
-            /**
-             * 料型
-             * @description 決定要填哪些尺寸欄位
-             *
-             *     * `plate` - 鋼板
-             *     * `h_beam` - H型鋼
-             *     * `angle` - 角鋼
-             *     * `channel` - 槽鋼
-             *     * `sq_tube` - 方管
-             *     * `rd_tube` - 圓管
-             *     * `rebar` - 鋼筋
-             *     * `bolt` - 螺栓
-             *     * `other` - 其他
-             */
-            profile_type?: components["schemas"]["ProfileTypeEnum"] | components["schemas"]["BlankEnum"];
-            readonly profile_type_label: string;
-            /**
-             * 規格標示
-             * @description 完整規格，如 H400×200×8×13。可由尺寸自動組出，也可手改
-             */
-            spec_label?: string;
-            /**
-             * 材質
-             * @description SS400／SN490B／A36／A572／SD420W
-             */
-            material_grade?: string;
-            /**
-             * 標準
-             * @description CNS／JIS／ASTM
-             */
-            standard?: string;
-            readonly dimensions: {
-                [key: string]: string;
-            };
-            /**
-             * 單位重量(kg)
-             * Format: decimal
-             * @description kg/支 或 kg/m。鋼構論噸計費必備，系統據此自動算總噸數與裝載率
-             */
-            unit_weight_kg?: string | null;
-            /** 表面處理 */
-            surface_treatment?: components["schemas"]["SurfaceTreatmentEnum"] | components["schemas"]["BlankEnum"];
-            readonly surface_label: string;
-            /**
-             * 需材質證明
-             * @description 公共工程通常必要
-             */
-            requires_mill_cert?: boolean;
-            /**
-             * 安全存量
-             * Format: decimal
-             * @description 低於此值時警示採購
-             */
-            safety_stock?: string | null;
-            /**
-             * 標準單價
-             * Format: decimal
-             * @description 單位：新台幣元。成本核算用
-             */
-            standard_cost?: string | null;
-            /** 照片路徑 */
-            photo?: string;
-            /** 備註 */
-            note?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
-        /**
-         * @description * `material` - 建材
-         *     * `part` - 零件耗材
-         *     * `tool` - 工具
-         *     * `equipment` - 設備
-         * @enum {string}
-         */
-        ItemKindEnum: "material" | "part" | "tool" | "equipment";
-        Location: {
-            readonly id: number;
-            /**
-             * 位置代號
-             * @description 如 WH-A-3-2
-             */
-            code: string;
-            /**
-             * 位置名稱
-             * @description 如「A倉3排2層」
-             */
-            name: string;
-            readonly full_path: string;
-            /** 類型 */
-            location_type: components["schemas"]["LocationTypeEnum"];
-            readonly type_label: string;
-            /** 上層位置 */
-            parent?: number | null;
-            /**
-             * 關聯專案
-             * @description 類型為「工地」時必填，讓「料已進場」成為可查詢的事實
-             */
-            project?: number | null;
-            /** @default  */
-            readonly project_name: string;
-            /**
-             * 關聯廠商
-             * @description 類型為「外包廠」時必填，讓送外包的料仍在帳上
-             */
-            vendor?: number | null;
-            /** @default  */
-            readonly vendor_name: string;
-            /** 容量備註 */
-            capacity_note?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
-        /**
-         * @description * `warehouse` - 倉庫
-         *     * `rack` - 儲位
-         *     * `yard` - 置料區
-         *     * `site` - 工地
-         *     * `vendor` - 外包廠
-         *     * `vehicle` - 車輛
-         *     * `office` - 辦公室
-         *     * `scrap` - 廢料區
-         * @enum {string}
-         */
-        LocationTypeEnum: "warehouse" | "rack" | "yard" | "site" | "vendor" | "vehicle" | "office" | "scrap";
         LoginRequest: {
             /** 帳號 */
             username: string;
             /** 密碼 */
             password: string;
         };
-        /**
-         * @description 數量型物品的庫存批 —— 建材與零件耗材。
-         *
-         *     回答的是「還剩多少、在哪、能不能用、放多久了」。
-         *     尺寸與材質從 Item 帶出來，因為「找一支 6M 的 H300」是實際會發生的查詢。
-         */
-        Lot: {
-            readonly id: number;
-            /** 批號 */
-            lot_no: string;
-            /** 物品 */
-            item: number;
-            readonly item_code: string;
-            readonly item_name: string;
-            readonly item_kind: string;
-            /** @default  */
-            readonly spec_label: string;
-            /** @default  */
-            readonly material_grade: string;
-            /** @default  */
-            readonly surface_treatment: string;
-            readonly dimensions: {
-                [key: string]: string;
-            };
-            readonly unit_of_measure: string;
-            /** 目前位置 */
-            location: number;
-            readonly location_name: string;
-            readonly location_path: string;
-            readonly location_type: string;
-            /**
-             * 現有量
-             * Format: decimal
-             */
-            qty_on_hand?: string;
-            /**
-             * 已預留量
-             * Format: decimal
-             */
-            qty_reserved?: string;
+        /** @description 建案時一起填的請款分期，一列一期 */
+        MilestoneRow: {
+            label: string;
             /** Format: decimal */
-            readonly qty_available: string;
-            /** Format: decimal */
-            readonly total_weight_kg: string;
-            /** 狀態 */
-            status?: components["schemas"]["LotStatusEnum"];
-            readonly status_label: string;
-            /** 庫齡狀態 */
-            aging_status?: components["schemas"]["AgingStatusEnum"];
-            readonly aging_label: string;
-            readonly aging_days: number;
-            /** 預留給專案 */
-            reserved_for_project?: number | null;
-            /** @default  */
-            readonly reserved_for_project_name: string;
-            /**
-             * 入庫日
-             * Format: date
-             */
-            received_date?: string | null;
-            /**
-             * 最後異動日
-             * Format: date
-             * @description 庫齡計算基準
-             */
-            last_move_date?: string | null;
-            /** 材質證明編號 */
-            mill_cert_no?: string;
-            /**
-             * 爐號
-             * @description 鋼材追溯用
-             */
-            heat_no?: string;
-            /** 來源採購單 */
-            source_po_no?: string;
-            /**
-             * 餘料
-             * @description 切割後剩下的料頭
-             */
-            is_remnant?: boolean;
-            /**
-             * 來源批號
-             * @description 餘料必填，可追溯回原始材質證明
-             */
-            parent_lot?: number | null;
-            /** @default  */
-            readonly parent_lot_no: string;
-            /**
-             * 實際長度(mm)
-             * Format: decimal
-             * @description 餘料的實際剩餘尺寸，「找料」查詢用
-             */
-            actual_length_mm?: string | null;
-            /**
-             * 實際寬度(mm)
-             * Format: decimal
-             */
-            actual_width_mm?: string | null;
-            /** 備註 */
-            note?: string;
-        };
-        /** @description 盤點調整。原因必填——帳實不符是管理問題，要有人交代。 */
-        LotAdjustRequest: {
-            /**
-             * 實際數量
-             * Format: decimal
-             */
-            new_qty: string;
-            /** 原因 */
-            note: string;
-        };
-        LotIssueRequest: {
-            /**
-             * 領用數量
-             * Format: decimal
-             */
-            qty: string;
-            project?: number | null;
-            /** @description 指定批次時，材料成本會自動歸集到那一批 */
-            tracking_unit?: number | null;
-            note?: string;
-        };
-        /**
-         * @description 入庫建檔。
-         *
-         *     P1 主要用途是**期初盤點**——把倉庫現有的料一次建進系統。
-         *     P2 導入採購後，收料會由採購單帶出來。
-         */
-        LotReceiveRequest: {
-            /** 物品 */
-            item: number;
-            /** 存放位置 */
-            location: number;
-            /**
-             * 數量
-             * Format: decimal
-             */
-            qty: string;
-            lot_no?: string;
-            /** Format: decimal */
-            unit_cost?: string | null;
-            mill_cert_no?: string;
-            heat_no?: string;
-            source_po_no?: string;
-            reserved_for_project?: number | null;
+            percentage: string;
+            condition?: string;
             /** Format: date */
-            received_date?: string | null;
-            note?: string;
+            expected_date?: string | null;
         };
-        /**
-         * @description * `quarantine` - 待驗收
-         *     * `available` - 可用
-         *     * `reserved` - 已預留
-         *     * `issued` - 已領用
-         *     * `hold` - 品質凍結
-         *     * `scrapped` - 已報廢
-         * @enum {string}
-         */
-        LotStatusEnum: "quarantine" | "available" | "reserved" | "issued" | "hold" | "scrapped";
-        /** @description 人工建立請款事件（trigger_type = manual 的里程碑用） */
-        ManualClaimRequest: {
+        /** @description 建案時一起填的請款分期，一列一期 */
+        MilestoneRowRequest: {
+            label: string;
             /** Format: decimal */
-            amount: string;
-            note?: string;
+            percentage: string;
+            condition?: string;
+            /** Format: date */
+            expected_date?: string | null;
+        };
+        MilestoneTransitionRequest: {
+            to_state: components["schemas"]["ToState2f5Enum"];
+            /**
+             * Format: date
+             * @description 請款日或收款日
+             */
+            date?: string | null;
+            invoice_no?: string;
+            /** @description 往回轉時必填 */
+            reason?: string;
         };
         MoveStageRequest: {
             direction: components["schemas"]["DirectionEnum"];
             note?: string;
-            reason_category?: components["schemas"]["ReasonCategoryEnum"] | components["schemas"]["BlankEnum"];
             /** @description 樂觀鎖：前端看到的階段。與現況不符表示有人搶先改了 */
             expected_stage_id?: number;
         };
@@ -2990,7 +1996,7 @@ export interface components {
             /** 跳轉路徑 */
             link_url?: string;
             /** 類別 */
-            category?: components["schemas"]["CategoryEnum"];
+            category?: components["schemas"]["NotificationCategoryEnum"];
             readonly category_label: string;
             /** 已讀 */
             is_read?: boolean;
@@ -3000,36 +2006,14 @@ export interface components {
              */
             readonly created_at: string;
         };
-        PaginatedAssetUnitList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["AssetUnit"][];
-        };
-        PaginatedBillingClaimList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["BillingClaim"][];
-        };
+        /**
+         * @description * `billing` - 請款
+         *     * `tracking` - 進度
+         *     * `alert` - 警示
+         *     * `system` - 系統
+         * @enum {string}
+         */
+        NotificationCategoryEnum: "billing" | "tracking" | "alert" | "system";
         PaginatedBillingMilestoneList: {
             /** @example 123 */
             count: number;
@@ -3090,7 +2074,7 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Employee"][];
         };
-        PaginatedItemList: {
+        PaginatedPayableList: {
             /** @example 123 */
             count: number;
             /**
@@ -3103,22 +2087,7 @@ export interface components {
              * @example http://api.example.org/accounts/?page=2
              */
             previous?: string | null;
-            results: components["schemas"]["Item"][];
-        };
-        PaginatedLotList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["Lot"][];
+            results: components["schemas"]["Payable"][];
         };
         PaginatedProjectListList: {
             /** @example 123 */
@@ -3134,6 +2103,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["ProjectList"][];
+        };
+        PaginatedSubcontractList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Subcontract"][];
         };
         PaginatedTrackingUnitCardList: {
             /** @example 123 */
@@ -3165,101 +2149,32 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["VendorDetail"][];
         };
-        PatchedAssetUnitWriteRequest: {
-            /**
-             * 財產編號
-             * @description 如 TL-0031
-             */
-            asset_no?: string;
-            /** 物品 */
-            item?: number;
-            /** 製造商序號 */
-            serial_no?: string;
-            /** 廠牌 */
-            brand?: string;
-            /** 型號 */
-            model?: string;
-            /** 目前位置 */
-            location?: number;
-            /** 目前持有人 */
-            holder?: number | null;
-            /** 目前用於專案 */
-            current_project?: number | null;
-            /** 狀態 */
-            asset_status?: components["schemas"]["AssetStatusEnum"];
-            /**
-             * 購置日
-             * Format: date
-             */
-            purchase_date?: string | null;
-            /**
-             * 購置成本
-             * Format: decimal
-             */
-            purchase_cost?: string | null;
-            /** 折舊年限 */
-            depreciation_years?: number | null;
-            /**
-             * 上次保養日
-             * Format: date
-             */
-            last_maintenance_date?: string | null;
-            /**
-             * 下次保養日
-             * Format: date
-             */
-            next_maintenance_date?: string | null;
-            /**
-             * 校驗到期日
-             * Format: date
-             * @description 扭力扳手、量具、吊帶、吊具等需定期校驗的器具
-             */
-            calibration_due_date?: string | null;
-            /** 照片路徑 */
-            photo?: string;
-            /** 備註 */
-            note?: string;
-            /** 啟用中 */
-            is_active?: boolean;
-        };
         PatchedBillingMilestoneWriteRequest: {
             /** 專案 */
             project?: number;
-            /**
-             * 對應期別
-             * @description 決定哪些批次的簽收會觸發它
-             */
-            phase?: number | null;
             /** 順序 */
             seq?: number;
             /**
              * 名稱
-             * @description 如「第一期請款」
+             * @description 如「第一期（簽約）」
              */
             label?: string;
             /**
-             * 觸發條件
-             * @description 合約原文，如「第一期構件全數運抵工地並經業主簽收」
+             * 合約條件
+             * @description 合約原文，如「構件全數運抵工地並經業主簽收」。提醒自己何時可以請
              */
-            trigger_desc?: string;
+            condition?: string;
             /**
              * 比例(%)
              * Format: decimal
              */
             percentage?: string;
-            /** 觸發方式 */
-            trigger_type?: components["schemas"]["TriggerTypeEnum"];
             /**
-             * 門檻(%)
-             * Format: decimal
-             * @description 觸發方式為「累計重量達門檻」時必填。如 80 表示該期累計簽收噸數達 80%
+             * 預計請款日
+             * Format: date
+             * @description 現金流預估靠它。填大概的月份即可，之後隨時可改
              */
-            threshold_pct?: string | null;
-            /**
-             * 指定交貨地點
-             * @description 合約指定的施工案場／業主廠房。簽收地點不符時警告但不阻擋
-             */
-            target_location?: number | null;
+            expected_date?: string | null;
             /** 備註 */
             note?: string;
         };
@@ -3292,6 +2207,13 @@ export interface components {
             contact_phone?: string;
             /** 地址 */
             address?: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90。月結是「請款當月月底再加這些天」，不是從請款日起算
+             */
+            payment_term_days?: number;
             /** 備註 */
             note?: string;
             /** 啟用中 */
@@ -3338,50 +2260,73 @@ export interface components {
              */
             is_active?: boolean;
         };
-        /** @description P1 由廠長人工更新。P3 導入報工後改為自動計算，這個端點就會退場。 */
-        PatchedProductionLineWriteRequest: {
-            /** 狀態 */
-            status?: components["schemas"]["Status67eEnum"];
+        PatchedPayableWriteRequest: {
             /**
-             * 當前工單
-             * @description P1 為純文字，P3 改為關聯工單
+             * 分包合約
+             * @description 可空——零星運費、小額採購不必先開合約
              */
-            current_work?: string;
-            /**
-             * 稼動率(%)
-             * Format: decimal
-             * @description P1 人工填寫，P3 由報工資料自動計算 OEE
-             */
-            utilization?: string;
-            /** 今日產出 */
-            today_output?: string;
-        };
-        /**
-         * @description 期別（標段）。
-         *
-         *     ⚠️ 這是**工程的分期**，不是「分期付款」——雖然兩者常常對得起來。
-         *
-         *     它做兩件事：
-         *       1. 把追蹤單元分組（第一期的批次歸第一期）
-         *       2. 決定簽收時觸發哪一筆請款里程碑（里程碑也可以綁期別）
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，
-         *     系統要知道「哪些批次算第一期」——靠的就是這個。
-         */
-        PatchedProjectPhaseRequest: {
+            subcontract?: number | null;
             /** 專案 */
             project?: number;
-            /** 順序 */
-            seq?: number;
+            /** 廠商 */
+            vendor?: number;
+            /** 類別 */
+            category?: components["schemas"]["Category651Enum"];
             /**
-             * 期別名稱
-             * @description 如「第一期」
+             * 項目
+             * @description 如「第三期計價」「2月份鋼材」
              */
-            name?: string;
+            title?: string;
+            /**
+             * 未稅金額
+             * Format: decimal
+             */
+            amount?: string;
+            /**
+             * 稅額
+             * Format: decimal
+             * @description 留空＝系統依 5% 自動算。免稅、零稅率請明確填 0——「沒填」與「填 0」是兩件事，不能用同一個值表示
+             */
+            tax_amount?: string | null;
+            /**
+             * 本次保留款
+             * Format: decimal
+             * @description 依合約的保留款比例自動帶入，可覆寫
+             */
+            retention_amount?: string;
+            /**
+             * 計價日
+             * Format: date
+             * @description 包商送單／驗收的日期，付款日由此起算
+             */
+            billing_date?: string | null;
+            /**
+             * 預計付款日
+             * Format: date
+             * @description 由付款條件推算，可覆寫
+             */
+            due_date?: string | null;
+            /** 付款方式 */
+            payment_method?: components["schemas"]["PaymentMethodEnum"];
+            /**
+             * 支票到期日
+             * Format: date
+             * @description ⚠️ 開票日不等於兌現日。填了這欄，現金流就用它算——不填的話，錢會被算成提早兩三個月流出（決策 D31／B1）
+             */
+            check_due_date?: string | null;
+            /** 票號 */
+            check_no?: string;
+            /** 發票號碼 */
+            invoice_no?: string;
             /** 備註 */
             note?: string;
         };
-        /** @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。 */
+        /**
+         * @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+         *
+         *     合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
+         *     付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+         */
         PatchedProjectWriteRequest: {
             /** 案名 */
             name?: string;
@@ -3423,13 +2368,62 @@ export interface components {
              * @description 圖紙雲端連結、聯絡窗口等
              */
             doc_links?: string;
+            milestones?: components["schemas"]["MilestoneRowRequest"][];
+        };
+        PatchedSubcontractWriteRequest: {
+            /**
+             * 專案
+             * @description 一定要有——這是算得出專案成本與損益的關鍵
+             */
+            project?: number;
+            /** 廠商 */
+            vendor?: number;
+            /**
+             * 合約名稱
+             * @description 如「B區土建工程」「第一期鋼材採購」
+             */
+            title?: string;
+            /** 類別 */
+            category?: components["schemas"]["Category651Enum"];
+            /**
+             * 合約金額
+             * Format: decimal
+             * @description 單位：元，**未稅**。含稅金額由現金流計算時再加（決策 D31／B2）
+             */
+            contract_amount?: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90
+             */
+            payment_term_days?: number;
+            /**
+             * 保留款(%)
+             * Format: decimal
+             * @description 每期扣的百分比，驗收合格後退還。不算的話每期實付金額會高估 5–10%——500 萬的合約就差 25–50 萬
+             */
+            retention_pct?: string;
+            /**
+             * 開始日
+             * Format: date
+             */
+            start_date?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             */
+            end_date?: string | null;
+            /** 狀態 */
+            status?: components["schemas"]["Status998Enum"];
+            /** 備註 */
+            note?: string;
         };
         /**
          * @description 建立／修改追蹤單元。
          *
          *     ★ 使用者選的是**階段模板**，不是寫死的類型。
-         *     系統管理員在 Admin 新增一條模板（例如「鋼構－免表面處理 7 站」），
-         *     它就會出現在這個下拉裡——加流程不用改程式、不用重新部署。
+         *     在 Admin 新增一條模板，它就會出現在下拉裡——加流程不用改程式。
          *
          *     `unit_type` 由模板的 applies_to 推導，使用者不必也不該自己選：
          *     選了土建模板卻標成構件批次，進度就會用錯的算法。
@@ -3437,11 +2431,6 @@ export interface components {
         PatchedTrackingUnitWriteRequest: {
             /** 專案 */
             project?: number;
-            /**
-             * 期別
-             * @description 決定簽收時觸發哪一筆請款里程碑
-             */
-            phase?: number | null;
             /** @description 階段模板。不指定時用該類型的預設模板 */
             template?: number | null;
             /** 類型 */
@@ -3451,11 +2440,6 @@ export interface components {
              * @description 如「第一期-1F鋼柱」
              */
             name?: string;
-            /**
-             * 指派給
-             * @description 「我的工作」畫面的依據
-             */
-            assignee?: number | null;
             /** 備註 */
             note?: string;
             /**
@@ -3469,44 +2453,15 @@ export interface components {
              */
             unit_of_measure?: string;
             /**
-             * 總重量(kg)
-             * Format: decimal
-             * @description 鋼構論噸計價。也是「累計達 X%」與「分批按量請款」的計算基準。編輯權限限廠長／專案負責人／經營者
-             */
-            total_weight_kg?: string | null;
-            /**
              * 完成百分比
              * Format: decimal
              */
             progress_pct?: string | null;
-            /** 作業方式 */
-            work_mode?: components["schemas"]["WorkModeEnum"];
-            /** 分包商 */
+            /**
+             * 分包商
+             * @description 做這個工項的是誰。分包的錢在「金流 → 應付」管理，不在這裡
+             */
             subcontractor?: number | null;
-            /**
-             * 分包契約金額
-             * Format: decimal
-             */
-            subcontract_amount?: string | null;
-            /** 協力廠 */
-            outsource_vendor?: number | null;
-            /**
-             * 實際進廠日
-             * Format: date
-             */
-            outsource_in_date?: string | null;
-            /**
-             * 預計出廠日
-             * Format: date
-             */
-            outsource_due_date?: string | null;
-            /**
-             * 實際出廠日
-             * Format: date
-             */
-            outsource_out_date?: string | null;
-            /** 運輸廠商 */
-            transport_vendor?: number | null;
             /**
              * 預計開始
              * Format: date
@@ -3539,73 +2494,271 @@ export interface components {
             /** 啟用中 */
             is_active?: boolean;
         };
-        ProductionLine: {
+        /**
+         * @description 應付款項 —— 實際要付出去的一筆錢。
+         *
+         *     跟應收款是鏡像：`next_states` 一樣由後端算，
+         *     前端不重寫一次狀態機。
+         */
+        Payable: {
             readonly id: number;
-            /** 產線代號 */
-            code: string;
             /**
-             * 產線名稱
-             * @description 如「雷射切割線 (HSG TLS)」
+             * 分包合約
+             * @description 可空——零星運費、小額採購不必先開合約
              */
-            name: string;
-            /** 狀態 */
-            status?: components["schemas"]["Status67eEnum"];
-            readonly status_label: string;
-            /**
-             * 當前工單
-             * @description P1 為純文字，P3 改為關聯工單
-             */
-            current_work?: string;
-            /**
-             * 稼動率(%)
-             * Format: decimal
-             * @description P1 人工填寫，P3 由報工資料自動計算 OEE
-             */
-            utilization?: string;
-            /** 今日產出 */
-            today_output?: string;
-            /** 顯示順序 */
-            sort_order?: number;
+            subcontract?: number | null;
             /** @default  */
-            readonly updated_by_name: string;
+            readonly subcontract_code: string;
+            /** @default  */
+            readonly subcontract_title: string;
+            /** 專案 */
+            project: number;
+            readonly project_name: string;
+            /** 廠商 */
+            vendor: number;
+            readonly vendor_name: string;
+            /** 類別 */
+            category: components["schemas"]["Category651Enum"];
+            readonly category_label: string;
             /**
-             * 更新時間
+             * 項目
+             * @description 如「第三期計價」「2月份鋼材」
+             */
+            title: string;
+            /**
+             * 未稅金額
+             * Format: decimal
+             */
+            amount: string;
+            /**
+             * 稅額
+             * Format: decimal
+             * @description 留空＝系統依 5% 自動算。免稅、零稅率請明確填 0——「沒填」與「填 0」是兩件事，不能用同一個值表示
+             */
+            tax_amount?: string | null;
+            /**
+             * 本次保留款
+             * Format: decimal
+             * @description 依合約的保留款比例自動帶入，可覆寫
+             */
+            retention_amount?: string;
+            /**
+             * 實付金額
+             * Format: decimal
+             * @description 未稅 ＋ 稅額 − 保留款。這才是實際會匯出去的數字，由系統計算
+             */
+            payable_amount?: string;
+            /** 狀態 */
+            state?: components["schemas"]["State2e5Enum"];
+            readonly state_label: string;
+            /**
+             * @description 這筆現在可以轉去哪。
+             *
+             *     核可與登錄付款是**不同的權限**（職能分離，跟收款側同理）：
+             *     同一個人不該既決定要付多少、又執行付款。
+             */
+            readonly next_states: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * 計價日
+             * Format: date
+             * @description 包商送單／驗收的日期，付款日由此起算
+             */
+            billing_date?: string | null;
+            /**
+             * 預計付款日
+             * Format: date
+             * @description 由付款條件推算，可覆寫
+             */
+            due_date?: string | null;
+            /**
+             * 實際付款日
+             * Format: date
+             */
+            paid_date?: string | null;
+            /** Format: date */
+            readonly cash_date: string;
+            /**
+             * @description 為什麼現金流用的是這一天。
+             *
+             *     支票最容易被誤解：付款日到了、錢卻還沒出去。
+             *     不寫這句，看的人會以為系統算錯。
+             */
+            readonly cash_date_note: string;
+            /** 付款方式 */
+            payment_method?: components["schemas"]["PaymentMethodEnum"];
+            readonly method_label: string;
+            /**
+             * 支票到期日
+             * Format: date
+             * @description ⚠️ 開票日不等於兌現日。填了這欄，現金流就用它算——不填的話，錢會被算成提早兩三個月流出（決策 D31／B1）
+             */
+            check_due_date?: string | null;
+            /** 票號 */
+            check_no?: string;
+            /** 發票號碼 */
+            invoice_no?: string;
+            /** 備註 */
+            note?: string;
+            readonly is_overdue: boolean;
+            /**
+             * 建立時間
              * Format: date-time
              */
-            readonly updated_at: string;
+            readonly created_at: string;
         };
-        /** @description P1 由廠長人工更新。P3 導入報工後改為自動計算，這個端點就會退場。 */
-        ProductionLineWrite: {
-            /** 狀態 */
-            status?: components["schemas"]["Status67eEnum"];
+        PayableTransitionRequest: {
+            to_state: components["schemas"]["ToState2e5Enum"];
             /**
-             * 當前工單
-             * @description P1 為純文字，P3 改為關聯工單
+             * Format: date
+             * @description 實際付款日
              */
-            current_work?: string;
+            date?: string | null;
+            payment_method?: components["schemas"]["PaymentMethodEnum"] | components["schemas"]["BlankEnum"];
+            /** Format: date */
+            check_due_date?: string | null;
+            check_no?: string;
+            /** @description 往回轉時必填 */
+            reason?: string;
+        };
+        PayableWrite: {
             /**
-             * 稼動率(%)
+             * 分包合約
+             * @description 可空——零星運費、小額採購不必先開合約
+             */
+            subcontract?: number | null;
+            /** 專案 */
+            project?: number;
+            /** 廠商 */
+            vendor?: number;
+            /** 類別 */
+            category?: components["schemas"]["Category651Enum"];
+            /**
+             * 項目
+             * @description 如「第三期計價」「2月份鋼材」
+             */
+            title: string;
+            /**
+             * 未稅金額
              * Format: decimal
-             * @description P1 人工填寫，P3 由報工資料自動計算 OEE
              */
-            utilization?: string;
-            /** 今日產出 */
-            today_output?: string;
+            amount: string;
+            /**
+             * 稅額
+             * Format: decimal
+             * @description 留空＝系統依 5% 自動算。免稅、零稅率請明確填 0——「沒填」與「填 0」是兩件事，不能用同一個值表示
+             */
+            tax_amount?: string | null;
+            /**
+             * 本次保留款
+             * Format: decimal
+             * @description 依合約的保留款比例自動帶入，可覆寫
+             */
+            retention_amount?: string;
+            /**
+             * 計價日
+             * Format: date
+             * @description 包商送單／驗收的日期，付款日由此起算
+             */
+            billing_date?: string | null;
+            /**
+             * 預計付款日
+             * Format: date
+             * @description 由付款條件推算，可覆寫
+             */
+            due_date?: string | null;
+            /** 付款方式 */
+            payment_method?: components["schemas"]["PaymentMethodEnum"];
+            /**
+             * 支票到期日
+             * Format: date
+             * @description ⚠️ 開票日不等於兌現日。填了這欄，現金流就用它算——不填的話，錢會被算成提早兩三個月流出（決策 D31／B1）
+             */
+            check_due_date?: string | null;
+            /** 票號 */
+            check_no?: string;
+            /** 發票號碼 */
+            invoice_no?: string;
+            /** 備註 */
+            note?: string;
+        };
+        PayableWriteRequest: {
+            /**
+             * 分包合約
+             * @description 可空——零星運費、小額採購不必先開合約
+             */
+            subcontract?: number | null;
+            /** 專案 */
+            project?: number;
+            /** 廠商 */
+            vendor?: number;
+            /** 類別 */
+            category?: components["schemas"]["Category651Enum"];
+            /**
+             * 項目
+             * @description 如「第三期計價」「2月份鋼材」
+             */
+            title: string;
+            /**
+             * 未稅金額
+             * Format: decimal
+             */
+            amount: string;
+            /**
+             * 稅額
+             * Format: decimal
+             * @description 留空＝系統依 5% 自動算。免稅、零稅率請明確填 0——「沒填」與「填 0」是兩件事，不能用同一個值表示
+             */
+            tax_amount?: string | null;
+            /**
+             * 本次保留款
+             * Format: decimal
+             * @description 依合約的保留款比例自動帶入，可覆寫
+             */
+            retention_amount?: string;
+            /**
+             * 計價日
+             * Format: date
+             * @description 包商送單／驗收的日期，付款日由此起算
+             */
+            billing_date?: string | null;
+            /**
+             * 預計付款日
+             * Format: date
+             * @description 由付款條件推算，可覆寫
+             */
+            due_date?: string | null;
+            /** 付款方式 */
+            payment_method?: components["schemas"]["PaymentMethodEnum"];
+            /**
+             * 支票到期日
+             * Format: date
+             * @description ⚠️ 開票日不等於兌現日。填了這欄，現金流就用它算——不填的話，錢會被算成提早兩三個月流出（決策 D31／B1）
+             */
+            check_due_date?: string | null;
+            /** 票號 */
+            check_no?: string;
+            /** 發票號碼 */
+            invoice_no?: string;
+            /** 備註 */
+            note?: string;
         };
         /**
-         * @description * `plate` - 鋼板
-         *     * `h_beam` - H型鋼
-         *     * `angle` - 角鋼
-         *     * `channel` - 槽鋼
-         *     * `sq_tube` - 方管
-         *     * `rd_tube` - 圓管
-         *     * `rebar` - 鋼筋
-         *     * `bolt` - 螺栓
-         *     * `other` - 其他
+         * @description * `transfer` - 匯款
+         *     * `check` - 支票
+         *     * `cash` - 現金
          * @enum {string}
          */
-        ProfileTypeEnum: "plate" | "h_beam" | "angle" | "channel" | "sq_tube" | "rd_tube" | "rebar" | "bolt" | "other";
-        /** @description 明細用。多帶主線階段全貌、期別、合約條款與可執行的操作。 */
+        PaymentMethodEnum: "transfer" | "check" | "cash";
+        /**
+         * @description * `month_end` - 月結
+         *     * `from_invoice` - 請款日起算
+         *     * `from_acceptance` - 驗收後起算
+         * @enum {string}
+         */
+        PaymentTermTypeEnum: "month_end" | "from_invoice" | "from_acceptance";
+        /** @description 明細用。多帶主線階段全貌、應收款、合約條款與可執行的操作。 */
         ProjectDetail: {
             readonly id: number;
             /**
@@ -3659,7 +2812,14 @@ export interface components {
             readonly main_stages: {
                 [key: string]: unknown;
             }[];
-            readonly phases: components["schemas"]["ProjectPhase"][];
+            /**
+             * @description 應收款直接掛在專案明細上——案子的錢跟案子一起看，不用切分頁。
+             *
+             *     檢視角色拿到空陣列：應收款整列都是金額。
+             */
+            readonly milestones: {
+                [key: string]: unknown;
+            }[];
             readonly approved_change_amount: string | null;
             /** 備註 */
             note?: string;
@@ -3680,7 +2840,7 @@ export interface components {
             readonly can_edit: boolean;
             readonly can_view_amounts: boolean;
         };
-        /** @description 清單用。刻意不含 phases／合約條款——列表不需要，省頻寬也省記憶體。 */
+        /** @description 清單用。刻意不含分期／合約條款——列表不需要，省頻寬也省記憶體。 */
         ProjectList: {
             readonly id: number;
             /**
@@ -3730,65 +2890,18 @@ export interface components {
             readonly attention_count: number;
         };
         /**
-         * @description 期別（標段）。
-         *
-         *     ⚠️ 這是**工程的分期**，不是「分期付款」——雖然兩者常常對得起來。
-         *
-         *     它做兩件事：
-         *       1. 把追蹤單元分組（第一期的批次歸第一期）
-         *       2. 決定簽收時觸發哪一筆請款里程碑（里程碑也可以綁期別）
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，
-         *     系統要知道「哪些批次算第一期」——靠的就是這個。
-         */
-        ProjectPhase: {
-            readonly id: number;
-            /** 專案 */
-            project: number;
-            /** 順序 */
-            seq: number;
-            /**
-             * 期別名稱
-             * @description 如「第一期」
-             */
-            name: string;
-            /** 備註 */
-            note?: string;
-            readonly unit_count: number;
-        };
-        /**
-         * @description 期別（標段）。
-         *
-         *     ⚠️ 這是**工程的分期**，不是「分期付款」——雖然兩者常常對得起來。
-         *
-         *     它做兩件事：
-         *       1. 把追蹤單元分組（第一期的批次歸第一期）
-         *       2. 決定簽收時觸發哪一筆請款里程碑（里程碑也可以綁期別）
-         *
-         *     合約寫「第一期構件全數簽收後請款 40%」時，
-         *     系統要知道「哪些批次算第一期」——靠的就是這個。
-         */
-        ProjectPhaseRequest: {
-            /** 專案 */
-            project: number;
-            /** 順序 */
-            seq: number;
-            /**
-             * 期別名稱
-             * @description 如「第一期」
-             */
-            name: string;
-            /** 備註 */
-            note?: string;
-        };
-        /**
          * @description * `civil` - 土建
          *     * `steel` - 鋼構
          *     * `mixed` - 混合
          * @enum {string}
          */
         ProjectTypeEnum: "civil" | "steel" | "mixed";
-        /** @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。 */
+        /**
+         * @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+         *
+         *     合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
+         *     付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+         */
         ProjectWrite: {
             /** 案名 */
             name: string;
@@ -3831,7 +2944,12 @@ export interface components {
              */
             doc_links?: string;
         };
-        /** @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。 */
+        /**
+         * @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+         *
+         *     合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
+         *     付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+         */
         ProjectWriteRequest: {
             /** 案名 */
             name: string;
@@ -3873,17 +2991,8 @@ export interface components {
              * @description 圖紙雲端連結、聯絡窗口等
              */
             doc_links?: string;
+            milestones?: components["schemas"]["MilestoneRowRequest"][];
         };
-        /**
-         * @description * `qc_fail` - 品檢不合格
-         *     * `dimension_error` - 尺寸錯誤
-         *     * `material_issue` - 材料問題
-         *     * `workmanship` - 施工缺失
-         *     * `owner_change` - 業主變更
-         *     * `other` - 其他
-         * @enum {string}
-         */
-        ReasonCategoryEnum: "qc_fail" | "dimension_error" | "material_issue" | "workmanship" | "owner_change" | "other";
         ReportProgressRequest: {
             /** Format: decimal */
             delta?: string;
@@ -3895,34 +3004,11 @@ export interface components {
         };
         /**
          * @description * `owner` - 經營者
-         *     * `pm` - 專案負責人
-         *     * `plant_mgr` - 廠長／生產經理
-         *     * `site_mgr` - 工地主任
-         *     * `purchaser` - 採購
-         *     * `qc` - 品保
-         *     * `warehouse` - 倉管
-         *     * `finance` - 會計／財務
-         *     * `hr` - 人資／行政
-         *     * `worker` - 現場人員
-         *     * `admin` - 系統管理員
+         *     * `finance` - 會計
+         *     * `viewer` - 檢視
          * @enum {string}
          */
-        RolesEnum: "owner" | "pm" | "plant_mgr" | "site_mgr" | "purchaser" | "qc" | "warehouse" | "finance" | "hr" | "worker" | "admin";
-        SignoffRequest: {
-            /** 簽收人 */
-            signoff_by_name: string;
-            /** Format: date */
-            signoff_date?: string | null;
-            signoff_doc_no?: string;
-            signoff_location?: number | null;
-        };
-        /**
-         * @description * `auto_signoff` - 簽收自動產生
-         *     * `manual` - 人工建立
-         * @enum {string}
-         */
-        SourceEnum: "auto_signoff" | "manual";
-        /** @description 階段。五個旗標一起送，前端據此決定顯示什麼圖示與哪些欄位。 */
+        RolesEnum: "owner" | "finance" | "viewer";
         Stage: {
             readonly id: number;
             /**
@@ -3939,31 +3025,6 @@ export interface components {
              * @description #RRGGBB
              */
             color?: string;
-            /**
-             * 觸發請款
-             * @description 此階段的完成條件達成時，把對應請款里程碑轉為「可請款」
-             */
-            is_billing_trigger?: boolean;
-            /**
-             * 需登錄簽收
-             * @description 需填簽收日／簽收人／單號。與「觸發請款」併用時，改為登錄簽收後才觸發，而非進入階段就觸發
-             */
-            requires_signoff?: boolean;
-            /**
-             * 需填協力廠
-             * @description 表單自動展開協力廠與進出廠日欄位
-             */
-            is_outsource?: boolean;
-            /**
-             * 等待中
-             * @description 此階段不計入產能佔用（如置料區）
-             */
-            is_hold?: boolean;
-            /**
-             * 核心加值
-             * @description 工時計入 OEE 與加工成本（手冊第 10 章）
-             */
-            is_core?: boolean;
             /**
              * 停滯天數門檻
              * @description 停留超過此天數列入「需要關注」。留空表示不檢查
@@ -3985,20 +3046,20 @@ export interface components {
             }[];
         };
         /**
-         * @description * `claimable` - 可請款
+         * @description * `pending` - 待計價
+         *     * `approved` - 已核可
+         *     * `paid` - 已付款
+         * @enum {string}
+         */
+        State2e5Enum: "pending" | "approved" | "paid";
+        /**
+         * @description * `pending` - 未到
+         *     * `claimable` - 可請款
          *     * `invoiced` - 已請款
          *     * `received` - 已收款
          * @enum {string}
          */
-        State32fEnum: "claimable" | "invoiced" | "received";
-        /**
-         * @description * `run` - 運轉中
-         *     * `changeover` - 換線中
-         *     * `repair` - 維修
-         *     * `idle` - 閒置
-         * @enum {string}
-         */
-        Status67eEnum: "run" | "changeover" | "repair" | "idle";
+        State2f5Enum: "pending" | "claimable" | "invoiced" | "received";
         /**
          * @description * `ontrack` - 正常
          *     * `atrisk` - 注意
@@ -4015,30 +3076,207 @@ export interface components {
          */
         Status825Enum: "draft" | "submitted" | "approved" | "rejected";
         /**
-         * @description * `raw` - 裸材
-         *     * `galvanized` - 鍍鋅
-         *     * `primed` - 防鏽底漆
+         * @description * `active` - 進行中
+         *     * `completed` - 已完工
+         *     * `closed` - 已結案
          * @enum {string}
          */
-        SurfaceTreatmentEnum: "raw" | "galvanized" | "primed";
+        Status998Enum: "active" | "completed" | "closed";
         /**
-         * @description * `claimable` - 可請款
+         * @description 分包合約 —— 我們要付給包商的那一份合約。
+         *
+         *     跟專案（業主付我們）是同一件事的鏡像，欄位刻意取一樣的名字。
+         */
+        Subcontract: {
+            readonly id: number;
+            /**
+             * 合約編號
+             * @description SC-YYYY-NNN，系統產生
+             */
+            code: string;
+            /**
+             * 專案
+             * @description 一定要有——這是算得出專案成本與損益的關鍵
+             */
+            project: number;
+            readonly project_name: string;
+            readonly project_code: string;
+            /** 廠商 */
+            vendor: number;
+            readonly vendor_name: string;
+            /**
+             * 合約名稱
+             * @description 如「B區土建工程」「第一期鋼材採購」
+             */
+            title: string;
+            /** 類別 */
+            category: components["schemas"]["Category651Enum"];
+            readonly category_label: string;
+            /**
+             * 合約金額
+             * Format: decimal
+             * @description 單位：元，**未稅**。含稅金額由現金流計算時再加（決策 D31／B2）
+             */
+            contract_amount: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90
+             */
+            payment_term_days?: number;
+            readonly payment_terms_display: string;
+            /**
+             * 保留款(%)
+             * Format: decimal
+             * @description 每期扣的百分比，驗收合格後退還。不算的話每期實付金額會高估 5–10%——500 萬的合約就差 25–50 萬
+             */
+            retention_pct?: string;
+            /**
+             * 開始日
+             * Format: date
+             */
+            start_date?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             */
+            end_date?: string | null;
+            /** 狀態 */
+            status?: components["schemas"]["Status998Enum"];
+            readonly status_label: string;
+            /** 備註 */
+            note?: string;
+            readonly billed_amount: string;
+            readonly paid_amount: string;
+            readonly remaining_amount: string;
+            /** Format: double */
+            readonly billed_pct: number;
+            /** @default 0 */
+            readonly payable_count: number;
+            /**
+             * 建立時間
+             * Format: date-time
+             */
+            readonly created_at: string;
+        };
+        SubcontractWrite: {
+            /**
+             * 專案
+             * @description 一定要有——這是算得出專案成本與損益的關鍵
+             */
+            project: number;
+            /** 廠商 */
+            vendor: number;
+            /**
+             * 合約名稱
+             * @description 如「B區土建工程」「第一期鋼材採購」
+             */
+            title: string;
+            /** 類別 */
+            category: components["schemas"]["Category651Enum"];
+            /**
+             * 合約金額
+             * Format: decimal
+             * @description 單位：元，**未稅**。含稅金額由現金流計算時再加（決策 D31／B2）
+             */
+            contract_amount: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90
+             */
+            payment_term_days?: number;
+            /**
+             * 保留款(%)
+             * Format: decimal
+             * @description 每期扣的百分比，驗收合格後退還。不算的話每期實付金額會高估 5–10%——500 萬的合約就差 25–50 萬
+             */
+            retention_pct?: string;
+            /**
+             * 開始日
+             * Format: date
+             */
+            start_date?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             */
+            end_date?: string | null;
+            /** 狀態 */
+            status?: components["schemas"]["Status998Enum"];
+            /** 備註 */
+            note?: string;
+        };
+        SubcontractWriteRequest: {
+            /**
+             * 專案
+             * @description 一定要有——這是算得出專案成本與損益的關鍵
+             */
+            project: number;
+            /** 廠商 */
+            vendor: number;
+            /**
+             * 合約名稱
+             * @description 如「B區土建工程」「第一期鋼材採購」
+             */
+            title: string;
+            /** 類別 */
+            category: components["schemas"]["Category651Enum"];
+            /**
+             * 合約金額
+             * Format: decimal
+             * @description 單位：元，**未稅**。含稅金額由現金流計算時再加（決策 D31／B2）
+             */
+            contract_amount: string;
+            /** 付款條件 */
+            payment_term_type?: components["schemas"]["PaymentTermTypeEnum"];
+            /**
+             * 帳期天數
+             * @description 常見 30／60／90
+             */
+            payment_term_days?: number;
+            /**
+             * 保留款(%)
+             * Format: decimal
+             * @description 每期扣的百分比，驗收合格後退還。不算的話每期實付金額會高估 5–10%——500 萬的合約就差 25–50 萬
+             */
+            retention_pct?: string;
+            /**
+             * 開始日
+             * Format: date
+             */
+            start_date?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             */
+            end_date?: string | null;
+            /** 狀態 */
+            status?: components["schemas"]["Status998Enum"];
+            /** 備註 */
+            note?: string;
+        };
+        /**
+         * @description * `pending` - 待計價
+         *     * `approved` - 已核可
+         *     * `paid` - 已付款
+         * @enum {string}
+         */
+        ToState2e5Enum: "pending" | "approved" | "paid";
+        /**
+         * @description * `pending` - 未到
+         *     * `claimable` - 可請款
          *     * `invoiced` - 已請款
          *     * `received` - 已收款
          * @enum {string}
          */
-        ToStateEnum: "claimable" | "invoiced" | "received";
-        /**
-         * @description * `quantity` - 數量型
-         *     * `individual` - 個體型
-         * @enum {string}
-         */
-        TrackingModeEnum: "quantity" | "individual";
+        ToState2f5Enum: "pending" | "claimable" | "invoiced" | "received";
         /**
          * @description 看板卡片用的精簡版。
          *
          *     一張卡要回答的問題只有四個：這是什麼、在哪一站、做多少了、有沒有卡住。
-         *     其餘欄位（外包廠、簽收單號、金額）留給明細——列表塞滿反而看不出重點。
          */
         TrackingUnitCard: {
             readonly id: number;
@@ -4060,21 +3298,10 @@ export interface components {
             project: number;
             readonly project_name: string;
             readonly project_code: string;
-            /**
-             * 期別
-             * @description 決定簽收時觸發哪一筆請款里程碑
-             */
-            phase?: number | null;
-            /** @default  */
-            readonly phase_name: string;
-            /** @default  */
-            readonly assignee_name: string;
             readonly stage_id: number;
             readonly stage_name: string;
             readonly stage_seq: number;
             readonly stage_total: number;
-            readonly requires_signoff: boolean;
-            readonly is_billing_trigger: boolean;
             /**
              * 總數量
              * Format: decimal
@@ -4097,33 +3324,18 @@ export interface components {
             progress_pct?: string | null;
             /** Format: double */
             readonly completion_ratio: number;
-            /**
-             * 總重量(kg)
-             * Format: decimal
-             * @description 鋼構論噸計價。也是「累計達 X%」與「分批按量請款」的計算基準。編輯權限限廠長／專案負責人／經營者
-             */
-            total_weight_kg?: string | null;
             readonly days_in_stage: number;
             readonly is_stalled: boolean;
-            readonly is_signed_off: boolean;
-            readonly is_awaiting_signoff: boolean;
-            readonly is_outsource_overdue: boolean;
             /**
              * 預計完成
              * Format: date
              */
             plan_end?: string | null;
-            /**
-             * 回退次數
-             * @description ≥2 次自動升級為延誤
-             */
-            rollback_count?: number;
             readonly can_advance: boolean;
             readonly can_rollback: boolean;
-            readonly can_signoff: boolean;
             readonly can_report: boolean;
         };
-        /** @description 明細。多帶完整階段軌道、外包、簽收與指派資訊。 */
+        /** @description 明細。多帶完整階段軌道與日期。 */
         TrackingUnitDetail: {
             readonly id: number;
             /**
@@ -4144,21 +3356,10 @@ export interface components {
             project: number;
             readonly project_name: string;
             readonly project_code: string;
-            /**
-             * 期別
-             * @description 決定簽收時觸發哪一筆請款里程碑
-             */
-            phase?: number | null;
-            /** @default  */
-            readonly phase_name: string;
-            /** @default  */
-            readonly assignee_name: string;
             readonly stage_id: number;
             readonly stage_name: string;
             readonly stage_seq: number;
             readonly stage_total: number;
-            readonly requires_signoff: boolean;
-            readonly is_billing_trigger: boolean;
             /**
              * 總數量
              * Format: decimal
@@ -4181,87 +3382,29 @@ export interface components {
             progress_pct?: string | null;
             /** Format: double */
             readonly completion_ratio: number;
-            /**
-             * 總重量(kg)
-             * Format: decimal
-             * @description 鋼構論噸計價。也是「累計達 X%」與「分批按量請款」的計算基準。編輯權限限廠長／專案負責人／經營者
-             */
-            total_weight_kg?: string | null;
             readonly days_in_stage: number;
             readonly is_stalled: boolean;
-            readonly is_signed_off: boolean;
-            readonly is_awaiting_signoff: boolean;
-            readonly is_outsource_overdue: boolean;
             /**
              * 預計完成
              * Format: date
              */
             plan_end?: string | null;
-            /**
-             * 回退次數
-             * @description ≥2 次自動升級為延誤
-             */
-            rollback_count?: number;
             readonly can_advance: boolean;
             readonly can_rollback: boolean;
-            readonly can_signoff: boolean;
             readonly can_report: boolean;
             readonly current_stage: components["schemas"]["Stage"];
             readonly stages: {
                 [key: string]: unknown;
             }[];
-            readonly assignee: components["schemas"]["UserBrief"];
             /** 備註 */
             note?: string;
-            /** 作業方式 */
-            work_mode?: components["schemas"]["WorkModeEnum"];
-            /** 分包商 */
+            /**
+             * 分包商
+             * @description 做這個工項的是誰。分包的錢在「金流 → 應付」管理，不在這裡
+             */
             subcontractor?: number | null;
             /** @default  */
             readonly subcontractor_name: string;
-            /** 協力廠 */
-            outsource_vendor?: number | null;
-            /** @default  */
-            readonly outsource_vendor_name: string;
-            /**
-             * 實際進廠日
-             * Format: date
-             */
-            outsource_in_date?: string | null;
-            /**
-             * 預計出廠日
-             * Format: date
-             */
-            outsource_due_date?: string | null;
-            /**
-             * 實際出廠日
-             * Format: date
-             */
-            outsource_out_date?: string | null;
-            /** 運輸廠商 */
-            transport_vendor?: number | null;
-            /** @default  */
-            readonly transport_vendor_name: string;
-            /**
-             * 簽收日
-             * Format: date
-             * @description 業主／監造簽收日。登錄後才觸發請款評估
-             */
-            signoff_date?: string | null;
-            /**
-             * 簽收人
-             * @description 業主方人員姓名（非系統使用者）
-             */
-            signoff_by_name?: string;
-            /** 簽收單號 */
-            signoff_doc_no?: string;
-            /**
-             * 簽收地點
-             * @description 與里程碑的指定交貨地點比對，不符時警告但不阻擋
-             */
-            signoff_location?: number | null;
-            /** @default  */
-            readonly signoff_location_name: string;
             /**
              * 預計開始
              * Format: date
@@ -4278,17 +3421,12 @@ export interface components {
              */
             actual_end?: string | null;
             readonly quick_increments: number[];
-            readonly can_edit_weight: boolean;
-            readonly rollback_reasons: {
-                [key: string]: unknown;
-            }[];
         };
         /**
          * @description 建立／修改追蹤單元。
          *
          *     ★ 使用者選的是**階段模板**，不是寫死的類型。
-         *     系統管理員在 Admin 新增一條模板（例如「鋼構－免表面處理 7 站」），
-         *     它就會出現在這個下拉裡——加流程不用改程式、不用重新部署。
+         *     在 Admin 新增一條模板，它就會出現在下拉裡——加流程不用改程式。
          *
          *     `unit_type` 由模板的 applies_to 推導，使用者不必也不該自己選：
          *     選了土建模板卻標成構件批次，進度就會用錯的算法。
@@ -4296,11 +3434,6 @@ export interface components {
         TrackingUnitWrite: {
             /** 專案 */
             project: number;
-            /**
-             * 期別
-             * @description 決定簽收時觸發哪一筆請款里程碑
-             */
-            phase?: number | null;
             /** @description 階段模板。不指定時用該類型的預設模板 */
             template?: number | null;
             /** 類型 */
@@ -4310,11 +3443,6 @@ export interface components {
              * @description 如「第一期-1F鋼柱」
              */
             name: string;
-            /**
-             * 指派給
-             * @description 「我的工作」畫面的依據
-             */
-            assignee?: number | null;
             /** 備註 */
             note?: string;
             /**
@@ -4328,44 +3456,15 @@ export interface components {
              */
             unit_of_measure?: string;
             /**
-             * 總重量(kg)
-             * Format: decimal
-             * @description 鋼構論噸計價。也是「累計達 X%」與「分批按量請款」的計算基準。編輯權限限廠長／專案負責人／經營者
-             */
-            total_weight_kg?: string | null;
-            /**
              * 完成百分比
              * Format: decimal
              */
             progress_pct?: string | null;
-            /** 作業方式 */
-            work_mode?: components["schemas"]["WorkModeEnum"];
-            /** 分包商 */
+            /**
+             * 分包商
+             * @description 做這個工項的是誰。分包的錢在「金流 → 應付」管理，不在這裡
+             */
             subcontractor?: number | null;
-            /**
-             * 分包契約金額
-             * Format: decimal
-             */
-            subcontract_amount?: string | null;
-            /** 協力廠 */
-            outsource_vendor?: number | null;
-            /**
-             * 實際進廠日
-             * Format: date
-             */
-            outsource_in_date?: string | null;
-            /**
-             * 預計出廠日
-             * Format: date
-             */
-            outsource_due_date?: string | null;
-            /**
-             * 實際出廠日
-             * Format: date
-             */
-            outsource_out_date?: string | null;
-            /** 運輸廠商 */
-            transport_vendor?: number | null;
             /**
              * 預計開始
              * Format: date
@@ -4381,8 +3480,7 @@ export interface components {
          * @description 建立／修改追蹤單元。
          *
          *     ★ 使用者選的是**階段模板**，不是寫死的類型。
-         *     系統管理員在 Admin 新增一條模板（例如「鋼構－免表面處理 7 站」），
-         *     它就會出現在這個下拉裡——加流程不用改程式、不用重新部署。
+         *     在 Admin 新增一條模板，它就會出現在下拉裡——加流程不用改程式。
          *
          *     `unit_type` 由模板的 applies_to 推導，使用者不必也不該自己選：
          *     選了土建模板卻標成構件批次，進度就會用錯的算法。
@@ -4390,11 +3488,6 @@ export interface components {
         TrackingUnitWriteRequest: {
             /** 專案 */
             project: number;
-            /**
-             * 期別
-             * @description 決定簽收時觸發哪一筆請款里程碑
-             */
-            phase?: number | null;
             /** @description 階段模板。不指定時用該類型的預設模板 */
             template?: number | null;
             /** 類型 */
@@ -4404,11 +3497,6 @@ export interface components {
              * @description 如「第一期-1F鋼柱」
              */
             name: string;
-            /**
-             * 指派給
-             * @description 「我的工作」畫面的依據
-             */
-            assignee?: number | null;
             /** 備註 */
             note?: string;
             /**
@@ -4422,44 +3510,15 @@ export interface components {
              */
             unit_of_measure?: string;
             /**
-             * 總重量(kg)
-             * Format: decimal
-             * @description 鋼構論噸計價。也是「累計達 X%」與「分批按量請款」的計算基準。編輯權限限廠長／專案負責人／經營者
-             */
-            total_weight_kg?: string | null;
-            /**
              * 完成百分比
              * Format: decimal
              */
             progress_pct?: string | null;
-            /** 作業方式 */
-            work_mode?: components["schemas"]["WorkModeEnum"];
-            /** 分包商 */
+            /**
+             * 分包商
+             * @description 做這個工項的是誰。分包的錢在「金流 → 應付」管理，不在這裡
+             */
             subcontractor?: number | null;
-            /**
-             * 分包契約金額
-             * Format: decimal
-             */
-            subcontract_amount?: string | null;
-            /** 協力廠 */
-            outsource_vendor?: number | null;
-            /**
-             * 實際進廠日
-             * Format: date
-             */
-            outsource_in_date?: string | null;
-            /**
-             * 預計出廠日
-             * Format: date
-             */
-            outsource_due_date?: string | null;
-            /**
-             * 實際出廠日
-             * Format: date
-             */
-            outsource_out_date?: string | null;
-            /** 運輸廠商 */
-            transport_vendor?: number | null;
             /**
              * 預計開始
              * Format: date
@@ -4471,14 +3530,6 @@ export interface components {
              */
             plan_end?: string | null;
         };
-        /**
-         * @description * `manual` - 手動
-         *     * `all_signed` - 該期全部簽收
-         *     * `weight_threshold` - 累計重量達門檻
-         *     * `per_batch` - 每批按量分批請
-         * @enum {string}
-         */
-        TriggerTypeEnum: "manual" | "all_signed" | "weight_threshold" | "per_batch";
         /**
          * @description * `batch` - 構件批次
          *     * `work_item` - 土建工項
@@ -4572,12 +3623,6 @@ export interface components {
             /** 啟用中 */
             is_active?: boolean;
         };
-        /**
-         * @description * `self` - 鐵正綱自行
-         *     * `outsource` - 外包協力廠
-         * @enum {string}
-         */
-        WorkModeEnum: "self" | "outsource";
     };
     responses: never;
     parameters: never;
@@ -4731,6 +3776,140 @@ export interface operations {
             };
             /** @description 驗證失敗 */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    attachments_list: {
+        parameters: {
+            query: {
+                /** @description 母物件 id */
+                id: number;
+                /** @description project｜tracking-unit｜milestone */
+                target: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"][];
+                };
+            };
+        };
+    };
+    attachments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+                "application/x-www-form-urlencoded": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"];
+                };
+            };
+        };
+    };
+    attachments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    attachments_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    attachments_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    attachments_download_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5401,56 +4580,6 @@ export interface operations {
             };
         };
     };
-    items_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedItemList"];
-                };
-            };
-        };
-    };
-    items_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 物品主檔. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Item"];
-                };
-            };
-        };
-    };
     projects_list: {
         parameters: {
             query?: {
@@ -5649,154 +4778,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectList"];
-                };
-            };
-        };
-    };
-    project_phases_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPhase"][];
-                };
-            };
-        };
-    };
-    project_phases_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProjectPhaseRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ProjectPhaseRequest"];
-                "multipart/form-data": components["schemas"]["ProjectPhaseRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPhase"];
-                };
-            };
-        };
-    };
-    project_phases_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 期別. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPhase"];
-                };
-            };
-        };
-    };
-    project_phases_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 期別. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProjectPhaseRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ProjectPhaseRequest"];
-                "multipart/form-data": components["schemas"]["ProjectPhaseRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPhase"];
-                };
-            };
-        };
-    };
-    project_phases_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 期別. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    project_phases_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 期別. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedProjectPhaseRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedProjectPhaseRequest"];
-                "multipart/form-data": components["schemas"]["PatchedProjectPhaseRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPhase"];
                 };
             };
         };
@@ -6053,25 +5034,6 @@ export interface operations {
             };
         };
     };
-    tracking_units_my_work_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TrackingUnitCard"];
-                };
-            };
-        };
-    };
     tracking_units_stage_options_retrieve: {
         parameters: {
             query?: never;
@@ -6268,34 +5230,6 @@ export interface operations {
             };
         };
     };
-    tracking_units_signoff_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 追蹤單元. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SignoffRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["SignoffRequest"];
-                "multipart/form-data": components["schemas"]["SignoffRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TrackingUnitCard"];
-                };
-            };
-        };
-    };
     tracking_units_stage_logs_retrieve: {
         parameters: {
             query?: never;
@@ -6417,27 +5351,6 @@ export interface operations {
             };
         };
     };
-    billing_milestones_setup_check_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     billing_milestones_summary_retrieve: {
         parameters: {
             query?: never;
@@ -6462,7 +5375,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款里程碑. */
+                /** @description A unique integer value identifying this 應收款. */
                 id: number;
             };
             cookie?: never;
@@ -6484,7 +5397,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款里程碑. */
+                /** @description A unique integer value identifying this 應收款. */
                 id: number;
             };
             cookie?: never;
@@ -6512,7 +5425,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款里程碑. */
+                /** @description A unique integer value identifying this 應收款. */
                 id: number;
             };
             cookie?: never;
@@ -6533,7 +5446,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款里程碑. */
+                /** @description A unique integer value identifying this 應收款. */
                 id: number;
             };
             cookie?: never;
@@ -6556,49 +5469,43 @@ export interface operations {
             };
         };
     };
-    billing_milestones_manual_claim_create: {
+    billing_milestones_logs_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款里程碑. */
+                /** @description A unique integer value identifying this 應收款. */
                 id: number;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ManualClaimRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ManualClaimRequest"];
-                "multipart/form-data": components["schemas"]["ManualClaimRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BillingClaim"];
+                    "application/json": components["schemas"]["BillingMilestone"];
                 };
             };
         };
     };
-    billing_milestones_unlock_weight_basis_create: {
+    billing_milestones_transition_create: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款里程碑. */
+                /** @description A unique integer value identifying this 應收款. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BillingMilestoneRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["BillingMilestoneRequest"];
-                "multipart/form-data": components["schemas"]["BillingMilestoneRequest"];
+                "application/json": components["schemas"]["MilestoneTransitionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MilestoneTransitionRequest"];
+                "multipart/form-data": components["schemas"]["MilestoneTransitionRequest"];
             };
         };
         responses: {
@@ -6612,7 +5519,60 @@ export interface operations {
             };
         };
     };
-    billing_claims_list: {
+    cashflow_forecast_retrieve: {
+        parameters: {
+            query?: {
+                /** @description confirmed,likely,estimated 逗號分隔 */
+                certainty?: string;
+                /** @description week（預設）｜month */
+                granularity?: string;
+                /** @description 幾格，週最多 26、月最多 24 */
+                periods?: number;
+                /** @description 只看單一專案 */
+                project?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    projects_pnl_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    subcontracts_list: {
         parameters: {
             query?: {
                 /** @description Which field to use when ordering the results. */
@@ -6635,12 +5595,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedBillingClaimList"];
+                    "application/json": components["schemas"]["PaginatedSubcontractList"];
                 };
             };
         };
     };
-    billing_claims_create: {
+    subcontracts_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -6649,9 +5609,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BillingClaimRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["BillingClaimRequest"];
-                "multipart/form-data": components["schemas"]["BillingClaimRequest"];
+                "application/json": components["schemas"]["SubcontractWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SubcontractWriteRequest"];
+                "multipart/form-data": components["schemas"]["SubcontractWriteRequest"];
             };
         };
         responses: {
@@ -6660,17 +5620,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BillingClaim"];
+                    "application/json": components["schemas"]["SubcontractWrite"];
                 };
             };
         };
     };
-    billing_claims_retrieve: {
+    subcontracts_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款事件. */
+                /** @description A unique integer value identifying this 分包合約. */
                 id: number;
             };
             cookie?: never;
@@ -6682,48 +5642,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BillingClaim"];
+                    "application/json": components["schemas"]["Subcontract"];
                 };
             };
         };
     };
-    billing_claims_logs_retrieve: {
+    subcontracts_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 請款事件. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BillingClaim"];
-                };
-            };
-        };
-    };
-    billing_claims_transition_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 請款事件. */
+                /** @description A unique integer value identifying this 分包合約. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ClaimTransitionRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ClaimTransitionRequest"];
-                "multipart/form-data": components["schemas"]["ClaimTransitionRequest"];
+                "application/json": components["schemas"]["SubcontractWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SubcontractWriteRequest"];
+                "multipart/form-data": components["schemas"]["SubcontractWriteRequest"];
             };
         };
         responses: {
@@ -6732,16 +5670,69 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BillingClaim"];
+                    "application/json": components["schemas"]["SubcontractWrite"];
                 };
             };
         };
     };
-    production_lines_list: {
+    subcontracts_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 分包合約. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subcontracts_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 分包合約. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedSubcontractWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedSubcontractWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedSubcontractWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubcontractWrite"];
+                };
+            };
+        };
+    };
+    payables_list: {
         parameters: {
             query?: {
                 /** @description Which field to use when ordering the results. */
                 ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
                 /** @description A search term. */
                 search?: string;
             };
@@ -6756,62 +5747,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProductionLine"][];
+                    "application/json": components["schemas"]["PaginatedPayableList"];
                 };
             };
         };
     };
-    production_lines_retrieve: {
+    payables_create: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                /** @description A unique integer value identifying this 產線. */
-                id: number;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProductionLine"];
-                };
-            };
-        };
-    };
-    production_lines_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 產線. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": components["schemas"]["PatchedProductionLineWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedProductionLineWriteRequest"];
-                "multipart/form-data": components["schemas"]["PatchedProductionLineWriteRequest"];
+                "application/json": components["schemas"]["PayableWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PayableWriteRequest"];
+                "multipart/form-data": components["schemas"]["PayableWriteRequest"];
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProductionLineWrite"];
+                    "application/json": components["schemas"]["PayableWrite"];
                 };
             };
         };
     };
-    assets_summary_retrieve: {
+    payables_summary_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -6832,65 +5798,12 @@ export interface operations {
             };
         };
     };
-    assets_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedAssetUnitList"];
-                };
-            };
-        };
-    };
-    assets_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssetUnitWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["AssetUnitWriteRequest"];
-                "multipart/form-data": components["schemas"]["AssetUnitWriteRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AssetUnitWrite"];
-                };
-            };
-        };
-    };
-    assets_retrieve: {
+    payables_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 個體資產. */
+                /** @description A unique integer value identifying this 應付款項. */
                 id: number;
             };
             cookie?: never;
@@ -6902,26 +5815,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssetUnit"];
+                    "application/json": components["schemas"]["Payable"];
                 };
             };
         };
     };
-    assets_update: {
+    payables_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 個體資產. */
+                /** @description A unique integer value identifying this 應付款項. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AssetUnitWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["AssetUnitWriteRequest"];
-                "multipart/form-data": components["schemas"]["AssetUnitWriteRequest"];
+                "application/json": components["schemas"]["PayableWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PayableWriteRequest"];
+                "multipart/form-data": components["schemas"]["PayableWriteRequest"];
             };
         };
         responses: {
@@ -6930,17 +5843,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssetUnitWrite"];
+                    "application/json": components["schemas"]["PayableWrite"];
                 };
             };
         };
     };
-    assets_destroy: {
+    payables_destroy: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 個體資產. */
+                /** @description A unique integer value identifying this 應付款項. */
                 id: number;
             };
             cookie?: never;
@@ -6956,21 +5869,21 @@ export interface operations {
             };
         };
     };
-    assets_partial_update: {
+    payables_partial_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 個體資產. */
+                /** @description A unique integer value identifying this 應付款項. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["PatchedAssetUnitWriteRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedAssetUnitWriteRequest"];
-                "multipart/form-data": components["schemas"]["PatchedAssetUnitWriteRequest"];
+                "application/json": components["schemas"]["PatchedPayableWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedPayableWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedPayableWriteRequest"];
             };
         };
         responses: {
@@ -6979,26 +5892,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssetUnitWrite"];
+                    "application/json": components["schemas"]["PayableWrite"];
                 };
             };
         };
     };
-    assets_move_create: {
+    payables_logs_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this 個體資產. */
+                /** @description A unique integer value identifying this 應付款項. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payable"];
+                };
+            };
+        };
+    };
+    payables_transition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 應付款項. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AssetMoveRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["AssetMoveRequest"];
-                "multipart/form-data": components["schemas"]["AssetMoveRequest"];
+                "application/json": components["schemas"]["PayableTransitionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PayableTransitionRequest"];
+                "multipart/form-data": components["schemas"]["PayableTransitionRequest"];
             };
         };
         responses: {
@@ -7007,228 +5942,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssetUnit"];
-                };
-            };
-        };
-    };
-    assets_movements_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 個體資產. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AssetUnit"];
-                };
-            };
-        };
-    };
-    lots_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedLotList"];
-                };
-            };
-        };
-    };
-    lots_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LotReceiveRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["LotReceiveRequest"];
-                "multipart/form-data": components["schemas"]["LotReceiveRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lot"];
-                };
-            };
-        };
-    };
-    lots_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 批號庫存. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lot"];
-                };
-            };
-        };
-    };
-    lots_adjust_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 批號庫存. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LotAdjustRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["LotAdjustRequest"];
-                "multipart/form-data": components["schemas"]["LotAdjustRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lot"];
-                };
-            };
-        };
-    };
-    lots_issue_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 批號庫存. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LotIssueRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["LotIssueRequest"];
-                "multipart/form-data": components["schemas"]["LotIssueRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lot"];
-                };
-            };
-        };
-    };
-    lots_transactions_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 批號庫存. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lot"];
-                };
-            };
-        };
-    };
-    locations_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"][];
-                };
-            };
-        };
-    };
-    locations_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this 位置. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
+                    "application/json": components["schemas"]["Payable"];
                 };
             };
         };

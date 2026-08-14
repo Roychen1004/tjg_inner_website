@@ -3,11 +3,8 @@
  *
  * 一張卡只回答四個問題：
  *   這是什麼 · 在哪一站 · 做多少了 · 有沒有卡住
- *
- * 刻意不放的東西：金額、外包廠、簽收單號、建立時間。
- * 那些是明細的事——卡片塞滿了就等於什麼都看不到。
  */
-import { AlertTriangle, ChevronRight, Clock, PenLine, Truck } from "lucide-react";
+import { ChevronRight, Clock } from "lucide-react";
 
 import type { TrackingCard as Card } from "@/api/types";
 import { ProgressBar, StatusBadge } from "@/components/ui";
@@ -71,21 +68,8 @@ export default function TrackingCardView({
 }
 
 function pickFlag(unit: Card) {
-  if (unit.is_outsource_overdue) {
-    return { icon: Truck, label: "外包逾期", color: "var(--color-delayed)" };
-  }
-  if (unit.is_awaiting_signoff) {
-    return { icon: PenLine, label: "待簽收", color: "var(--color-atrisk)" };
-  }
   if (unit.is_stalled) {
     return { icon: Clock, label: `停留 ${unit.days_in_stage} 天`, color: "var(--color-atrisk)" };
-  }
-  if (unit.rollback_count > 0) {
-    return {
-      icon: AlertTriangle,
-      label: `回退 ${unit.rollback_count} 次`,
-      color: "var(--color-atrisk)",
-    };
   }
   return null;
 }

@@ -10,27 +10,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../client";
 import type {
-  AssetSummary,
-  AssetUnit,
+  Attachment,
+  AttachmentList,
+  AttachmentTarget,
   AttentionData,
   Activity,
+  CashflowForecast,
   BillingSummary,
   BoardData,
-  Claim,
   DashboardOverview,
-  LinesData,
-  Lot,
   Milestone,
   MoveStageResult,
-  MyWorkData,
   Notification,
   OptionsData,
   Paginated,
+  Payable,
+  PayableSummary,
   ProjectDetail,
+  ProjectPnl,
   ProjectRow,
   ProjectSummary,
   ReportProgressResult,
-  SignoffResult,
+  Subcontract,
   TrackingCard,
   TrackingDetail,
 } from "../types";
@@ -163,20 +164,11 @@ export function useStageLogs(id: number | null) {
   });
 }
 
-export function useMyWork() {
-  return useQuery({
-    queryKey: key("my-work"),
-    queryFn: () => api.get<MyWorkData>("/tracking-units/my-work"),
-    staleTime: 30 * 1000,
-  });
-}
-
 /** 所有追蹤單元的變更操作共用這組失效規則 */
 function invalidateTracking(qc: ReturnType<typeof useQueryClient>, id: number) {
   qc.invalidateQueries({ queryKey: key("tracking-unit", id) });
   qc.invalidateQueries({ queryKey: key("tracking-units") });
   qc.invalidateQueries({ queryKey: key("board") });
-  qc.invalidateQueries({ queryKey: key("my-work") });
   qc.invalidateQueries({ queryKey: key("dashboard") });
 }
 
@@ -190,30 +182,9 @@ export function useMoveStage() {
       id: number;
       direction: "forward" | "backward";
       note?: string;
-      reason_category?: string;
       expected_stage_id?: number;
     }) => api.post<MoveStageResult>(`/tracking-units/${id}/move-stage`, body),
     onSuccess: (_data, variables) => invalidateTracking(qc, variables.id),
-  });
-}
-
-export function useSignoff() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: {
-      id: number;
-      signoff_by_name: string;
-      signoff_date?: string;
-      signoff_doc_no?: string;
-      signoff_location?: number | null;
-    }) => api.post<SignoffResult>(`/tracking-units/${id}/signoff`, body),
-    onSuccess: (_data, variables) => {
-      invalidateTracking(qc, variables.id);
-      qc.invalidateQueries({ queryKey: key("billing") });
-    },
   });
 }
 
@@ -234,7 +205,7 @@ export function useReportProgress() {
   });
 }
 
-// ── 請款 ───────────────────────────────────────────────────────────
+// ── 應收款 ─────────────────────────────────────────────────────────
 export function useMilestones(params: Params = {}) {
   return useQuery({
     queryKey: key("billing", "milestones", params),
@@ -249,14 +220,36 @@ export function useBillingSummary() {
   });
 }
 
-export function useClaims(params: Params = {}) {
-  return useQuery({
-    queryKey: key("billing", "claims", params),
-    queryFn: () => api.get<Paginated<Claim>>("/billing-claims", params),
+/** 應收款動了，錢相關的畫面全部要跟著變 */
+function invalidateBilling(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: key("billing") });
+  qc.invalidateQueries({ queryKey: key("dashboard") });
+  qc.invalidateQueries({ queryKey: key("projects") });
+  qc.invalidateQueries({ queryKey: key("project") });
+  qc.invalidateQueries({ queryKey: key("cashflow") });
+  qc.invalidateQueries({ queryKey: key("pnl") });
+}
+
+export function useSaveMilestone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id?: number } & Record<string, unknown>) =>
+      id
+        ? api.patch<Milestone>(`/billing-milestones/${id}`, body)
+        : api.post<Milestone>("/billing-milestones", body),
+    onSuccess: () => invalidateBilling(qc),
   });
 }
 
-export function useTransitionClaim() {
+export function useDeleteMilestone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/billing-milestones/${id}`),
+    onSuccess: () => invalidateBilling(qc),
+  });
+}
+
+export function useTransitionMilestone() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -268,80 +261,8 @@ export function useTransitionClaim() {
       date?: string;
       invoice_no?: string;
       reason?: string;
-    }) => api.post<Claim>(`/billing-claims/${id}/transition`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: key("billing") });
-      qc.invalidateQueries({ queryKey: key("dashboard") });
-      qc.invalidateQueries({ queryKey: key("projects") });
-    },
-  });
-}
-
-// ── 資產 ───────────────────────────────────────────────────────────
-export function useAssetSummary() {
-  return useQuery({
-    queryKey: key("assets", "summary"),
-    queryFn: () => api.get<AssetSummary>("/assets/summary"),
-  });
-}
-
-export function useAssets(params: Params = {}, enabled = true) {
-  return useQuery({
-    queryKey: key("assets", "units", params),
-    queryFn: () => api.get<Paginated<AssetUnit>>("/assets", params),
-    enabled,
-  });
-}
-
-export function useLots(params: Params = {}, enabled = true) {
-  return useQuery({
-    queryKey: key("assets", "lots", params),
-    queryFn: () => api.get<Paginated<Lot>>("/lots", params),
-    enabled,
-  });
-}
-
-export function useMoveAsset() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: {
-      id: number;
-      movement_type: string;
-      to_location?: number | null;
-      to_holder?: number | null;
-      to_project?: number | null;
-      note?: string;
-    }) => api.post<{ asset: AssetUnit }>(`/assets/${id}/move`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: key("assets") }),
-  });
-}
-
-// ── 產線 ───────────────────────────────────────────────────────────
-export function useLines() {
-  return useQuery({
-    queryKey: key("lines"),
-    queryFn: () => api.get<LinesData>("/production-lines"),
-    staleTime: 60 * 1000,
-  });
-}
-
-export function useUpdateLine() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: {
-      id: number;
-      status?: string;
-      current_work?: string;
-      utilization?: string;
-      today_output?: string;
-    }) => api.patch(`/production-lines/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: key("lines") }),
+    }) => api.post<Milestone>(`/billing-milestones/${id}/transition`, body),
+    onSuccess: () => invalidateBilling(qc),
   });
 }
 
@@ -361,5 +282,153 @@ export function useMarkNotificationsRead() {
     mutationFn: (id?: number) =>
       api.post(id ? `/notifications/${id}/read` : "/notifications/read"),
     onSuccess: () => qc.invalidateQueries({ queryKey: key("notifications") }),
+  });
+}
+
+// ── 附件 ───────────────────────────────────────────────────────────
+/** 一個掛載對象一份快取。換專案就是換一份清單 */
+const attachmentKey = (target: AttachmentTarget, id: number) => key("attachments", target, id);
+
+export function useAttachments(target: AttachmentTarget, id: number | null) {
+  return useQuery({
+    queryKey: attachmentKey(target, id ?? 0),
+    queryFn: () => api.get<AttachmentList>("/attachments", { target, id: id! }),
+    enabled: id !== null,
+  });
+}
+
+export function useUploadAttachment(target: AttachmentTarget, id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, category, note }: { file: File; category: string; note?: string }) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("target", target);
+      form.append("id", String(id));
+      form.append("category", category);
+      if (note) form.append("note", note);
+      return api.upload<Attachment>("/attachments", form);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: attachmentKey(target, id) }),
+  });
+}
+
+export function useDeleteAttachment(target: AttachmentTarget, id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (attachmentId: number) => api.delete(`/attachments/${attachmentId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: attachmentKey(target, id) }),
+  });
+}
+
+/** 下載與預覽都直接給網址——檔案由 nginx 送，不經過 fetch 與記憶體 */
+export function attachmentUrl(id: number, inline = false) {
+  return `/api/v0.1/attachments/${id}/download${inline ? "?inline=1" : ""}`;
+}
+
+// ── 分包合約 ───────────────────────────────────────────────────────
+export function useSubcontracts(params: Params = {}, enabled = true) {
+  return useQuery({
+    queryKey: key("subcontracts", params),
+    queryFn: () => api.get<Paginated<Subcontract>>("/subcontracts", params),
+    enabled,
+  });
+}
+
+/** 分包合約與應付款項互相影響（合約的已計價來自應付），一起失效 */
+function invalidatePayables(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: key("subcontracts") });
+  qc.invalidateQueries({ queryKey: key("payables") });
+  qc.invalidateQueries({ queryKey: key("cashflow") });
+  qc.invalidateQueries({ queryKey: key("pnl") });
+}
+
+export function useSaveSubcontract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id?: number } & Record<string, unknown>) =>
+      id
+        ? api.patch<Subcontract>(`/subcontracts/${id}`, body)
+        : api.post<Subcontract>("/subcontracts", body),
+    onSuccess: () => invalidatePayables(qc),
+  });
+}
+
+export function useDeleteSubcontract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/subcontracts/${id}`),
+    onSuccess: () => invalidatePayables(qc),
+  });
+}
+
+// ── 應付款項 ───────────────────────────────────────────────────────
+export function usePayables(params: Params = {}, enabled = true) {
+  return useQuery({
+    queryKey: key("payables", params),
+    queryFn: () => api.get<Paginated<Payable>>("/payables", params),
+    enabled,
+  });
+}
+
+export function usePayableSummary() {
+  return useQuery({
+    queryKey: key("payables", "summary"),
+    queryFn: () => api.get<PayableSummary>("/payables/summary"),
+  });
+}
+
+export function useSavePayable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id?: number } & Record<string, unknown>) =>
+      id ? api.patch<Payable>(`/payables/${id}`, body) : api.post<Payable>("/payables", body),
+    onSuccess: () => invalidatePayables(qc),
+  });
+}
+
+export function useTransitionPayable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: number;
+      to_state: string;
+      date?: string;
+      payment_method?: string;
+      check_due_date?: string;
+      check_no?: string;
+      reason?: string;
+    }) => api.post<Payable>(`/payables/${id}/transition`, body),
+    onSuccess: () => invalidatePayables(qc),
+  });
+}
+
+export function useDeletePayable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/payables/${id}`),
+    onSuccess: () => invalidatePayables(qc),
+  });
+}
+
+// ── 現金流與損益 ───────────────────────────────────────────────────
+export function useCashflow(params: Params = {}, enabled = true) {
+  return useQuery({
+    queryKey: key("cashflow", params),
+    queryFn: () => api.get<CashflowForecast>("/cashflow/forecast", params),
+    enabled,
+    // 現金流是彙總，算得比較久；一分鐘內不重打
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useProjectPnl(id: number | null) {
+  return useQuery({
+    queryKey: key("pnl", id),
+    queryFn: () => api.get<ProjectPnl>(`/projects/${id}/pnl`),
+    enabled: id !== null,
   });
 }

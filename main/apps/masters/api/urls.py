@@ -5,7 +5,6 @@ from .views import (
     CustomerViewSet,
     DepartmentViewSet,
     EmployeeViewSet,
-    ItemViewSet,
     OptionsView,
     VendorViewSet,
 )
@@ -19,7 +18,6 @@ router.register("customers", CustomerViewSet, basename="customer")
 router.register("vendors", VendorViewSet, basename="vendor")
 router.register("employees", EmployeeViewSet, basename="employee")
 router.register("departments", DepartmentViewSet, basename="department")
-router.register("items", ItemViewSet, basename="item")
 
 urlpatterns = [
     path("options", OptionsView.as_view(), name="options"),

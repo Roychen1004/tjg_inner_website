@@ -1,52 +1,13 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from main.apps.core.serializers import UserBriefSerializer
 from main.apps.masters.serializers import CustomerSerializer, StageSerializer
-from main.apps.projects.models import ChangeOrder, Project, ProjectPhase
+from main.apps.projects.models import ChangeOrder, Project
 from main.utils.choices import ChangeOrderStatus
 from main.utils.permissions import has_permission
 from main.utils.scoping import can_view_amount
-
-
-class ProjectPhaseSerializer(serializers.ModelSerializer):
-    """期別（標段）。
-
-    ⚠️ 這是**工程的分期**，不是「分期付款」——雖然兩者常常對得起來。
-
-    它做兩件事：
-      1. 把追蹤單元分組（第一期的批次歸第一期）
-      2. 決定簽收時觸發哪一筆請款里程碑（里程碑也可以綁期別）
-
-    合約寫「第一期構件全數簽收後請款 40%」時，
-    系統要知道「哪些批次算第一期」——靠的就是這個。
-    """
-
-    unit_count = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ProjectPhase
-        fields = ["id", "project", "seq", "name", "note", "unit_count"]
-        read_only_fields = ["id", "unit_count"]
-        # 預設驗證器會吐英文的 "The fields project, seq must make a unique set"，
-        # 而且掛在 non_field_errors 上。關掉，用下面自己寫的中文訊息
-        validators = []
-
-    def get_unit_count(self, obj) -> int:
-        return obj.units.count()
-
-    def validate(self, attrs):
-        project = attrs.get("project") or getattr(self.instance, "project", None)
-        seq = attrs.get("seq", getattr(self.instance, "seq", None))
-        if project and seq is not None:
-            clash = ProjectPhase.objects.filter(project=project, seq=seq)
-            if self.instance:
-                clash = clash.exclude(pk=self.instance.pk)
-            existing = clash.first()
-            if existing:
-                raise serializers.ValidationError(
-                    {"seq": f"順序 {seq} 已被「{existing.name}」使用"}
-                )
-        return attrs
 
 
 class AmountScopedMixin:
@@ -70,7 +31,7 @@ class AmountScopedMixin:
 
 
 class ProjectListSerializer(AmountScopedMixin, serializers.ModelSerializer):
-    """清單用。刻意不含 phases／合約條款——列表不需要，省頻寬也省記憶體。"""
+    """清單用。刻意不含分期／合約條款——列表不需要，省頻寬也省記憶體。"""
 
     customer_name = serializers.CharField(source="customer.name", read_only=True, default="")
     owner_name = serializers.CharField(source="owner.name", read_only=True, default="")
@@ -129,13 +90,13 @@ class ProjectListSerializer(AmountScopedMixin, serializers.ModelSerializer):
 
 
 class ProjectDetailSerializer(ProjectListSerializer):
-    """明細用。多帶主線階段全貌、期別、合約條款與可執行的操作。"""
+    """明細用。多帶主線階段全貌、應收款、合約條款與可執行的操作。"""
 
     customer = CustomerSerializer(read_only=True)
     owner = UserBriefSerializer(read_only=True)
     main_stage = StageSerializer(read_only=True)
     main_stages = serializers.SerializerMethodField()
-    phases = ProjectPhaseSerializer(many=True, read_only=True)
+    milestones = serializers.SerializerMethodField()
     approved_change_amount = serializers.SerializerMethodField()
 
     can_advance = serializers.SerializerMethodField()
@@ -145,7 +106,7 @@ class ProjectDetailSerializer(ProjectListSerializer):
 
     class Meta(ProjectListSerializer.Meta):
         fields = ProjectListSerializer.Meta.fields + [
-            "customer", "owner", "main_stage", "main_stages", "phases",
+            "customer", "owner", "main_stage", "main_stages", "milestones",
             "approved_change_amount", "note", "contract_terms", "quote_info", "doc_links",
             "can_advance", "can_rollback", "can_edit", "can_view_amounts",
         ]
@@ -154,42 +115,65 @@ class ProjectDetailSerializer(ProjectListSerializer):
         stages = obj.main_template.stages.filter(is_active=True).order_by("seq")
         return StageSerializer(stages, many=True).data
 
+    def get_milestones(self, obj) -> list[dict]:
+        """應收款直接掛在專案明細上——案子的錢跟案子一起看，不用切分頁。
+
+        檢視角色拿到空陣列：應收款整列都是金額。
+        """
+        if not self._visible(obj):
+            return []
+        from main.apps.billing.serializers import BillingMilestoneSerializer
+
+        rows = obj.milestones.all().order_by("seq")
+        return BillingMilestoneSerializer(rows, many=True, context=self.context).data
+
     def get_approved_change_amount(self, obj) -> str | None:
         return self._money(obj.approved_change_amount, obj)
 
     def get_can_advance(self, obj) -> bool:
-        if obj.is_closed or not has_permission(self._user(), "advance_project_stage"):
+        if obj.is_closed or not has_permission(self._user(), "edit_project"):
             return False
         return not obj.main_stage.is_final
 
     def get_can_rollback(self, obj) -> bool:
-        if obj.is_closed or not has_permission(self._user(), "advance_project_stage"):
+        if obj.is_closed or not has_permission(self._user(), "edit_project"):
             return False
         return not obj.main_stage.is_first
 
     def get_can_edit(self, obj) -> bool:
-        from main.apps.core.models import Role
-
-        user = self._user()
-        if obj.is_closed or not has_permission(user, "edit_project"):
-            return False
-        if user.has_role(Role.PM) and not user.has_role(Role.OWNER, Role.ADMIN):
-            return obj.owner_id == user.pk
-        return True
+        return not obj.is_closed and has_permission(self._user(), "edit_project")
 
     def get_can_view_amounts(self, obj) -> bool:
         return self._visible(obj)
 
 
+class MilestoneRowSerializer(serializers.Serializer):
+    """建案時一起填的請款分期，一列一期"""
+
+    label = serializers.CharField(max_length=100)
+    percentage = serializers.DecimalField(
+        max_digits=5, decimal_places=2,
+        min_value=Decimal("0"), max_value=Decimal("100"),
+    )
+    condition = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    expected_date = serializers.DateField(required=False, allow_null=True)
+
+
 class ProjectWriteSerializer(serializers.ModelSerializer):
-    """建立／修改。主線模板與起始階段由系統決定，不讓使用者選。"""
+    """建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+
+    合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
+    付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+    """
+
+    milestones = MilestoneRowSerializer(many=True, required=False, write_only=True)
 
     class Meta:
         model = Project
         fields = [
             "name", "project_type", "customer", "contract_amount", "owner",
             "start_date", "due_date", "note", "status",
-            "contract_terms", "quote_info", "doc_links",
+            "contract_terms", "quote_info", "doc_links", "milestones",
         ]
 
     def validate(self, attrs):
@@ -197,6 +181,14 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
         due = attrs.get("due_date") or getattr(self.instance, "due_date", None)
         if start and due and due < start:
             raise serializers.ValidationError({"due_date": "預計完工日不可早於開工日"})
+
+        rows = attrs.get("milestones")
+        if rows:
+            total = sum(r["percentage"] for r in rows)
+            if total > 100:
+                raise serializers.ValidationError(
+                    {"milestones": f"各期比例合計 {total}%，超過 100%"}
+                )
         return attrs
 
     def create(self, validated_data):
@@ -204,6 +196,7 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
         from main.utils.choices import TemplateAppliesTo
         from main.utils.exceptions import BusinessRuleError
 
+        rows = validated_data.pop("milestones", [])
         template = StageTemplate.default_for(TemplateAppliesTo.PROJECT_MAIN)
         if template is None:
             raise BusinessRuleError("尚未設定專案主線階段模板，請先執行 seed_masters")
@@ -212,7 +205,23 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request:
             validated_data["created_by"] = request.user
-        return super().create(validated_data)
+        project = super().create(validated_data)
+
+        from main.apps.billing.models import BillingMilestone
+
+        for i, row in enumerate(rows, start=1):
+            milestone = BillingMilestone.objects.create(
+                project=project, seq=i, label=row["label"],
+                percentage=row["percentage"], condition=row.get("condition", ""),
+                expected_date=row.get("expected_date"),
+            )
+            milestone.recalc_amount()
+        return project
+
+    def update(self, instance, validated_data):
+        # 分期列只在建立時整批帶入；之後逐列在專案明細裡改
+        validated_data.pop("milestones", None)
+        return super().update(instance, validated_data)
 
 
 class ChangeOrderSerializer(AmountScopedMixin, serializers.ModelSerializer):

@@ -38,7 +38,7 @@ class Notification(models.Model):
 
     dedup_key = models.CharField(
         "去重鍵", max_length=150, blank=True, db_index=True,
-        help_text="防止同一件事天天轟炸。格式如 alert:awaiting_signoff:unit_130",
+        help_text="防止同一件事天天轟炸。格式如 alert:stalled:unit_130",
     )
     created_at = models.DateTimeField("建立時間", auto_now_add=True)
 

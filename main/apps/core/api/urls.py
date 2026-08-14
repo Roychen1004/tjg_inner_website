@@ -6,6 +6,8 @@ core 模組的 API 路由
 from django.urls import path
 
 from .views import (
+    AttachmentDetailView,
+    AttachmentListView,
     ChangePasswordView,
     CsrfView,
     HealthView,
@@ -26,6 +28,11 @@ urlpatterns = [
     path("auth/logout", LogoutView.as_view(), name="logout"),
     path("auth/me", MeView.as_view(), name="me"),
     path("auth/change-password", ChangePasswordView.as_view(), name="change-password"),
+
+    # 附件：權限借用母物件（?target=project&id=12），不是自己一套
+    path("attachments", AttachmentListView.as_view(), name="attachments"),
+    path("attachments/<int:pk>", AttachmentDetailView.as_view(), name="attachment-detail"),
+    path("attachments/<int:pk>/download", AttachmentDetailView.as_view(), name="attachment-download"),
 
     path("notifications", NotificationListView.as_view(), name="notifications"),
     path("notifications/read", NotificationReadView.as_view(), name="notifications-read-all"),

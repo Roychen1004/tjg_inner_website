@@ -6,7 +6,7 @@
 同一份資料兩個網址、兩個序列化器、兩處篩選邏輯要同步。
 
 改成一個端點，讀寫用不同權限：
-    read_permission  = view_project     全體員工都要用下拉
+    read_permission  = None（登入即可）  全體員工都要用下拉
     write_permission = manage_masters   只有經營者與系統管理員能改
 
 哪些主檔在這裡維護、哪些留在 Django Admin（決策 D26）：
@@ -26,11 +26,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from main.apps.core.models import Department, Role, User
-from main.apps.masters.models import Customer, Item, Vendor
-from main.apps.masters.serializers import CustomerSerializer, ItemSerializer, VendorSerializer
+from main.apps.masters.models import Customer, Vendor
+from main.apps.masters.serializers import CustomerSerializer, VendorSerializer
 from main.utils.choices import VendorType
 from main.utils.exceptions import BusinessRuleError
-from main.utils.viewsets import BaseModelViewSet, ReadOnlyViewSet
+from main.utils.viewsets import BaseModelViewSet
 
 DEFAULT_PASSWORD = "28494320"
 
@@ -48,7 +48,7 @@ class CustomerWriteSerializer(serializers.ModelSerializer):
         model = Customer
         fields = [
             "code", "name", "tax_id", "contact_name", "contact_phone",
-            "address", "note", "is_active",
+            "address", "payment_term_type", "payment_term_days", "note", "is_active",
         ]
         # 內建的 UniqueValidator 會先擋下來，吐出「包含 客戶代號 的 客戶 已經存在。」
         # 這句話沒告訴使用者是哪一個代號、也沒說該怎麼辦。改用自己寫的
@@ -74,7 +74,7 @@ class CustomerViewSet(BaseModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerDetailSerializer
     write_serializer_class = CustomerWriteSerializer
-    read_permission = "view_project"
+    read_permission = None
     write_permission = "manage_masters"
 
     def get_queryset(self):
@@ -140,7 +140,7 @@ class VendorViewSet(BaseModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorDetailSerializer
     write_serializer_class = VendorWriteSerializer
-    read_permission = "view_project"
+    read_permission = None
     write_permission = "manage_masters"
 
     def get_queryset(self):
@@ -157,12 +157,12 @@ class VendorViewSet(BaseModelViewSet):
     def perform_destroy(self, instance):
         used = (
             instance.subcontracted_units.exists()
-            or instance.outsourced_units.exists()
-            or instance.transported_units.exists()
+            or instance.subcontracts.exists()
+            or instance.payables.exists()
         )
         if used:
             raise BusinessRuleError(
-                f"「{instance.name}」已被追蹤單元引用，不可刪除。若不再往來請改為「停用」"
+                f"「{instance.name}」已被工項或應付資料引用，不可刪除。若不再往來請改為「停用」"
             )
         instance.delete()
 
@@ -261,7 +261,7 @@ class EmployeeViewSet(BaseModelViewSet):
     queryset = User.objects.select_related("department").prefetch_related("groups")
     serializer_class = EmployeeSerializer
     write_serializer_class = EmployeeWriteSerializer
-    read_permission = "view_project"
+    read_permission = None
     write_permission = "manage_masters"
     http_method_names = ["get", "post", "patch", "head", "options"]
 
@@ -325,37 +325,12 @@ class DepartmentSerializer(serializers.ModelSerializer):
 class DepartmentViewSet(BaseModelViewSet):
     queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
-    read_permission = "view_project"
+    read_permission = None
     write_permission = "manage_masters"
     pagination_class = None
 
     def get_queryset(self):
         return super().get_queryset().annotate(member_count=Count("members")).order_by("code")
-
-
-# ── 物品（唯讀）─────────────────────────────────────────────────────
-class ItemViewSet(ReadOnlyViewSet):
-    """物品主檔。
-
-    維護留在 Django Admin：欄位依料型不同（鋼板問厚寬長、H型鋼問腹板翼板厚），
-    Admin 的表單處理這種情況比自己刻一個好（決策 D26）。
-    """
-
-    queryset = Item.objects.filter(is_active=True).select_related("category")
-    serializer_class = ItemSerializer
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        params = self.request.query_params
-        if q := params.get("q"):
-            qs = qs.filter(
-                Q(name__icontains=q) | Q(code__icontains=q) | Q(spec_label__icontains=q)
-            )
-        if kind := params.get("kind"):
-            qs = qs.filter(item_kind=kind)
-        if mode := params.get("tracking_mode"):
-            qs = qs.filter(tracking_mode=mode)
-        return qs
 
 
 # ── 選項 ───────────────────────────────────────────────────────────
@@ -383,20 +358,15 @@ class OptionsView(APIView):
             "status": opts(c.Status),
             "project_type": opts(c.ProjectType),
             "unit_type": opts(c.UnitType),
-            "work_mode": opts(c.WorkMode),
-            "rollback_reason": opts(c.RollbackReason),
-            "trigger_type": opts(c.TriggerType),
-            "claim_state": opts(c.ClaimState),
             "milestone_state": opts(c.MilestoneState),
-            "item_kind": opts(c.ItemKind),
-            "asset_status": opts(c.AssetStatus),
-            "asset_movement_type": opts(c.AssetMovementType),
-            "lot_status": opts(c.LotStatus),
-            "aging_status": opts(c.AgingStatus),
-            "location_type": opts(c.LocationType),
-            "line_status": opts(c.LineStatus),
-            "profile_type": opts(c.ProfileType),
             "change_order_status": opts(c.ChangeOrderStatus),
+            "attachment_category": opts(c.AttachmentCategory),
+            "subcontract_category": opts(c.SubcontractCategory),
+            "subcontract_status": opts(c.SubcontractStatus),
+            "payment_term_type": opts(c.PaymentTermType),
+            "payment_method": opts(c.PaymentMethod),
+            "payable_state": opts(c.PayableState),
+            "certainty": opts(c.Certainty),
             "role": opts(Role),
             "status_colors": c.STATUS_COLORS,
             "users": list(User.objects.filter(is_active=True).values(

@@ -131,10 +131,37 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return data as T;
 }
 
+/**
+ * 檔案上傳
+ *
+ * 不能走上面的 `request`：那裡一律 `JSON.stringify(body)` 並設
+ * `Content-Type: application/json`。multipart 的 boundary 必須由瀏覽器
+ * 自己產生，**手動設 Content-Type 反而會讓後端解不出檔案**。
+ */
+export async function upload<T>(path: string, form: FormData): Promise<T> {
+  await ensureCsrf();
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-CSRFToken": readCookie("csrftoken") ?? "" },
+    body: form,
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      data ?? { type: "server_error", detail: "上傳失敗，請稍後再試" },
+    );
+  }
+  return data as T;
+}
+
 export const api = {
   get: <T>(path: string, query?: RequestOptions["query"]) =>
     request<T>(path, { method: "GET", query }),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload,
 };

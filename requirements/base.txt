@@ -8,3 +8,6 @@ django-axes==7.0.0
 psycopg[binary]==3.2.3
 python-dotenv==1.0.1
 python-magic==0.4.27
+# 圖片重新編碼：剝除 EXIF（含 GPS 座標）並限制長邊。
+# 現場用手機拍的照片 4–8MB，處理後剩 300–600KB
+Pillow==11.1.0

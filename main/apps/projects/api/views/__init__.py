@@ -4,14 +4,13 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from main.apps.projects.models import ChangeOrder, Project, ProjectPhase
+from main.apps.projects.models import ChangeOrder, Project
 from main.apps.projects.serializers import (
     AdvanceStageSerializer,
     ChangeOrderSerializer,
     ChangeOrderWriteSerializer,
     ProjectDetailSerializer,
     ProjectListSerializer,
-    ProjectPhaseSerializer,
     ProjectWriteSerializer,
 )
 from main.apps.projects.services import project_service
@@ -28,12 +27,12 @@ class ProjectViewSet(BaseModelViewSet):
 
     queryset = Project.objects.select_related(
         "customer", "owner", "main_stage", "main_template"
-    ).prefetch_related("phases", "main_template__stages")
+    ).prefetch_related("main_template__stages")
     serializer_class = ProjectListSerializer
     detail_serializer_class = ProjectDetailSerializer
     write_serializer_class = ProjectWriteSerializer
     scope_function = staticmethod(scope_projects)
-    read_permission = "view_project"
+    read_permission = None  # 登入即可看案子；金額由序列化器過濾
     write_permission = "edit_project"
     search_fields = ["code", "name"]
 
@@ -93,7 +92,7 @@ class ProjectViewSet(BaseModelViewSet):
         """
         from main.utils.permissions import has_permission
 
-        if not has_permission(request.user, "advance_project_stage"):
+        if not has_permission(request.user, "edit_project"):
             return Response(
                 {"type": "permission_denied", "detail": "你沒有推進專案階段的權限"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -135,69 +134,36 @@ class ProjectViewSet(BaseModelViewSet):
             atrisk=Count("id", filter=Q(status=Status.ATRISK)),
             delayed=Count("id", filter=Q(status=Status.DELAYED)),
         )
-        awaiting = [u for u in units if u.is_awaiting_signoff]
 
         payload = {
             "unit_counts": counts,
             "by_stage": sorted(by_stage.values(), key=lambda s: s["seq"]),
-            "awaiting_signoff": [
-                {"id": u.pk, "code": u.code, "name": u.name, "days_in_stage": u.days_in_stage}
-                for u in awaiting
-            ],
             "avg_completion": round(
                 sum(u.completion_ratio for u in units) / len(units), 1
             ) if units else 0.0,
         }
 
         if can_view_amount(request.user, project):
-            milestones = project.milestones.all()
+            from django.db.models import Sum
+
+            from main.utils.choices import MilestoneState
+
+            agg = project.milestones.aggregate(
+                total=Count("id"),
+                claimable=Sum("amount", filter=Q(state=MilestoneState.CLAIMABLE)),
+                invoiced=Sum("amount", filter=Q(state=MilestoneState.INVOICED)),
+            )
             payload["billing"] = {
                 "contract_amount": str(project.effective_amount),
-                "claimable": str(sum(m.claimable_amount for m in milestones)),
-                "claimed": str(sum(m.claimed_amount for m in milestones)),
+                "claimable": str(agg["claimable"] or 0),
+                "invoiced": str(agg["invoiced"] or 0),
                 "received": str(project.received_amount),
                 "collection_rate": project.collection_rate,
-                "milestone_count": len(milestones),
+                "milestone_count": agg["total"],
             }
         else:
             payload["billing"] = None
         return Response(payload)
-
-
-class ProjectPhaseViewSet(BaseModelViewSet):
-    """期別（標段）。
-
-    合約寫「第一期構件全數簽收後請款 40%」時，系統要知道「哪些批次算第一期」——
-    靠的就是這個。沒有期別的專案，里程碑就以全案為範圍。
-    """
-
-    queryset = ProjectPhase.objects.select_related("project").prefetch_related("units")
-    serializer_class = ProjectPhaseSerializer
-    read_permission = "view_project"
-    write_permission = "edit_project"
-    pagination_class = None
-
-    def get_queryset(self):
-        qs = super().get_queryset().filter(
-            project__in=scope_projects(Project.objects.all(), self.request.user)
-        )
-        if project := self.request.query_params.get("project"):
-            qs = qs.filter(project_id=project)
-        return qs.order_by("project", "seq")
-
-    def perform_destroy(self, instance):
-        from main.utils.exceptions import BusinessRuleError
-
-        if instance.units.exists():
-            raise BusinessRuleError(
-                f"「{instance.name}」底下還有 {instance.units.count()} 個追蹤單元，"
-                "請先把它們改到其他期別再刪除"
-            )
-        if instance.milestones.exists():
-            raise BusinessRuleError(
-                f"「{instance.name}」已被請款里程碑引用，刪掉會讓簽收找不到對應的請款條件"
-            )
-        instance.delete()
 
 
 class ChangeOrderViewSet(BaseModelViewSet):
@@ -209,7 +175,7 @@ class ChangeOrderViewSet(BaseModelViewSet):
     queryset = ChangeOrder.objects.select_related("project", "approved_by")
     serializer_class = ChangeOrderSerializer
     write_serializer_class = ChangeOrderWriteSerializer
-    read_permission = "view_project"
+    read_permission = None  # 登入即可看案子；金額由序列化器過濾
     write_permission = "edit_project"
 
     def get_queryset(self):

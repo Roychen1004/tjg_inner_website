@@ -32,8 +32,7 @@ urlpatterns = [
     path(f"{API}/", include("main.apps.projects.api.urls")),
     path(f"{API}/", include("main.apps.tracking.api.urls")),
     path(f"{API}/", include("main.apps.billing.api.urls")),
-    path(f"{API}/", include("main.apps.production.api.urls")),
-    path(f"{API}/", include("main.apps.assets.api.urls")),
+    path(f"{API}/", include("main.apps.payables.api.urls")),
     path(f"{API}/", include("main.apps.analytics.api.urls")),
 ]
 

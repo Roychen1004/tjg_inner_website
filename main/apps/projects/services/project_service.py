@@ -93,17 +93,11 @@ def _unfinished_unit_count(project):
 
 def _outstanding_summary(project):
     """未收款彙總。結案前的二次確認要說出具體數字，不能只說「還有錢沒收」。"""
-    from main.apps.billing.models import BillingClaim
-
-    claims = BillingClaim.objects.filter(milestone__project=project).exclude(
-        state="received"
-    )
-    total = sum(c.amount for c in claims)
-    pending = project.milestones.filter(state=MilestoneState.PENDING).count()
+    rows = project.milestones.exclude(state=MilestoneState.RECEIVED)
     return {
-        "count": claims.count(),
-        "amount": total,
-        "pending_milestones": pending,
+        "count": rows.count(),
+        "amount": sum(m.amount for m in rows),
+        "pending_milestones": rows.filter(state=MilestoneState.PENDING).count(),
     }
 
 
@@ -129,11 +123,9 @@ def approve_change_order(change_order, actor):
     project = change_order.project
     recalculated = 0
     for milestone in BillingMilestone.objects.filter(project=project).select_related("project"):
-        # 已經開過請款的里程碑不動——金額已經送出去了，改了就對不上帳
-        if milestone.claims.exists():
-            continue
-        milestone.recalc_amount()
-        recalculated += 1
+        # recalc_amount() 內部會跳過已請款的列——金額已經送出去了，改了就對不上帳
+        if milestone.recalc_amount():
+            recalculated += 1
 
     ActivityLog.record(
         f"{project.name} 變更追加單「{change_order.title}」核准，金額 {change_order.amount:,.0f} 元",

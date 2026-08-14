@@ -11,7 +11,6 @@ from main.apps.tracking.serializers import (
     MoveStageSerializer,
     ProgressLogSerializer,
     ReportProgressSerializer,
-    SignoffSerializer,
     StageLogSerializer,
     TrackingUnitCardSerializer,
     TrackingUnitDetailSerializer,
@@ -19,12 +18,11 @@ from main.apps.tracking.serializers import (
 )
 from main.apps.tracking.services import stage_service
 from main.utils.choices import StageDirection, Status, TemplateAppliesTo, UnitType
-from main.utils.pagination import SmallPagination
 from main.utils.permissions import has_permission
 from main.utils.scoping import scope_tracking_units
 from main.utils.viewsets import BaseModelViewSet, bool_param
 
-CARD_SELECT = ("project", "phase", "current_stage", "template", "assignee")
+CARD_SELECT = ("project", "current_stage", "template")
 
 
 class TrackingUnitViewSet(BaseModelViewSet):
@@ -41,7 +39,7 @@ class TrackingUnitViewSet(BaseModelViewSet):
     detail_serializer_class = TrackingUnitDetailSerializer
     write_serializer_class = TrackingUnitWriteSerializer
     scope_function = staticmethod(scope_tracking_units)
-    read_permission = "view_tracking"
+    read_permission = None  # 登入即可看進度；金額不經過這裡
     write_permission = "edit_tracking"
 
     def get_queryset(self):
@@ -52,24 +50,14 @@ class TrackingUnitViewSet(BaseModelViewSet):
             qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(project__name__icontains=q))
         if project := params.get("project"):
             qs = qs.filter(project_id=project)
-        if phase := params.get("phase"):
-            qs = qs.filter(phase_id=phase)
         if unit_type := params.get("unit_type"):
             qs = qs.filter(unit_type=unit_type)
         if stage := params.get("stage"):
             qs = qs.filter(current_stage_id=stage)
         if st := params.get("status"):
             qs = qs.filter(status__in=st.split(","))
-        if assignee := params.get("assignee"):
-            qs = qs.filter(assignee_id=assignee)
-
-        if bool_param(self.request, "awaiting_signoff"):
-            qs = qs.filter(current_stage__requires_signoff=True, signoff_date__isnull=True)
         if bool_param(self.request, "attention"):
             qs = qs.filter(status__in=[Status.ATRISK, Status.DELAYED])
-        if bool_param(self.request, "mine"):
-            qs = qs.filter(assignee=self.request.user)
-
         return qs
 
     # ── 看板 ───────────────────────────────────────────────────────
@@ -80,9 +68,6 @@ class TrackingUnitViewSet(BaseModelViewSet):
         刻意**不分頁**，但改用兩道硬限制守住記憶體：
           · 必須指定 project 或 unit_type（不讓人一次撈全公司）
           · 單次最多 300 張卡，超過回傳計數並要求縮小範圍
-
-        原因：看板的意義就是「一眼看完」，分頁的看板沒有意義；
-        但無上限查詢在 8GB 主機上是不能開的門（決策 D07）。
         """
         params = request.query_params
         project_id = params.get("project")
@@ -104,11 +89,8 @@ class TrackingUnitViewSet(BaseModelViewSet):
         truncated = total > LIMIT
         units = list(qs.order_by("current_stage__seq", "-updated_at")[:LIMIT])
 
-        # ★ 每條流程各一個看板。
-        #
-        # 混合案同時有鋼構（9 站）與土建（5 站），欄位根本不一樣。
-        # 硬畫成一個看板只能挑一條當主軌道，另一種全部擠進「其他流程」那一欄——
-        # 而位置正是看板唯一的重點，擠在一起就什麼都看不出來了。
+        # ★ 每條流程各一個看板。混合案同時有鋼構與土建，欄位根本不一樣，
+        # 硬畫成一個看板，位置——看板唯一的重點——就沒有意義了。
         cards = TrackingUnitCardSerializer(
             units, many=True, context=self.get_serializer_context()
         ).data
@@ -141,7 +123,7 @@ class TrackingUnitViewSet(BaseModelViewSet):
             "shown": len(units),
             "truncated": truncated,
             "truncated_hint": (
-                f"共 {total} 筆，僅顯示前 {LIMIT} 筆。請用專案或期別縮小範圍" if truncated else None
+                f"共 {total} 筆，僅顯示前 {LIMIT} 筆。請用專案縮小範圍" if truncated else None
             ),
         })
 
@@ -177,54 +159,12 @@ class TrackingUnitViewSet(BaseModelViewSet):
             applies_to=applies, is_default=True
         ).first()
 
-    # ── 我的工作 ───────────────────────────────────────────────────
-    @action(detail=False, methods=["get"], url_path="my-work", pagination_class=SmallPagination)
-    def my_work(self, request):
-        """指派給我的工作，依急迫性排序。
-
-        排序不是給人選的——現場人員打開手機就該看到「最該做的那一件」在最上面。
-        順序：延誤 → 注意 → 正常；同級內停滯久的在前。
-        """
-        qs = scope_tracking_units(
-            TrackingUnit.objects.select_related(*CARD_SELECT)
-            .prefetch_related("template__stages")
-            .filter(assignee=request.user),
-            request.user,
-        )
-        # 走到最後一站又做完了的不再出現，否則清單永遠清不掉
-        pending = [u for u in qs if not (u.is_complete and not u.can_advance)]
-
-        units = sorted(
-            pending,
-            key=lambda u: (
-                {Status.DELAYED: 0, Status.ATRISK: 1, Status.ONTRACK: 2}.get(u.status, 3),
-                -u.days_in_stage,
-            ),
-        )
-        data = TrackingUnitCardSerializer(
-            units, many=True, context=self.get_serializer_context()
-        ).data
-        return Response({
-            "count": len(data),
-            "results": data,
-            "summary": {
-                "delayed": sum(1 for u in units if u.status == Status.DELAYED),
-                "atrisk": sum(1 for u in units if u.status == Status.ATRISK),
-                "awaiting_signoff": sum(1 for u in units if u.is_awaiting_signoff),
-            },
-        })
-
     # ── 操作 ───────────────────────────────────────────────────────
     @extend_schema(request=MoveStageSerializer)
     @action(detail=True, methods=["post"], url_path="move-stage")
     def move_stage(self, request, pk=None):
-        """推進或回退一個階段。
-
-        回傳副作用（觸發請款、需要簽收、狀態變更）——
-        前端據此顯示「已觸發第一期請款 210 萬」之類的提示，
-        而不是讓使用者按完之後不知道發生了什麼。
-        """
-        if not has_permission(request.user, "move_stage"):
+        """推進或回退一個階段。"""
+        if not has_permission(request.user, "edit_tracking"):
             return self._denied("你沒有推進階段的權限")
 
         unit = self.get_object()
@@ -235,72 +175,16 @@ class TrackingUnitViewSet(BaseModelViewSet):
         direction = (
             StageDirection.FORWARD if data["direction"] == "forward" else StageDirection.BACKWARD
         )
-        result = stage_service.move_stage(
+        unit, _log = stage_service.move_stage(
             unit.pk, direction, request.user,
             note=data.get("note", ""),
-            reason_category=data.get("reason_category", ""),
             expected_stage_id=data.get("expected_stage_id"),
         )
-        result.unit.refresh_from_db()
-        return Response({
-            "unit": TrackingUnitDetailSerializer(
-                result.unit, context=self.get_serializer_context()
-            ).data,
-            "warnings": result.warnings,
-            "next_action": result.next_action,
-            "status_changed": result.status_changed,
-        })
-
-    @extend_schema(request=SignoffSerializer)
-    @action(detail=True, methods=["post"])
-    def signoff(self, request, pk=None):
-        """登錄進場簽收 —— 這是觸發請款的動作。
-
-        與推進階段分開：進入「進場簽收」是我們的動作，
-        簽收是業主的動作。分開後，「已送到但沒簽」的批次會堆在看板上，
-        請款卡在哪一眼看見（決策 D12／D13）。
-        """
-        if not has_permission(request.user, "record_signoff"):
-            return self._denied("你沒有登錄簽收的權限")
-
-        unit = self.get_object()
-        serializer = SignoffSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        location = None
-        if data.get("signoff_location"):
-            from main.apps.inventory.models import Location
-
-            location = Location.objects.filter(pk=data["signoff_location"]).first()
-
-        unit, trigger, warnings = stage_service.record_signoff(
-            unit.pk, request.user,
-            signoff_date=data.get("signoff_date"),
-            signoff_by_name=data["signoff_by_name"],
-            signoff_doc_no=data.get("signoff_doc_no", ""),
-            signoff_location=location,
-        )
         unit.refresh_from_db()
-
-        billing = {
-            "triggered": trigger.triggered,
-            "reason": trigger.reason,
-            "progress_text": trigger.progress_text,
-        }
-        # 沒有看金額權限的人只知道「觸發了」，不知道多少錢
-        if trigger.claim and has_permission(request.user, "view_amounts"):
-            billing["claim"] = {
-                "id": trigger.claim.pk,
-                "amount": str(trigger.claim.amount),
-                "milestone": trigger.milestone.label,
-            }
         return Response({
             "unit": TrackingUnitDetailSerializer(
                 unit, context=self.get_serializer_context()
             ).data,
-            "billing": billing,
-            "warnings": warnings,
         })
 
     @extend_schema(request=ReportProgressSerializer)
@@ -308,10 +192,10 @@ class TrackingUnitViewSet(BaseModelViewSet):
     def report_progress(self, request, pk=None):
         """回報進度。
 
-        用 delta（+5）而不是絕對值——兩個師傅同時回報 +5 會正確加 10；
+        用 delta（+5）而不是絕對值——兩個人同時回報 +5 會正確加 10；
         用絕對值的話後者會覆蓋前者，少算 5 支。
         """
-        if not has_permission(request.user, "report_progress"):
+        if not has_permission(request.user, "edit_tracking"):
             return self._denied("你沒有回報進度的權限")
 
         unit = self.get_object()
@@ -360,8 +244,6 @@ class TrackingUnitViewSet(BaseModelViewSet):
             {
                 "id": s.pk, "name": s.name, "seq": s.seq,
                 "template": s.template.name, "applies_to": s.template.applies_to,
-                "requires_signoff": s.requires_signoff,
-                "is_billing_trigger": s.is_billing_trigger,
             }
             for s in qs
         ])
@@ -382,7 +264,7 @@ class StageTemplateViewSet(BaseModelViewSet):
 
     queryset = StageTemplate.objects.filter(is_active=True).prefetch_related("stages")
     serializer_class = StageTemplateSerializer
-    read_permission = "view_tracking"
+    read_permission = None
     write_permission = "manage_masters"
     http_method_names = ["get", "head", "options"]
     pagination_class = None

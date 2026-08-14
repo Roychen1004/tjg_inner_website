@@ -22,6 +22,11 @@ db.sqlite3
 node_modules/
 web/dist/
 web/.vite/
+web/tsconfig.tsbuildinfo
+
+# ⚠️ package-lock.json **要**版控。web/Dockerfile 跑的是 npm install，
+# 沒有鎖檔的話每台機器建置出來的相依套件版本會不一樣——
+# 那正是部署手冊想避免的「在我電腦上是好的」
 
 # 備份
 backups/

@@ -3,19 +3,16 @@ from django.db import models
 
 
 class Role(models.TextChoices):
-    """角色代號。對應 Django Group 的 name，一個使用者可掛多個，權限取聯集。"""
+    """角色代號。對應 Django Group 的 name，一個使用者可掛多個，權限取聯集。
+
+    只有三種——實際天天用系統的是經營者與會計兩個人（2026-08-13 確認）。
+    「檢視」給未來想讓同仁看進度用：看得到案子與進度，看不到任何金額。
+    角色種類比使用者還多的權限矩陣，只是把簡單的事變難。
+    """
 
     OWNER = "owner", "經營者"
-    PM = "pm", "專案負責人"
-    PLANT_MGR = "plant_mgr", "廠長／生產經理"
-    SITE_MGR = "site_mgr", "工地主任"
-    PURCHASER = "purchaser", "採購"
-    QC = "qc", "品保"
-    WAREHOUSE = "warehouse", "倉管"
-    FINANCE = "finance", "會計／財務"
-    HR = "hr", "人資／行政"
-    WORKER = "worker", "現場人員"
-    ADMIN = "admin", "系統管理員"
+    FINANCE = "finance", "會計"
+    VIEWER = "viewer", "檢視"
 
 
 class User(AbstractUser):
@@ -68,9 +65,4 @@ class User(AbstractUser):
 
     @property
     def default_route(self) -> str:
-        """登入後導向哪裡（決策：worker 進「我的工作」，其餘進「營運總覽」）"""
-        if self.has_role(Role.WORKER) and not self.has_role(
-            Role.OWNER, Role.PM, Role.PLANT_MGR, Role.SITE_MGR, Role.ADMIN
-        ):
-            return "/my-work"
         return "/dashboard"

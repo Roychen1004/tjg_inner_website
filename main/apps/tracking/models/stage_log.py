@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from main.apps.core.models import ImmutableLogModel
-from main.utils.choices import RollbackReason, StageDirection
+from main.utils.choices import StageDirection
 
 
 class TrackingUnitStageLog(ImmutableLogModel):
@@ -10,9 +10,6 @@ class TrackingUnitStageLog(ImmutableLogModel):
 
     ⚠️ 存階段「名稱快照」而非只存 FK：日後把「品檢」改名為「品質檢驗」，
     歷史紀錄仍須顯示當時的名稱。只存 FK 會讓所有歷史跟著變——那是竄改歷史。
-
-    回退時 reason_category 必填，這是 P3 品質失敗成本（PAF 模型）的資料來源。
-    P1 就開始收集，到 P3 才有一年份的歷史可分析。
     """
 
     unit = models.ForeignKey(
@@ -30,10 +27,6 @@ class TrackingUnitStageLog(ImmutableLogModel):
     to_stage_name = models.CharField("新階段名稱", max_length=30)
 
     direction = models.CharField("方向", max_length=10, choices=StageDirection.choices)
-    reason_category = models.CharField(
-        "原因類別", max_length=20, choices=RollbackReason.choices, blank=True,
-        help_text="回退時必填。P3 品質成本統計的來源",
-    )
     note = models.CharField("備註", max_length=500, blank=True)
 
     # 離開原階段時的完成度快照。

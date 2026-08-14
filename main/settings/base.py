@@ -55,9 +55,7 @@ LOCAL_APPS = [
     "main.apps.projects",
     "main.apps.tracking",
     "main.apps.billing",
-    "main.apps.production",
-    "main.apps.inventory",
-    "main.apps.assets",
+    "main.apps.payables",
     "main.apps.analytics",
 ]
 
@@ -169,6 +167,15 @@ MEDIA_ROOT = os.environ.get("MEDIA_ROOT", str(BASE_DIR / "media"))
 MAX_UPLOAD_SIZE_MB = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "20"))
 MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 ALLOWED_UPLOAD_EXTENSIONS = ["pdf", "jpg", "jpeg", "png", "xlsx", "dwg"]
+
+# 附件下載交給 nginx（X-Accel-Redirect），Django 只檢查權限、不碰檔案內容——
+# 25MB 的圖說不會經過 Python 的記憶體（決策 T11）。
+#
+# ⚠️ 沒有 nginx 在前面時**一定要關掉**（本機 runserver、或直連 api:8000 測試），
+# 否則瀏覽器收到的是一個帶著 header 的空回應——下載到 0 bytes，而且不會報錯。
+USE_X_ACCEL_REDIRECT = os.environ.get(
+    "USE_X_ACCEL_REDIRECT", "False" if DEBUG else "True"
+).lower() == "true"
 
 # ── DRF ────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {

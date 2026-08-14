@@ -4,13 +4,7 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from main.utils.choices import STATUS_COLORS
 
-from .models import ChangeOrder, Project, ProjectPhase
-
-
-class ProjectPhaseInline(admin.TabularInline):
-    model = ProjectPhase
-    extra = 0
-    ordering = ("seq",)
+from .models import ChangeOrder, Project
 
 
 @admin.register(Project)
@@ -23,7 +17,6 @@ class ProjectAdmin(SimpleHistoryAdmin):
     search_fields = ("code", "name", "customer__name")
     ordering = ("-created_at",)
     autocomplete_fields = ("customer", "owner")
-    inlines = [ProjectPhaseInline]
     readonly_fields = ("code", "created_at", "updated_at")
 
     fieldsets = (
@@ -84,13 +77,6 @@ class ProjectAdmin(SimpleHistoryAdmin):
             "customer", "owner", "main_stage"
         ).prefetch_related("change_orders", "milestones")
 
-
-@admin.register(ProjectPhase)
-class ProjectPhaseAdmin(admin.ModelAdmin):
-    list_display = ("project", "seq", "name")
-    list_filter = ("project",)
-    search_fields = ("name", "project__name")
-    ordering = ("project", "seq")
 
 
 @admin.register(ChangeOrder)

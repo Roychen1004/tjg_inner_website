@@ -1,10 +1,9 @@
 """
 儀表板
 
-一個畫面回答一個問題：「公司現在整體狀況如何」。
-
+一個畫面回答一個問題：「今天有什麼要處理、公司現在整體狀況如何」。
 刻意只做三個端點，不做「可自訂儀表板」——
-能自訂的儀表板最後都變成沒人看的儀表板（docs/開發/04_UI設計原則.md）。
+能自訂的儀表板最後都變成沒人看的儀表板。
 """
 from datetime import timedelta
 
@@ -16,12 +15,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from main.apps.billing.models import BillingClaim, BillingMilestone
+from main.apps.billing.models import BillingMilestone
 from main.apps.core.models import ActivityLog
 from main.apps.projects.models import Project
 from main.apps.tracking.models import TrackingUnit
-from main.utils.choices import ClaimState, Status
-from main.utils.permissions import HasPermission, has_permission
+from main.utils.choices import MilestoneState, Status
+from main.utils.permissions import has_permission
 from main.utils.scoping import (
     can_view_amount,
     scope_activities,
@@ -36,14 +35,9 @@ from main.utils.scoping import (
     description="儀表板 KPI 卡片、階段分布、各案進度。回傳形狀見 web/src/api/types.ts 的 DashboardOverview",
 )
 class DashboardOverviewView(APIView):
-    """GET /dashboard/overview —— 五張 KPI 卡片 ＋ 階段分布 ＋ 各案進度
+    """GET /dashboard/overview —— KPI 卡片 ＋ 階段分布 ＋ 各案進度"""
 
-    每一張卡片都是一個管理者早上會問的問題：
-      進行中幾案 / 追蹤單元幾筆 / 幾筆需要關注 / 幾筆等簽收 / 收款率多少
-    """
-
-    permission_classes = [IsAuthenticated, HasPermission]
-    required_permission = "view_dashboard"
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
@@ -57,9 +51,6 @@ class DashboardOverviewView(APIView):
             atrisk=Count("id", filter=Q(status=Status.ATRISK)),
             delayed=Count("id", filter=Q(status=Status.DELAYED)),
         )
-        awaiting = units.filter(
-            current_stage__requires_signoff=True, signoff_date__isnull=True
-        ).count()
 
         cards = [
             {
@@ -80,22 +71,17 @@ class DashboardOverviewView(APIView):
                 ),
                 "detail": f"延誤 {unit_stats['delayed']}、注意 {unit_stats['atrisk']}",
             },
-            {
-                "key": "awaiting_signoff", "label": "待簽收",
-                "value": awaiting, "unit": "筆",
-                "status": "warn" if awaiting else "good",
-                "detail": "已進場但業主尚未簽收，請款卡在這裡" if awaiting else "無待簽收",
-            },
         ]
 
-        # 第五張卡片是錢——看不到金額的角色就不給這張，而不是給一張空的
-        if has_permission(user, "view_amounts"):
+        # 錢的卡片——看不到金額的角色就不給，而不是給一張空的
+        if has_permission(user, "view_money"):
             milestones = scope_billing(BillingMilestone.objects.all(), user).filter(
                 project__is_closed=False
             )
             agg = milestones.aggregate(
-                total=Sum("amount"), received=Sum("received_amount"),
-                claimable=Sum("claimable_amount"), claimed=Sum("claimed_amount"),
+                total=Sum("amount"),
+                received=Sum("amount", filter=Q(state=MilestoneState.RECEIVED)),
+                claimable=Sum("amount", filter=Q(state=MilestoneState.CLAIMABLE)),
             )
             total = agg["total"] or 0
             received = agg["received"] or 0
@@ -106,12 +92,20 @@ class DashboardOverviewView(APIView):
                 "status": "good" if rate >= 80 else ("warn" if rate >= 50 else "bad"),
                 "detail": f"已收 {received:,.0f} / 應收 {total:,.0f} 元",
             })
+            claimable = agg["claimable"] or 0
+            if claimable:
+                cards.append({
+                    "key": "claimable", "label": "可請款",
+                    "value": round(float(claimable) / 10000), "unit": "萬",
+                    "status": "warn",
+                    "detail": "條件到了、還沒開單的錢",
+                })
 
         return Response({
             "cards": cards,
             "by_stage": self._stage_distribution(units),
             "projects": self._project_rows(projects, user),
-            "can_view_amounts": has_permission(user, "view_amounts"),
+            "can_view_amounts": has_permission(user, "view_money"),
         })
 
     def _stage_distribution(self, units):
@@ -147,8 +141,7 @@ class DashboardOverviewView(APIView):
         return sorted(grouped.values(), key=lambda g: -g["total"])
 
     def _project_rows(self, projects, user):
-        """各案一行：階段、追蹤單元數、收款率。列表最多 10 筆——
-        超過 10 個進行中的案子時，看板才是該去的地方。"""
+        """各案一行：階段、追蹤單元數、收款率。列表最多 10 筆。"""
         rows = []
         qs = projects.select_related(
             "main_stage", "main_template", "customer"
@@ -192,18 +185,17 @@ class DashboardAttentionView(APIView):
 
     這是整個系統最有價值的一個端點：把「該有人去處理的事」集中成一張清單，
     而不是讓管理者自己去各個畫面翻。
-
     每一項都要能回答「為什麼在這裡」與「該做什麼」。
     """
 
-    permission_classes = [IsAuthenticated, HasPermission]
-    required_permission = "view_dashboard"
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
+        today = timezone.localdate()
         items = []
         units = scope_tracking_units(
-            TrackingUnit.objects.select_related("project", "current_stage", "assignee"), user
+            TrackingUnit.objects.select_related("project", "current_stage"), user
         ).filter(project__is_closed=False)
 
         # 1. 延誤與注意
@@ -212,12 +204,9 @@ class DashboardAttentionView(APIView):
                 "type": "unit_status",
                 "severity": "bad" if unit.status == Status.DELAYED else "warn",
                 "title": f"{unit.project.name}·{unit.name}",
-                "reason": (
-                    f"回退 {unit.rollback_count} 次" if unit.rollback_count
-                    else f"在「{unit.current_stage.name}」停留 {unit.days_in_stage} 天"
-                ),
-                "action": "查看追蹤單元",
-                "link": f"/tracking?project={unit.project_id}&unit={unit.pk}",
+                "reason": f"在「{unit.current_stage.name}」停留 {unit.days_in_stage} 天",
+                "action": "查看進度",
+                "link": f"/projects?open={unit.project_id}",
                 "unit_id": unit.pk,
             })
 
@@ -233,60 +222,66 @@ class DashboardAttentionView(APIView):
                         f"（門檻 {unit.current_stage.stall_days} 天）"
                     ),
                     "action": "確認是否卡住",
-                    "link": f"/tracking?project={unit.project_id}&unit={unit.pk}",
+                    "link": f"/projects?open={unit.project_id}",
                     "unit_id": unit.pk,
                 })
 
-        # 3. 已進場未簽收 —— 請款卡在這裡
-        for unit in units.filter(
-            current_stage__requires_signoff=True, signoff_date__isnull=True
-        )[:20]:
-            items.append({
-                "type": "awaiting_signoff",
-                "severity": "warn" if unit.days_in_stage > 3 else "info",
-                "title": f"{unit.project.name}·{unit.name}",
-                "reason": f"已進場 {unit.days_in_stage} 天，業主尚未簽收",
-                "action": "登錄簽收",
-                "link": f"/tracking?project={unit.project_id}&unit={unit.pk}",
-                "unit_id": unit.pk,
-            })
+        if has_permission(user, "view_money"):
+            milestones = scope_billing(
+                BillingMilestone.objects.select_related("project"), user
+            ).filter(project__is_closed=False)
 
-        # 4. 外包逾期未回廠
-        today = timezone.localdate()
-        for unit in units.filter(
-            outsource_due_date__lt=today, outsource_out_date__isnull=True,
-            outsource_vendor__isnull=False,
-        )[:20]:
-            days = (today - unit.outsource_due_date).days
-            items.append({
-                "type": "outsource_overdue",
-                "severity": "bad" if days > 7 else "warn",
-                "title": f"{unit.project.name}·{unit.name}",
-                "reason": f"{unit.outsource_vendor.name} 逾期 {days} 天未回廠",
-                "action": "聯絡協力廠",
-                "link": f"/tracking?project={unit.project_id}&unit={unit.pk}",
-                "unit_id": unit.pk,
-            })
-
-        # 5. 可請款逾 7 天未開單 —— 最容易漏掉的錢
-        if has_permission(user, "view_billing"):
+            # 3. 可請款放超過 7 天沒開單 —— 最容易漏掉的錢
             cutoff = timezone.now() - timedelta(days=7)
-            claims = BillingClaim.objects.filter(
-                milestone__in=scope_billing(BillingMilestone.objects.all(), user),
-                state=ClaimState.CLAIMABLE, claimable_at__lt=cutoff,
-            ).select_related("milestone__project")[:20]
-            for claim in claims:
-                days = (timezone.now() - claim.claimable_at).days
-                detail = f"可請款已 {days} 天未開單"
-                if has_permission(user, "view_amounts"):
-                    detail += f"，金額 {claim.amount:,.0f} 元"
+            for m in milestones.filter(
+                state=MilestoneState.CLAIMABLE, claimable_at__lt=cutoff
+            )[:20]:
+                days = (timezone.now() - m.claimable_at).days
                 items.append({
                     "type": "billing_overdue",
                     "severity": "bad",
-                    "title": f"{claim.milestone.project.name}·{claim.milestone.label}",
-                    "reason": detail,
+                    "title": f"{m.project.name}·{m.label}",
+                    "reason": f"可請款已 {days} 天未開單，金額 {m.amount:,.0f} 元",
                     "action": "開立請款單",
-                    "link": f"/billing?claim={claim.pk}",
+                    "link": f"/finance?milestone={m.pk}",
+                })
+
+            # 4. 預計請款日快到了還在「未到」——該確認能不能請了
+            soon = today + timedelta(days=7)
+            for m in milestones.filter(
+                state=MilestoneState.PENDING,
+                expected_date__isnull=False, expected_date__lte=soon,
+            )[:20]:
+                overdue = m.expected_date < today
+                items.append({
+                    "type": "milestone_due",
+                    "severity": "warn" if overdue else "info",
+                    "title": f"{m.project.name}·{m.label}",
+                    "reason": (
+                        f"預計 {m.expected_date} 請款"
+                        + ("，已過期" if overdue else "，快到了")
+                        + "。條件到了就轉「可請款」"
+                    ),
+                    "action": "確認請款條件",
+                    "link": f"/finance?milestone={m.pk}",
+                })
+
+            # 5. 應付款 7 天內要付
+            from main.apps.payables.models import Payable
+            from main.utils.choices import PayableState
+            from main.utils.scoping import scope_payables
+
+            payables = scope_payables(
+                Payable.objects.select_related("vendor", "project"), user
+            ).filter(state=PayableState.APPROVED).due_between(today, soon)
+            for payable in payables[:20]:
+                items.append({
+                    "type": "payable_due",
+                    "severity": "warn",
+                    "title": f"{payable.vendor.name}·{payable.title}",
+                    "reason": f"{payable.cash_date} 要付 {payable.payable_amount:,.0f} 元",
+                    "action": "安排付款",
+                    "link": f"/finance?payable={payable.pk}",
                 })
 
         # 6. 專案逾期
@@ -299,8 +294,7 @@ class DashboardAttentionView(APIView):
                 "title": project.name,
                 "reason": f"預計完工 {project.due_date}，已逾期 {(today - project.due_date).days} 天",
                 "action": "檢視專案",
-                # ?open= 會讓專案頁直接展開這一案。前端沒有 /projects/<id> 這條路由——
-                # 專案是「展開」不是「換頁」，避免三層導航讓人迷路
+                # ?open= 會讓專案頁直接展開這一案。專案是「展開」不是「換頁」
                 "link": f"/projects?open={project.pk}",
             })
 
@@ -319,11 +313,7 @@ class DashboardAttentionView(APIView):
 
 @extend_schema(responses=OpenApiTypes.OBJECT, description="最近動態")
 class ActivityFeedView(APIView):
-    """GET /dashboard/activities —— 最近動態
-
-    「今天公司發生了什麼」。依專案可見範圍過濾，
-    看不到那個案子的人也看不到它的動態。
-    """
+    """GET /dashboard/activities —— 最近動態，依可見範圍過濾。"""
 
     permission_classes = [IsAuthenticated]
 

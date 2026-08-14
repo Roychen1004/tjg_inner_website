@@ -50,9 +50,11 @@ class ProjectQuerySet(models.QuerySet):
                 output_field=money,
             )
 
+        from main.utils.choices import MilestoneState
+
         return self.annotate(
             _change_total=summed(ChangeOrder, "amount", status=ChangeOrderStatus.APPROVED),
-            _received_total=summed(BillingMilestone, "received_amount"),
+            _received_total=summed(BillingMilestone, "amount", state=MilestoneState.RECEIVED),
         )
 
 
@@ -148,7 +150,11 @@ class Project(TimeStampedModel):
         cached = getattr(self, "_received_total", None)
         if cached is not None:
             return cached
-        agg = self.milestones.aggregate(total=models.Sum("received_amount"))
+        from main.utils.choices import MilestoneState
+
+        agg = self.milestones.filter(state=MilestoneState.RECEIVED).aggregate(
+            total=models.Sum("amount")
+        )
         return agg["total"] or Decimal("0")
 
     @property
@@ -192,28 +198,3 @@ class Project(TimeStampedModel):
         if not self.main_stage_id and self.main_template_id:
             self.main_stage = self.main_template.first_stage()
         super().save(*args, **kwargs)
-
-
-class ProjectPhase(models.Model):
-    """期別／標段
-
-    決定哪些批次的簽收會觸發哪一筆請款里程碑。小案子可以不分期。
-    """
-
-    project = models.ForeignKey(
-        Project, verbose_name="專案", on_delete=models.CASCADE, related_name="phases",
-    )
-    seq = models.SmallIntegerField("順序")
-    name = models.CharField("期別名稱", max_length=50, help_text="如「第一期」")
-    note = models.CharField("備註", max_length=200, blank=True)
-
-    class Meta:
-        db_table = "projects_projectphase"
-        verbose_name = verbose_name_plural = "期別"
-        ordering = ["project", "seq"]
-        constraints = [
-            models.UniqueConstraint(fields=["project", "seq"], name="uniq_phase_project_seq"),
-        ]
-
-    def __str__(self):
-        return f"{self.project.name}·{self.name}"

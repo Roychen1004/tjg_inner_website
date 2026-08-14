@@ -6,26 +6,29 @@
  * 一頁搞定：清單點開就在同一頁展開明細（主線階段、追蹤單元、請款）。
  * 不做「清單頁 → 明細頁 → 子頁」的三層導航——那會讓人迷路。
  */
-import { ArrowLeft, ArrowRight, ChevronDown, Pencil, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Pencil, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { ApiError, api } from "@/api/client";
+import { ApiError } from "@/api/client";
 import { useCurrentUser } from "@/api/hooks/useAuth";
-import SetupCheck from "@/components/billing/SetupCheck";
+import AttachmentSection from "@/components/attachments/AttachmentSection";
+import MilestoneTransitionModal from "@/components/billing/MilestoneTransitionModal";
 import ChangeOrderSection from "@/components/forms/ChangeOrderForm";
+import SubcontractSection from "@/components/forms/SubcontractForm";
+import ProjectPnl from "@/components/projects/ProjectPnl";
+import MilestoneForm from "@/components/forms/MilestoneForm";
 import ProjectForm from "@/components/forms/ProjectForm";
 import UnitForm from "@/components/forms/UnitForm";
 import {
   useAdvanceProject,
-  useMilestones,
   useOptions,
   useProject,
   useProjectSummary,
   useProjects,
   useTrackingUnits,
 } from "@/api/hooks";
-import type { ProjectDetail, ProjectRow, TrackingCard } from "@/api/types";
+import type { Milestone, ProjectDetail, ProjectRow, TrackingCard } from "@/api/types";
 import TrackingCardView from "@/components/tracking/TrackingCard";
 import UnitPanel from "@/components/tracking/UnitPanel";
 import {
@@ -33,7 +36,6 @@ import {
   Card,
   EmptyState,
   ErrorState,
-  inputClass,
   Money,
   ProgressBar,
   SearchInput,
@@ -44,8 +46,6 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { phaseName } from "@/lib/naming";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export default function Projects() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -80,7 +80,7 @@ export default function Projects() {
           options={options?.project_type ?? []}
           placeholder="全部類型"
         />
-        {user?.permissions.create_project && (
+        {user?.permissions.edit_project && (
           <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus size={15} />
             新增專案
@@ -214,7 +214,6 @@ function ProjectDetailPanel({ id }: { id: number }) {
   const { data: detail } = useProject(id);
   const { data: summary } = useProjectSummary(id);
   const { data: units } = useTrackingUnits({ project: id, page_size: 100 });
-  const { data: milestones } = useMilestones({ project: id });
   const [selected, setSelected] = useState<TrackingCard | null>(null);
   const [addingUnit, setAddingUnit] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -234,16 +233,13 @@ function ProjectDetailPanel({ id }: { id: number }) {
             tone={summary.unit_counts.delayed ? "bad" : "warn"}
           />
           <Stat label="平均完成度" value={`${summary.avg_completion}%`} />
-          <Stat label="待簽收" value={summary.awaiting_signoff.length} tone="warn" />
+          <Stat label="應收款" value={detail.milestones.length} />
         </div>
       )}
 
       {summary?.billing && (
         <div className="mt-4">
-          <SectionTitle>請款進度</SectionTitle>
-          {/* 請款沒設定好時，這裡會直接說缺什麼——
-              比讓人到請款頁才發現「怎麼都沒東西」好 */}
-          <SetupCheck projectId={id} />
+          <SectionTitle>收款進度</SectionTitle>
           <Card className="p-3">
             <ProgressBar
               value={summary.billing.collection_rate}
@@ -253,40 +249,25 @@ function ProjectDetailPanel({ id }: { id: number }) {
             <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
               <MoneyStat label="有效合約" value={summary.billing.contract_amount} />
               <MoneyStat label="可請款" value={summary.billing.claimable} />
-              <MoneyStat label="已請款" value={summary.billing.claimed} />
+              <MoneyStat label="已請款" value={summary.billing.invoiced} />
               <MoneyStat label="已收款" value={summary.billing.received} />
             </dl>
           </Card>
         </div>
       )}
 
-      <PhaseManager project={detail} />
+      <MilestoneSection detail={detail} />
+
+      <ProjectPnl project={detail} />
+
+      {/* 合約、圖說、時程表都是「這個案子」層級的東西 */}
+      <div className="mt-4">
+        <AttachmentSection target="project" id={detail.id} defaultCategory="contract" />
+      </div>
 
       <ChangeOrderSection project={detail} />
 
-      {milestones && milestones.results.length > 0 && (
-        <div className="mt-4">
-          <SectionTitle>請款里程碑</SectionTitle>
-          <ul className="space-y-1.5">
-            {milestones.results.map((m) => (
-              <li key={m.id} className="rounded-lg bg-page p-2.5 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-ink">
-                    {m.seq}. {m.label}
-                  </span>
-                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-semibold text-ink-2">
-                    {m.state_label}
-                  </span>
-                </div>
-                <p className="mt-1 text-ink-2">{m.trigger_desc}</p>
-                <p className="mt-0.5 text-ink-3">
-                  {m.trigger_label} · {m.progress.text}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <SubcontractSection project={detail} />
 
       <div className="mt-4">
         <SectionTitle
@@ -435,127 +416,109 @@ function MainStageControl({ detail }: { detail: NonNullable<ReturnType<typeof us
 }
 
 /**
- * 期別（標段）管理
+ * 應收款（合約分期）
  *
- * ⚠️ 期別是**工程的分期**，不是「分期付款」——雖然兩者常常對得起來。
- *
- * 它做兩件事：把追蹤單元分組、決定簽收時觸發哪一筆請款里程碑。
- * 合約寫「第一期構件全數簽收後請款 40%」時，
- * 系統要知道「哪些批次算第一期」——靠的就是這個。
+ * 掛在專案明細裡——案子的錢跟案子一起看。
+ * 金流→應收 是跨案總表，這裡是單案的同一份資料。
  */
-function PhaseManager({ project }: { project: ProjectDetail }) {
-  const qc = useQueryClient();
-  const toast = useToast();
+function MilestoneSection({ detail }: { detail: ProjectDetail }) {
+  const [transitioning, setTransitioning] = useState<Milestone | null>(null);
+  const [editing, setEditing] = useState<Milestone | null>(null);
   const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
 
-  const nextSeq = Math.max(0, ...project.phases.map((p) => p.seq)) + 1;
-  const autoName = phaseName(nextSeq);
+  if (!detail.can_view_amounts) return null;
 
-  const create = useMutation({
-    // 沒開自訂就用「第N期」——九成的案子就是這樣命名，
-    // 為了打三個字開一個輸入框是多餘的
-    mutationFn: (customName?: string) =>
-      api.post("/project-phases", {
-        project: project.id,
-        seq: nextSeq,
-        name: (customName ?? autoName).trim(),
-      }),
-    onSuccess: (_d, customName) => {
-      qc.invalidateQueries({ queryKey: ["project"] });
-      toast.success(`已新增期別「${(customName ?? autoName).trim()}」`);
-      setName("");
-      setAdding(false);
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.body.detail : "新增失敗"),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: number) => api.delete(`/project-phases/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["project"] });
-      toast.success("期別已刪除");
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.body.detail : "刪除失敗"),
-  });
-
-  if (!project.can_edit && project.phases.length === 0) return null;
+  const rows = detail.milestones;
+  const totalPct = rows.reduce((sum, m) => sum + Number(m.percentage), 0);
 
   return (
     <div className="mt-4">
       <SectionTitle
         action={
-          project.can_edit && !adding ? (
-            <div className="flex gap-1">
-              <Button variant="primary" onClick={() => create.mutate(undefined)} loading={create.isPending}>
-                <Plus size={13} />
-                新增{autoName}
-              </Button>
-              <Button variant="ghost" onClick={() => setAdding(true)}>
-                自訂…
-              </Button>
-            </div>
+          detail.can_edit ? (
+            <Button variant="ghost" onClick={() => setAdding(true)}>
+              <Plus size={13} />
+              加一期
+            </Button>
           ) : undefined
         }
       >
-        期別（標段）
+        應收款（合約分期）
       </SectionTitle>
 
-      {project.phases.length === 0 && !adding ? (
+      {rows.length === 0 ? (
         <p className="rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
-          這個案子沒有分期，請款里程碑會以<strong>全案</strong>為範圍。
-          若合約是分期請款（第一期／第二期…），在這裡建立期別，
-          追蹤單元與里程碑就能分別掛到各期。
+          還沒填合約的付款分期。點「加一期」把合約抄進來，
+          每一期就會出現在金流與現金流預測裡。
         </p>
       ) : (
-        <ul className="flex flex-wrap gap-2">
-          {project.phases.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center gap-2 rounded-lg bg-page px-2.5 py-1.5 text-xs"
-            >
-              <span className="font-semibold text-ink">{p.name}</span>
-              <span className="text-ink-3">{p.unit_count ?? 0} 個單元</span>
-              {project.can_edit && (
-                <button
-                  type="button"
-                  onClick={() => remove.mutate(p.id)}
-                  aria-label={`刪除 ${p.name}`}
-                  className="h-6 min-h-0 rounded p-0.5 text-ink-3 hover:text-[var(--color-delayed)]"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-1.5">
+            {rows.map((m) => (
+              <li key={m.id} className="rounded-lg bg-page p-2.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-ink">{m.label}</span>
+                  <span className="text-ink-3">{m.percentage}%</span>
+                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-semibold text-ink-2">
+                    {m.state_label}
+                  </span>
+                  <span className="ml-auto font-semibold tabular-nums text-ink">
+                    <Money value={m.amount} compact />
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-ink-3">
+                  {m.condition && <span>{m.condition}</span>}
+                  {m.state === "pending" && <span>預計請款 {m.expected_date ?? "未定"}</span>}
+                  {m.state === "invoiced" && <span>預計收款 {m.due_date ?? "未定"}</span>}
+                  {m.receive_date && <span>收款 {m.receive_date}</span>}
+                  <span className="ml-auto flex gap-1">
+                    {m.can_edit && (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(m)}
+                        className="rounded px-1.5 py-0.5 font-semibold text-ink-2 hover:bg-card"
+                      >
+                        編輯
+                      </button>
+                    )}
+                    {m.next_states.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTransitioning(m)}
+                        className="rounded px-1.5 py-0.5 font-semibold hover:bg-card"
+                        style={{ color: "var(--color-stage-2)" }}
+                      >
+                        變更狀態
+                      </button>
+                    )}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {Math.round(totalPct * 100) / 100 !== 100 && (
+            <p className="mt-1.5 text-[11px]" style={{ color: "var(--color-atrisk)" }}>
+              各期比例合計 {totalPct}%，不是 100%——確認是否漏了一期
+            </p>
+          )}
+        </>
       )}
 
-      {adding && (
-        <div className="mt-2 flex gap-2">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={`不填就用「${autoName}」。也可以打「A標段」之類的`}
-            autoFocus
-            className={inputClass}
-          />
-          <Button
-            variant="primary"
-            onClick={() => create.mutate(name.trim() || undefined)}
-            loading={create.isPending}
-          >
-            新增
-          </Button>
-          <Button
-            onClick={() => {
-              setAdding(false);
-              setName("");
-            }}
-          >
-            取消
-          </Button>
-        </div>
+      {transitioning && (
+        <MilestoneTransitionModal
+          milestone={transitioning}
+          onClose={() => setTransitioning(null)}
+        />
+      )}
+      {(adding || editing) && (
+        <MilestoneForm
+          milestone={editing}
+          projectId={detail.id}
+          onClose={() => {
+            setAdding(false);
+            setEditing(null);
+          }}
+        />
       )}
     </div>
   );

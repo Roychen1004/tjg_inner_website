@@ -10,8 +10,7 @@
 
 export type StatusCode = "ontrack" | "atrisk" | "delayed";
 export type UnitType = "batch" | "work_item";
-export type ClaimState = "claimable" | "invoiced" | "received";
-export type MilestoneState = "pending" | "claimable" | "partial" | "invoiced" | "received";
+export type MilestoneState = "pending" | "claimable" | "invoiced" | "received";
 
 export interface Paginated<T> {
   count: number;
@@ -31,11 +30,6 @@ export interface Stage {
   code: string;
   name: string;
   color: string;
-  is_billing_trigger: boolean;
-  requires_signoff: boolean;
-  is_outsource: boolean;
-  is_hold: boolean;
-  is_core: boolean;
   stall_days: number | null;
 }
 
@@ -81,14 +75,8 @@ export interface ProjectDetail extends ProjectRow {
   owner: { id: number; name: string; title: string } | null;
   main_stage: Stage;
   main_stages: Stage[];
-  phases: Array<{
-    id: number;
-    project: number;
-    seq: number;
-    name: string;
-    note: string;
-    unit_count: number;
-  }>;
+  /** 應收款直接掛在專案明細上。檢視角色拿到空陣列 */
+  milestones: Milestone[];
   approved_change_amount: string | null;
   note: string;
   contract_terms: string;
@@ -119,12 +107,11 @@ export interface ChangeOrder {
 export interface ProjectSummary {
   unit_counts: { total: number; ontrack: number; atrisk: number; delayed: number };
   by_stage: Array<{ name: string; seq: number; count: number }>;
-  awaiting_signoff: Array<{ id: number; code: string; name: string; days_in_stage: number }>;
   avg_completion: number;
   billing: {
     contract_amount: string;
     claimable: string;
-    claimed: string;
+    invoiced: string;
     received: string;
     collection_rate: number;
     milestone_count: number;
@@ -141,57 +128,33 @@ export interface TrackingCard {
   project: number;
   project_name: string;
   project_code: string;
-  /** 期別 id。編輯時要帶回去，否則存檔會把期別清掉 */
-  phase: number | null;
-  phase_name: string;
-  assignee_name: string;
   stage_id: number;
   stage_name: string;
   stage_seq: number;
   stage_total: number;
-  requires_signoff: boolean;
-  is_billing_trigger: boolean;
   qty_total: string | null;
   qty_done: string;
   unit_of_measure: string;
   progress_pct: string | null;
   completion_ratio: number;
-  total_weight_kg: string | null;
   days_in_stage: number;
   is_stalled: boolean;
-  is_signed_off: boolean;
-  is_awaiting_signoff: boolean;
-  is_outsource_overdue: boolean;
   plan_end: string | null;
-  rollback_count: number;
   can_advance: boolean;
   can_rollback: boolean;
-  can_signoff: boolean;
   can_report: boolean;
 }
 
 export interface TrackingDetail extends TrackingCard {
   current_stage: Stage;
   stages: Stage[];
-  assignee: { id: number; name: string } | null;
   note: string;
-  work_mode: string;
+  subcontractor: number | null;
   subcontractor_name: string;
-  outsource_vendor_name: string;
-  outsource_in_date: string | null;
-  outsource_due_date: string | null;
-  outsource_out_date: string | null;
-  transport_vendor_name: string;
-  signoff_date: string | null;
-  signoff_by_name: string;
-  signoff_doc_no: string;
-  signoff_location_name: string;
   plan_start: string | null;
   actual_start: string | null;
   actual_end: string | null;
   quick_increments: number[];
-  can_edit_weight: boolean;
-  rollback_reasons: Option[];
 }
 
 export interface BoardColumn {
@@ -215,23 +178,8 @@ export interface BoardData {
   truncated_hint: string | null;
 }
 
-/** 推進階段的回應。副作用要講清楚，不能按完就沒下文 */
 export interface MoveStageResult {
   unit: TrackingDetail;
-  warnings: string[];
-  next_action: { type: string; message: string; next_stage_id?: number } | null;
-  status_changed: { from: StatusCode; to: StatusCode; reason: string } | null;
-}
-
-export interface SignoffResult {
-  unit: TrackingDetail;
-  billing: {
-    triggered: boolean;
-    reason: string;
-    progress_text: string;
-    claim?: { id: number; amount: string; milestone: string };
-  };
-  warnings: string[];
 }
 
 export interface ReportProgressResult {
@@ -239,82 +187,32 @@ export interface ReportProgressResult {
   log: { id: number; delta: string; reported_at: string };
   suggestion: { type: string; message: string; next_stage_id: number } | null;
 }
-
-export interface MyWorkData {
-  count: number;
-  results: TrackingCard[];
-  summary: { delayed: number; atrisk: number; awaiting_signoff: number };
-}
-
-// ── 請款 ────────────────────────────────────────────────────────────
-export interface Claim {
-  id: number;
-  milestone: number;
-  milestone_label: string;
-  project_id: number;
-  project_name: string;
-  seq: number;
-  amount: string;
-  source: string;
-  source_label: string;
-  is_auto: boolean;
-  triggered_by_name: string;
-  weight_kg_snapshot: string | null;
-  state: ClaimState;
-  state_label: string;
-  next_states: Option[];
-  claimable_at: string;
-  invoice_date: string | null;
-  invoice_no: string;
-  receive_date: string | null;
-  days_since_claimable: number | null;
-  note: string;
-}
-
 export interface Milestone {
   id: number;
   project: number;
   project_name: string;
   project_code: string;
-  phase: number | null;
-  phase_name: string;
   seq: number;
   label: string;
-  trigger_desc: string;
+  /** 合約原文——提醒自己「什麼條件到了可以請」 */
+  condition: string;
   percentage: string;
   amount: string;
-  trigger_type: string;
-  trigger_label: string;
-  threshold_pct: string | null;
-  target_location_name: string;
-  weight_basis_kg: string | null;
-  is_weight_basis_locked: boolean;
-  claimable_amount: string;
-  claimed_amount: string;
-  received_amount: string;
-  /** 還沒收到的錢＝金額 − 已收款 */
-  outstanding_amount: string;
-  /** 還能再建立多少請款＝金額 − 累計可請。部分請款後與 outstanding 不同 */
-  remaining_claimable: string;
   state: MilestoneState;
   state_label: string;
+  /** 這筆現在可以轉去哪些狀態，由後端算好 */
+  next_states: Option[];
+  /** 預計請款日。由人填；沒填的列不會出現在現金流預測裡 */
+  expected_date: string | null;
+  claimable_at: string | null;
+  invoice_date: string | null;
+  invoice_no: string;
+  due_date: string | null;
+  receive_date: string | null;
+  outstanding_amount: string;
+  /** 可請款後放了幾天。超過 7 天就是漏掉的錢 */
+  days_since_claimable: number | null;
   note: string;
-  progress: {
-    text: string;
-    pct: number | null;
-    threshold_pct?: number | null;
-    signed_units?: number;
-    total_units?: number;
-    /** 還沒簽收的批次，各自卡在哪一站。「還差 3 批」要說得出是哪 3 批 */
-    pending?: Array<{
-      id: number;
-      name: string;
-      stage_name: string;
-      ready_to_sign: boolean;
-      hint: string;
-    }>;
-  };
-  claims: Claim[];
   can_edit: boolean;
 }
 
@@ -385,134 +283,20 @@ export interface Activity {
   project: string;
   created_at: string;
 }
-
-// ── 資產 ────────────────────────────────────────────────────────────
-export interface AssetUnit {
-  id: number;
-  asset_no: string;
-  item: number;
-  item_code: string;
-  item_name: string;
-  item_kind: string;
-  serial_no: string;
-  brand: string;
-  model: string;
-  location: number;
-  location_name: string;
-  location_path: string;
-  holder: number | null;
-  holder_name: string;
-  current_project: number | null;
-  current_project_name: string;
-  current_project_code: string;
-  asset_status: string;
-  status_label: string;
-  purchase_date: string | null;
-  next_maintenance_date: string | null;
-  calibration_due_date: string | null;
-  is_calibration_overdue: boolean;
-  is_maintenance_overdue: boolean;
-  note: string;
-}
-
-export interface Lot {
-  id: number;
-  lot_no: string;
-  item_code: string;
-  item_name: string;
-  item_kind: string;
-  spec_label: string;
-  material_grade: string;
-  surface_treatment: string;
-  dimensions: Record<string, string>;
-  unit_of_measure: string;
-  location_name: string;
-  location_path: string;
-  location_type: string;
-  qty_on_hand: string;
-  qty_reserved: string;
-  qty_available: string;
-  total_weight_kg: string | null;
-  status: string;
-  status_label: string;
-  aging_status: string;
-  aging_label: string;
-  aging_days: number | null;
-  reserved_for_project_name: string;
-  received_date: string | null;
-  mill_cert_no: string;
-  heat_no: string;
-  is_remnant: boolean;
-  parent_lot_no: string;
-  actual_length_mm: string | null;
-  actual_width_mm: string | null;
-  note: string;
-}
-
-export interface AssetSummary {
-  by_kind: Record<
-    string,
-    {
-      label: string;
-      mode: "individual" | "quantity";
-      count: number;
-      in_use?: number;
-      idle?: number;
-      unavailable?: number;
-      qty_on_hand?: string;
-      total_value?: string;
-      remnant_lots?: number;
-    }
-  >;
-  alerts: {
-    calibration_due: number;
-    maintenance_due: number;
-    lost: number;
-    stagnant_lots: number;
-    stagnant_value: string;
-  };
-  by_location: Array<{ name: string; lots: number }>;
-}
-
-// ── 產線 ────────────────────────────────────────────────────────────
-export interface ProductionLine {
-  id: number;
-  code: string;
-  name: string;
-  status: string;
-  status_label: string;
-  current_work: string;
-  utilization: string | null;
-  today_output: string;
-  updated_by_name: string;
-  updated_at: string;
-}
-
-export interface LinesData {
-  results: ProductionLine[];
-  summary: { total: number; running: number; avg_utilization: number | null };
-  data_source: string;
-}
-
 // ── 選項 ────────────────────────────────────────────────────────────
 export interface OptionsData {
   status: Option[];
   project_type: Option[];
   unit_type: Option[];
-  work_mode: Option[];
-  rollback_reason: Option[];
-  trigger_type: Option[];
-  claim_state: Option[];
   milestone_state: Option[];
-  item_kind: Option[];
-  asset_status: Option[];
-  asset_movement_type: Option[];
-  lot_status: Option[];
-  aging_status: Option[];
-  location_type: Option[];
-  line_status: Option[];
-  profile_type: Option[];
   change_order_status: Option[];
+  attachment_category: Option[];
+  subcontract_category: Option[];
+  subcontract_status: Option[];
+  payment_term_type: Option[];
+  payment_method: Option[];
+  payable_state: Option[];
+  certainty: Option[];
   role: Option[];
   status_colors: Record<string, string>;
   users: Array<{ id: number; name: string; employee_no: string | null }>;
@@ -528,4 +312,169 @@ export interface Notification {
   category_label: string;
   is_read: boolean;
   created_at: string;
+}
+
+// ── 附件 ────────────────────────────────────────────────────────────
+/** 附件掛在哪。用名字而不是 ContentType id——那是資料庫內部編號 */
+export type AttachmentTarget = "project" | "tracking-unit" | "milestone";
+
+export interface Attachment {
+  id: number;
+  original_name: string;
+  size_bytes: number;
+  size_display: string;
+  mime_type: string;
+  ext: string;
+  category: string;
+  category_label: string;
+  /** 只有 PDF 與圖片為 true。依**實際** MIME 判定，不是副檔名 */
+  is_previewable: boolean;
+  /** 不能預覽時，直接說為什麼。不做假的預覽按鈕 */
+  no_preview_reason: string;
+  checksum: string;
+  note: string;
+  uploaded_by_name: string;
+  uploaded_at: string;
+  /** 上傳者本人或經營者。合約與簽收單是爭議時的依據 */
+  can_delete: boolean;
+}
+
+export interface AttachmentList {
+  results: Attachment[];
+  can_upload: boolean;
+  categories: Option[];
+  max_size_mb: number;
+  allowed_extensions: string[];
+}
+
+// ── 應付 ────────────────────────────────────────────────────────────
+export type PayableState = "pending" | "approved" | "paid";
+export type Certainty = "confirmed" | "likely" | "estimated";
+
+export interface Subcontract {
+  id: number;
+  code: string;
+  project: number;
+  project_name: string;
+  project_code: string;
+  vendor: number;
+  vendor_name: string;
+  title: string;
+  category: string;
+  category_label: string;
+  contract_amount: string;
+  payment_term_type: string;
+  payment_term_days: number;
+  /** 「月結 60 天（計價當月月底起算）」——不寫清楚沒人知道怎麼算 */
+  payment_terms_display: string;
+  retention_pct: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  status_label: string;
+  note: string;
+  billed_amount: string;
+  paid_amount: string;
+  remaining_amount: string;
+  billed_pct: number | null;
+  payable_count: number;
+  created_at: string;
+}
+
+export interface Payable {
+  id: number;
+  subcontract: number | null;
+  subcontract_code: string;
+  subcontract_title: string;
+  project: number;
+  project_name: string;
+  vendor: number;
+  vendor_name: string;
+  category: string;
+  category_label: string;
+  title: string;
+  amount: string;
+  tax_amount: string;
+  retention_amount: string;
+  /** 未稅 ＋ 稅額 − 保留款。實際會匯出去的數字 */
+  payable_amount: string;
+  state: PayableState;
+  state_label: string;
+  next_states: Option[];
+  billing_date: string | null;
+  due_date: string | null;
+  paid_date: string | null;
+  /** 錢實際離開帳戶的那天。支票看兌現日，其餘看付款日 */
+  cash_date: string | null;
+  cash_date_note: string;
+  payment_method: string;
+  method_label: string;
+  check_due_date: string | null;
+  check_no: string;
+  invoice_no: string;
+  note: string;
+  is_overdue: boolean;
+  created_at: string;
+}
+
+export interface PayableSummary {
+  pending: string;
+  approved: string;
+  paid: string;
+  overdue: { count: number; amount: string };
+}
+
+export interface CashflowDetail {
+  direction: "in" | "out";
+  date: string;
+  amount: string;
+  certainty: Certainty;
+  party: string;
+  project: string;
+  title: string;
+  note: string;
+  kind: string;
+  id: number;
+}
+
+export interface CashflowCell {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  income: string;
+  expense: string;
+  net: string;
+  cumulative: string;
+  income_by_certainty: Partial<Record<Certainty, string>>;
+  expense_by_certainty: Partial<Record<Certainty, string>>;
+  detail_count: number;
+  details: CashflowDetail[];
+}
+
+export interface CashflowForecast {
+  granularity: "week" | "month";
+  periods: number;
+  generated_at: string;
+  cells: CashflowCell[];
+  /** ★ 整個畫面的重點：累計跌破零的第一格。沒有就是 null */
+  shortfall: { key: string; label: string; amount: string } | null;
+  totals: { income: string; expense: string; net: string };
+  /** 落在時間窗外的錢。不顯示的話會以為總額就是全部 */
+  outside_window: { income: string; expense: string };
+  certainty_levels: Option[];
+  disclaimer: string;
+  tax_note: string;
+  project_count: number;
+}
+
+export interface ProjectPnl {
+  project_id: number;
+  project_name: string;
+  revenue: string;
+  received: string;
+  billed: { cost: string; gross: string; pct: number | null };
+  committed: { cost: string; gross: string; pct: number | null };
+  paid_amount: string;
+  note: string;
 }

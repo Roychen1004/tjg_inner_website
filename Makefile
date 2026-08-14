@@ -19,6 +19,7 @@ help:
 	@echo "  make pgadmin       啟動 pgAdmin（用完記得 make pgadmin-stop）"
 	@echo "  make backup        備份資料庫與附件"
 	@echo "  make verify        驗證環境設定"
+	@echo "  make verify-flow   全流程整合驗收（49 項，需系統已啟動）"
 
 # ── Docker ────────────────────────────────────────────────────────────
 build:
@@ -74,6 +75,12 @@ lint:
 
 verify:
 	POSTGRES_HOST=127.0.0.1 $(PY) shell/verify_setup.py
+
+# 附件與現金流的整合驗收（68 項）。一定要打過 nginx——附件下載走
+# X-Accel-Redirect，直連 api:8000 會拿到 0 bytes，而那正是要驗的東西之一。
+# 用 api 映像跑是因為照片壓縮與 EXIF 的測試需要 Pillow
+verify-flow:
+	python3 shell/verify.py
 
 # ── 前端型別同步 ──────────────────────────────────────────────────────
 api-types:
