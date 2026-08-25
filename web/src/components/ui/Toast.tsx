@@ -25,6 +25,8 @@ interface Toast {
   severity: Severity;
   title: string;
   lines: string[];
+  /** 去重複用：同樣內容的提示還在畫面上就不再疊一張 */
+  signature: string;
 }
 
 interface ToastApi {
@@ -44,17 +46,33 @@ export function useToast(): ToastApi {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // setState 是非同步的，去重複要看「現在畫面上有什麼」——用 ref 鏡射
+  const toastsRef = useRef<Toast[]>([]);
   const nextId = useRef(1);
 
   const dismiss = useCallback((id: number) => {
-    setToasts((list) => list.filter((t) => t.id !== id));
+    setToasts((list) => {
+      const next = list.filter((t) => t.id !== id);
+      toastsRef.current = next;
+      return next;
+    });
   }, []);
 
   const show = useCallback<ToastApi["show"]>(
     (title, options = {}) => {
-      const id = nextId.current++;
       const severity = options.severity ?? "good";
-      setToasts((list) => [...list, { id, severity, title, lines: options.lines ?? [] }]);
+      const lines = options.lines ?? [];
+      // ★ 同樣內容的提示還在畫面上就不再疊——連續操作不會長出一排一模一樣的區塊
+      const signature = `${severity}|${title}|${lines.join("|")}`;
+      if (toastsRef.current.some((t) => t.signature === signature)) return;
+
+      const id = nextId.current++;
+      setToasts((list) => {
+        // 最多同時三張，舊的先讓位——提示是提示，不是清單
+        const next = [...list, { id, severity, title, lines, signature }].slice(-3);
+        toastsRef.current = next;
+        return next;
+      });
       // 警告與錯誤留久一點——那是使用者需要讀完的
       const ttl = severity === "bad" ? 9000 : severity === "warn" ? 7000 : 4000;
       setTimeout(() => dismiss(id), ttl);

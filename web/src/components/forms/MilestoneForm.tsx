@@ -10,9 +10,9 @@
 import { useState } from "react";
 
 import { ApiError } from "@/api/client";
-import { useDeleteMilestone, useOptions, useSaveMilestone } from "@/api/hooks";
+import { useDeleteMilestone, useFlowUnits, useOptions, useSaveMilestone } from "@/api/hooks";
 import type { Milestone } from "@/api/types";
-import { Button, Field, FormErrors, Modal, inputClass } from "@/components/ui";
+import { Button, DateInput, Field, FormErrors, inputClass, Modal } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 
 export default function MilestoneForm({
@@ -38,7 +38,16 @@ export default function MilestoneForm({
   const [percentage, setPercentage] = useState(milestone?.percentage ?? "");
   const [condition, setCondition] = useState(milestone?.condition ?? "");
   const [expectedDate, setExpectedDate] = useState(milestone?.expected_date ?? "");
+  const [trigger, setTrigger] = useState(
+    milestone?.trigger_unit ? String(milestone.trigger_unit) : "",
+  );
   const [note, setNote] = useState(milestone?.note ?? "");
+
+  // 這個案子的流程單元——「觸發流程」的候選清單
+  const { data: flowUnits } = useFlowUnits(
+    { project, state: "todo,doing,done", page_size: 100 },
+    Boolean(project),
+  );
 
   const locked = milestone !== null && (milestone.state === "invoiced" || milestone.state === "received");
 
@@ -52,6 +61,7 @@ export default function MilestoneForm({
         percentage,
         condition,
         expected_date: expectedDate || null,
+        trigger_unit: trigger ? Number(trigger) : null,
         note,
       },
       {
@@ -152,14 +162,28 @@ export default function MilestoneForm({
           />
         </Field>
         <Field label="預計請款日" hint="現金流預估靠它，之後可改">
-          <input
-            type="date"
-            value={expectedDate}
-            onChange={(e) => setExpectedDate(e.target.value)}
-            className={inputClass}
-          />
+          <DateInput value={expectedDate} onChange={setExpectedDate} />
         </Field>
       </div>
+
+      <Field
+        label="觸發流程"
+        hint="掛了之後，該流程完成的那一刻這一期自動轉「可請款」並通知——不用人盯"
+      >
+        <select
+          value={trigger}
+          onChange={(e) => setTrigger(e.target.value)}
+          className={inputClass}
+        >
+          <option value="">不掛（手動轉可請款）</option>
+          {(flowUnits?.results ?? []).map((u) => (
+            <option key={u.id} value={u.id}>
+              完成「{u.flow_code} {u.flow_name}」
+              {u.state === "done" ? "（已完成）" : ""}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <Field label="合約條件" hint="合約原文，提醒自己什麼條件到了可以請">
         <input

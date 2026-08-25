@@ -1,7 +1,35 @@
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
-from .models import ProgressLog, TrackingUnit, TrackingUnitStageLog
+from .models import FlowTask, FlowTaskAssignment, FlowUnit, ProgressLog, TrackingUnit, TrackingUnitStageLog
+
+
+class FlowTaskInline(admin.TabularInline):
+    model = FlowTask
+    extra = 0
+
+
+@admin.register(FlowTaskAssignment)
+class FlowTaskAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("task", "status", "assignee", "qty_assigned", "qty_done")
+    search_fields = ("task__name", "assignee__name", "status")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("task__unit__project", "assignee")
+
+
+@admin.register(FlowUnit)
+class FlowUnitAdmin(SimpleHistoryAdmin):
+    list_display = ("project", "flow_item", "state", "assignee", "plan_start", "plan_end")
+    list_filter = ("state", "flow_item__stage")
+    search_fields = ("project__name", "flow_item__name", "assignee__name")
+    autocomplete_fields = ("project", "assignee", "subcontractor")
+    inlines = [FlowTaskInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            "project", "flow_item__stage", "assignee"
+        )
 
 
 class StageLogInline(admin.TabularInline):

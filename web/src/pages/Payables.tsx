@@ -10,8 +10,9 @@
  *   應收  未到 → 可請款 → 已請款 → 已收款   錢進來
  *   應付  待計價 → 已核可 → 已付款          錢出去
  */
-import { AlertTriangle, Banknote, Plus } from "lucide-react";
+import { AlertTriangle, Banknote, ExternalLink, Plus } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import {
@@ -23,21 +24,7 @@ import {
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { Payable } from "@/api/types";
 import PayableForm from "@/components/forms/PayableForm";
-import {
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  Field,
-  FormErrors,
-  KpiCard,
-  Modal,
-  Money,
-  SearchInput,
-  Select,
-  Spinner,
-  inputClass,
-} from "@/components/ui";
+import { Button, Card, DateInput, EmptyState, ErrorState, Field, FormErrors, inputClass, KpiCard, Modal, Money, SearchInput, Select, Spinner } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { fmtWan } from "@/lib/format";
 import { useStickyParams } from "@/lib/stickyParams";
@@ -59,6 +46,7 @@ export default function PayablesBody() {
   const [q, setQ] = useState("");
   const [transitioning, setTransitioning] = useState<Payable | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Payable | null>(null);
 
   const setParam = (name: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -138,7 +126,12 @@ export default function PayablesBody() {
       ) : (
         <ul className="space-y-2">
           {rows.map((row) => (
-            <Row key={row.id} row={row} onTransition={() => setTransitioning(row)} />
+            <Row
+              key={row.id}
+              row={row}
+              onTransition={() => setTransitioning(row)}
+              onEdit={canCreate ? () => setEditing(row) : undefined}
+            />
           ))}
         </ul>
       )}
@@ -147,14 +140,28 @@ export default function PayablesBody() {
         <TransitionModal payable={transitioning} onClose={() => setTransitioning(null)} />
       )}
       {creating && <PayableForm onClose={() => setCreating(false)} />}
+      {editing && <PayableForm payable={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function Row({ row, onTransition }: { row: Payable; onTransition: () => void }) {
+function Row({
+  row,
+  onTransition,
+  onEdit,
+}: {
+  row: Payable;
+  onTransition: () => void;
+  onEdit?: () => void;
+}) {
   const style = STATE_STYLE[row.state] ?? STATE_STYLE.pending;
   return (
-    <Card as="li" className="p-3">
+    // 整列可點（D47）：點哪裡都開明細編輯；右側按鈕區自己攔截點擊
+    <Card
+      as="li"
+      className={`p-3 ${onEdit ? "cursor-pointer transition-base hover:ring-stage-2" : ""}`}
+      onClick={onEdit}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -169,6 +176,14 @@ function Row({ row, onTransition }: { row: Payable; onTransition: () => void }) 
           <p className="mt-0.5 text-[11px] text-ink-3">
             {row.vendor_name} · {row.project_name} · {row.category_label}
             {row.subcontract_code && ` · ${row.subcontract_code}`}
+            {row.flow_unit_name && (
+              <span
+                className="ml-1 rounded bg-page px-1.5 py-0.5 font-semibold text-ink-2"
+                title="這筆錢掛在哪個流程上（在流程卡片或這裡登錄時掛的）"
+              >
+                流程：{row.flow_unit_name}
+              </span>
+            )}
           </p>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2">
@@ -187,25 +202,38 @@ function Row({ row, onTransition }: { row: Payable; onTransition: () => void }) 
           )}
         </div>
 
-        <div className="shrink-0 text-right">
+        <div
+          className="shrink-0 text-right"
+          onClick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
           <p className="text-base font-bold text-ink">
             <Money value={row.payable_amount} />
           </p>
-          <p className="text-[11px] text-ink-3">
-            未稅 <Money value={row.amount} compact />
-            {Number(row.retention_amount) > 0 && (
-              <>
-                {" · "}
-                扣保 <Money value={row.retention_amount} compact />
-              </>
-            )}
-          </p>
-          {row.next_states.length > 0 && (
-            <Button variant="primary" className="mt-2" onClick={onTransition}>
-              <Banknote size={13} />
-              變更狀態
-            </Button>
+          {Number(row.retention_amount) > 0 && (
+            <p className="text-[11px] text-ink-3">
+              扣保 <Money value={row.retention_amount} compact />
+            </p>
           )}
+          <div className="mt-2 flex items-center justify-end gap-1.5">
+            {/* 跳去掛著的流程卡片（D47） */}
+            {row.flow_unit && (
+              <Link
+                to={`/tracking?view=flow&unit=${row.flow_unit}`}
+                title={`前往流程「${row.flow_unit_name}」的卡片`}
+                className="flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+              >
+                <ExternalLink size={13} />
+                流程
+              </Link>
+            )}
+            {row.next_states.length > 0 && (
+              <Button variant="primary" onClick={onTransition}>
+                <Banknote size={13} />
+                變更狀態
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </Card>
@@ -296,7 +324,7 @@ function TransitionModal({ payable, onClose }: { payable: Payable; onClose: () =
       {isPaying && (
         <>
           <Field label="實際付款日" required>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
+            <DateInput value={date} onChange={setDate} />
           </Field>
           <Field label="付款方式">
             <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputClass}>
@@ -320,12 +348,7 @@ function TransitionModal({ payable, onClose }: { payable: Payable; onClose: () =
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="支票到期日" required>
-                  <input
-                    type="date"
-                    value={checkDue}
-                    onChange={(e) => setCheckDue(e.target.value)}
-                    className={inputClass}
-                  />
+                  <DateInput value={checkDue} onChange={setCheckDue} />
                 </Field>
                 <Field label="票號">
                   <input value={checkNo} onChange={(e) => setCheckNo(e.target.value)} className={inputClass} />

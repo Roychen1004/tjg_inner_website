@@ -12,6 +12,7 @@ import { useState } from "react";
 
 import { ApiError, api } from "@/api/client";
 import { useOptions } from "@/api/hooks";
+import { useCurrentUser } from "@/api/hooks/useAuth";
 import {
   Button,
   Card,
@@ -87,6 +88,9 @@ export default function Settings() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<unknown | null>(null);
   const [creating, setCreating] = useState(false);
+  // 頁面所有人都看得到（查同事分機、客戶聯絡人）；改只有經理與系統管理員（D40）
+  const { data: user } = useCurrentUser();
+  const canEdit = Boolean(user?.permissions.manage_masters);
 
   const list = useQuery({
     queryKey: ["admin", tab, q],
@@ -125,10 +129,12 @@ export default function Settings() {
           ))}
         </div>
         <SearchInput value={q} onChange={setQ} placeholder="搜尋名稱或代號…" />
-        <Button variant="primary" onClick={() => setCreating(true)}>
-          <Plus size={15} />
-          新增
-        </Button>
+        {canEdit && (
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            <Plus size={15} />
+            新增
+          </Button>
+        )}
       </div>
 
       {list.isLoading ? (
@@ -143,20 +149,21 @@ export default function Settings() {
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {tab === "customers" &&
               (list.data.results as Customer[]).map((c) => (
-                <CustomerCard key={c.id} customer={c} onEdit={setEditing} />
+                <CustomerCard key={c.id} customer={c} onEdit={canEdit ? setEditing : undefined} />
               ))}
             {tab === "vendors" &&
               (list.data.results as Vendor[]).map((v) => (
-                <VendorCard key={v.id} vendor={v} onEdit={setEditing} />
+                <VendorCard key={v.id} vendor={v} onEdit={canEdit ? setEditing : undefined} />
               ))}
             {tab === "employees" &&
               (list.data.results as Employee[]).map((e) => (
-                <EmployeeCard key={e.id} employee={e} onEdit={setEditing} />
+                <EmployeeCard key={e.id} employee={e} onEdit={canEdit ? setEditing : undefined} />
               ))}
           </ul>
         </>
       )}
 
+      {canEdit && (
       <p className="mt-4 rounded-xl bg-card px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 ring-1 ring-line">
         <strong>這裡沒有的東西在哪裡改：</strong>
         物品主檔（規格、材質、尺寸）在 <code className="font-mono">/admin/masters/item/</code>；
@@ -165,18 +172,19 @@ export default function Settings() {
         <code className="font-mono">/admin/masters/stagetemplate/</code>。
         這些欄位多、動得少，用 Django Admin 的表單比較合適。
       </p>
+      )}
 
-      {tab === "customers" && (
+      {canEdit && tab === "customers" && (
         <CustomerForm
           open={creating || editing !== null}
           onClose={close}
           customer={editing as Customer | null}
         />
       )}
-      {tab === "vendors" && (
+      {canEdit && tab === "vendors" && (
         <VendorForm open={creating || editing !== null} onClose={close} vendor={editing as Vendor | null} />
       )}
-      {tab === "employees" && (
+      {canEdit && tab === "employees" && (
         <EmployeeForm
           open={creating || editing !== null}
           onClose={close}
@@ -201,7 +209,8 @@ function RowCard({
   lines: string[];
   inactive: boolean;
   badge?: string;
-  onEdit: () => void;
+  /** 沒有維護權限的人（唯讀）不給編輯鈕 */
+  onEdit?: () => void;
 }) {
   return (
     <Card as="li" className={`p-3 ${inactive ? "opacity-60" : ""}`}>
@@ -219,14 +228,16 @@ function RowCard({
               {badge}
             </span>
           )}
-          <button
-            type="button"
-            onClick={onEdit}
-            aria-label="編輯"
-            className="h-7 min-h-0 rounded-lg p-1.5 text-ink-3 hover:bg-page"
-          >
-            <Pencil size={14} />
-          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label="編輯"
+              className="h-7 min-h-0 rounded-lg p-1.5 text-ink-3 hover:bg-page"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
         </div>
       </div>
       {lines.filter(Boolean).map((l, i) => (
@@ -238,7 +249,7 @@ function RowCard({
   );
 }
 
-function CustomerCard({ customer: c, onEdit }: { customer: Customer; onEdit: (c: Customer) => void }) {
+function CustomerCard({ customer: c, onEdit }: { customer: Customer; onEdit?: (c: Customer) => void }) {
   return (
     <RowCard
       title={c.name}
@@ -249,12 +260,12 @@ function CustomerCard({ customer: c, onEdit }: { customer: Customer; onEdit: (c:
       ]}
       inactive={!c.is_active}
       badge={c.project_count > 0 ? `${c.project_count} 案` : undefined}
-      onEdit={() => onEdit(c)}
+      onEdit={onEdit && (() => onEdit(c))}
     />
   );
 }
 
-function VendorCard({ vendor: v, onEdit }: { vendor: Vendor; onEdit: (v: Vendor) => void }) {
+function VendorCard({ vendor: v, onEdit }: { vendor: Vendor; onEdit?: (v: Vendor) => void }) {
   return (
     <RowCard
       title={v.name}
@@ -264,12 +275,12 @@ function VendorCard({ vendor: v, onEdit }: { vendor: Vendor; onEdit: (v: Vendor)
         v.payment_terms && `付款：${v.payment_terms}`,
       ].filter(Boolean) as string[]}
       inactive={!v.is_active}
-      onEdit={() => onEdit(v)}
+      onEdit={onEdit && (() => onEdit(v))}
     />
   );
 }
 
-function EmployeeCard({ employee: e, onEdit }: { employee: Employee; onEdit: (e: Employee) => void }) {
+function EmployeeCard({ employee: e, onEdit }: { employee: Employee; onEdit?: (e: Employee) => void }) {
   return (
     <RowCard
       title={e.name}
@@ -280,7 +291,7 @@ function EmployeeCard({ employee: e, onEdit }: { employee: Employee; onEdit: (e:
         e.must_change_password ? "尚未變更預設密碼" : "",
       ]}
       inactive={!e.is_active}
-      onEdit={() => onEdit(e)}
+      onEdit={onEdit && (() => onEdit(e))}
     />
   );
 }

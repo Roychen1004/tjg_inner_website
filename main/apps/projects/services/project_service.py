@@ -1,104 +1,79 @@
 """
-專案主線推進
+專案層的業務操作：勾選流程（set_flows）與核准變更單。
 
-與追蹤單元的階段推進是同一個概念，但物件不同：
-專案走「接案→深化設計→報價→採購備料→施工中→完工驗收→結案」，
-追蹤單元走構件批次或土建工項的流程。
+主線不在這裡——2026-08-15（D38）起主線由流程進度自動判定，前端算，
+沒有「推進主線」這回事；2026-08-17 連端點帶這裡的 advance_main_stage 一併移除。
 """
 import logging
 
 from django.db import transaction
 
 from main.apps.core.models import ActivityLog
-from main.apps.projects.models import Project
-from main.utils.choices import ActivityCategory, ChangeOrderStatus, MilestoneState
-from main.utils.exceptions import BusinessRuleError, ConfirmationRequired
+from main.utils.choices import ActivityCategory, ChangeOrderStatus, FlowState
+from main.utils.exceptions import BusinessRuleError
 
 logger = logging.getLogger("tjg")
 
 
 @transaction.atomic
-def advance_main_stage(project_id, direction, actor, note="", confirmed=False):
-    """推進或回退專案主線。
+def set_flows(project, flow_item_ids, actor):
+    """調整專案勾選的流程（建案後編輯）。
 
-    推進到最終階段（結案）前會擋一次——尚有未收款就要求二次確認。
-    這不是刁難，是「結案後沒人會再看這個案子」的現實。
+    規則（規劃書第 2 節）：
+      · 加勾 → 生單元；重新勾回「不適用」的 → 還原成未開始
+      · 取消勾 → 未開始且沒附件就刪；已有紀錄改標「不適用」，歷史要留
     """
-    project = Project.objects.select_for_update(of=("self",)).select_related(
-        "main_stage", "main_template"
-    ).get(pk=project_id)
+    from django.contrib.contenttypes.models import ContentType
 
-    if project.is_closed:
-        raise BusinessRuleError("此專案已結案，無法變更階段")
+    from main.apps.core.models import Attachment
+    from main.apps.masters.models import FlowItem
+    from main.apps.tracking.models import FlowUnit
 
-    from_stage = project.main_stage
-    if direction == "forward":
-        to_stage = from_stage.next_stage
-        if to_stage is None:
-            raise BusinessRuleError("已在最終階段，無法再推進")
-    else:
-        to_stage = from_stage.previous_stage
-        if to_stage is None:
-            raise BusinessRuleError("已在第一階段，無法再回退")
+    ids = {int(i) for i in flow_item_ids}
+    valid = {i.pk: i for i in FlowItem.objects.filter(pk__in=ids, is_active=True)}
+    if unknown := ids - set(valid):
+        raise BusinessRuleError(f"流程項不存在或已停用：{sorted(unknown)}")
 
-    warnings = []
-    if to_stage.is_final and not confirmed:
-        outstanding = _outstanding_summary(project)
-        if outstanding["amount"] > 0:
-            raise ConfirmationRequired(
-                detail=(
-                    f"此專案尚有 {outstanding['count']} 筆、合計 "
-                    f"{outstanding['amount']:,.0f} 元未收款，確定要結案？"
-                ),
-                context=outstanding,
-            )
+    existing = {u.flow_item_id: u for u in project.flow_units.select_related("flow_item")}
+    ct = ContentType.objects.get_for_model(FlowUnit)
 
-    if to_stage.is_final:
-        pending_units = _unfinished_unit_count(project)
-        if pending_units:
-            warnings.append(f"尚有 {pending_units} 個追蹤單元未走到最後階段")
+    added, restored, removed, marked_na = [], [], [], []
+    for item_id in ids - set(existing):
+        FlowUnit.create_for(project, valid[item_id])
+        added.append(valid[item_id].name)
+    for item_id in set(existing) & ids:
+        unit = existing[item_id]
+        if unit.state == FlowState.NA:
+            unit.state = FlowState.TODO
+            unit.save(update_fields=["state", "updated_at"])
+            restored.append(unit.flow_item.name)
+    for item_id in set(existing) - ids:
+        unit = existing[item_id]
+        has_files = Attachment.objects.filter(content_type=ct, object_id=unit.pk).exists()
+        has_money = unit.payables.exists() or unit.triggered_milestones.exists()
+        if unit.state == FlowState.TODO and not has_files and not has_money:
+            unit.delete()
+            removed.append(unit.flow_item.name)
+        elif unit.state != FlowState.NA:
+            unit.state = FlowState.NA
+            unit.save(update_fields=["state", "updated_at"])
+            marked_na.append(unit.flow_item.name)
 
-    project.main_stage = to_stage
-    if to_stage.is_final:
-        project.is_closed = True
-    project.save(update_fields=["main_stage", "is_closed", "updated_at"])
-
-    arrow = "進入" if direction == "forward" else "退回"
-    ActivityLog.record(
-        f"{project.name} {arrow} {to_stage.name}" + (f"（{note}）" if note else ""),
-        ActivityCategory.PROJECT, actor=actor, project=project, obj=project,
-    )
-    logger.info("專案 %s：%s → %s", project.code, from_stage.name, to_stage.name)
-    return project, warnings
-
-
-def _unfinished_unit_count(project):
-    """還沒走到自己那條流程最後一站的追蹤單元數。
-
-    每個單元的模板可能不同（鋼構 9 站、土建 5 站），
-    所以要各自比對自己模板的最後一站，不能用同一個數字。
-    """
-    last_seq = {}
-    count = 0
-    for unit in project.units.select_related("current_stage", "template").only(
-        "current_stage__seq", "template_id"
-    ):
-        if unit.template_id not in last_seq:
-            stage = unit.template.stages.filter(is_active=True).order_by("-seq").first()
-            last_seq[unit.template_id] = stage.seq if stage else 0
-        if unit.current_stage.seq < last_seq[unit.template_id]:
-            count += 1
-    return count
-
-
-def _outstanding_summary(project):
-    """未收款彙總。結案前的二次確認要說出具體數字，不能只說「還有錢沒收」。"""
-    rows = project.milestones.exclude(state=MilestoneState.RECEIVED)
-    return {
-        "count": rows.count(),
-        "amount": sum(m.amount for m in rows),
-        "pending_milestones": rows.filter(state=MilestoneState.PENDING).count(),
-    }
+    parts = []
+    if added:
+        parts.append(f"加勾 {'、'.join(added)}")
+    if removed:
+        parts.append(f"移除 {'、'.join(removed)}")
+    if marked_na:
+        parts.append(f"標不適用 {'、'.join(marked_na)}")
+    if restored:
+        parts.append(f"還原 {'、'.join(restored)}")
+    if parts:
+        ActivityLog.record(
+            f"{project.name} 調整流程：{'；'.join(parts)}",
+            ActivityCategory.PROJECT, actor=actor, project=project, obj=project,
+        )
+    return {"added": added, "removed": removed, "marked_na": marked_na, "restored": restored}
 
 
 @transaction.atomic

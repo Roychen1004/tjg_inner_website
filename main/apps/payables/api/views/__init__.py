@@ -79,7 +79,9 @@ class PayableViewSet(BaseModelViewSet):
     每一步留不可竄改的歷程。
     """
 
-    queryset = Payable.objects.select_related("project", "vendor", "subcontract")
+    queryset = Payable.objects.select_related(
+        "project", "vendor", "subcontract", "flow_unit__flow_item"
+    )
     serializer_class = PayableSerializer
     write_serializer_class = PayableWriteSerializer
     scope_function = staticmethod(scope_payables)
@@ -93,6 +95,8 @@ class PayableViewSet(BaseModelViewSet):
             qs = qs.filter(project_id=project)
         if subcontract := params.get("subcontract"):
             qs = qs.filter(subcontract_id=subcontract)
+        if flow_unit := params.get("flow_unit"):
+            qs = qs.filter(flow_unit_id=flow_unit)
         if vendor := params.get("vendor"):
             qs = qs.filter(vendor_id=vendor)
         if state := params.get("state"):
@@ -134,8 +138,8 @@ class PayableViewSet(BaseModelViewSet):
         """狀態轉換：待計價 → 已核可 → 已付款。
 
         兩道權限刻意分開（職能分離）：
-          · `approve_payable` 決定「這筆該不該付、付多少」——只有經營者
-          · `pay_payable`     執行付款並登錄——經營者與會計
+          · `approve_payable` 決定「這筆該不該付、付多少」——只有經理
+          · `pay_payable`     執行付款並登錄——經理與會計
         """
         payable = self.get_object()
         serializer = PayableTransitionSerializer(data=request.data)
@@ -153,9 +157,9 @@ class PayableViewSet(BaseModelViewSet):
         required = "pay_payable" if touches_paid else "approve_payable"
         if not has_permission(request.user, required):
             message = (
-                "只有會計與經營者能登錄付款"
+                "只有會計師與經理能登錄付款"
                 if required == "pay_payable"
-                else "只有經營者能核可付款——核可與付款分開，"
+                else "只有經理能核可付款——核可與付款分開，"
                      "同一個人不該既決定要付多少、又執行付款"
             )
             return Response(

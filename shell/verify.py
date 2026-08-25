@@ -29,6 +29,14 @@ BASE = os.environ.get("BASE", "http://localhost:30080")
 API = f"{BASE}/api/v0.1"
 PASSWORD = os.environ.get("SEED_DEMO_PASSWORD", "28494320")
 
+# D40 名冊的密碼（與 docs/帳號密碼.md 同步）；沒列的帳號用 SEED_DEMO_PASSWORD
+ACCOUNTS = {
+    "manager": "j926qa8z",
+    "accountant": "uc6j6cw2",
+    "drafter": "k9kswbac",
+    "worker01": "ucwpfpu9",
+}
+
 PASS, FAIL = [], []
 
 
@@ -45,9 +53,9 @@ def check(name, condition, detail=""):
 class Client:
     """一個帳號一個 client。cookie 分開，才驗得出權限隔離。"""
 
-    def __init__(self, username, password=PASSWORD):
+    def __init__(self, username, password=None):
         self.username = username
-        self.password = password
+        self.password = password or ACCOUNTS.get(username, PASSWORD)
         self.jar = CookieJar()
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.jar)
@@ -135,8 +143,8 @@ HTML = b"<html><script>alert('xss')</script></html>"
 
 def main():
     stamp = int(time.time()) % 100000
-    owner = Client("owner").login()
-    finance = Client("finance").login()
+    owner = Client("manager").login()
+    finance = Client("accountant").login()
 
     # 清掉上次沒跑完留下的測試案（冪等）
     for p in owner.get("/projects?q=驗收案&page_size=20").get("results", []):
@@ -144,20 +152,34 @@ def main():
             owner.delete(f"/tracking-units/{u['id']}")
         owner.delete(f"/projects/{p['id']}")
 
-    # ── A. 導航與角色 ───────────────────────────────────────────────
-    print("\n▌A. 導航與角色（4 分頁、3 角色）")
+    # ── A. 導航與角色（D40 權限矩陣）────────────────────────────────
+    print("\n▌A. 導航與角色（6 分頁、4 角色）")
     me = owner.get("/auth/me")
-    check("經營者導航是 5 個分頁", me.get("visible_nav") == ["dashboard", "projects", "tracking", "finance", "settings"], me.get("visible_nav"))
+    check("經理導航是 6 個分頁",
+          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "settings"],
+          me.get("visible_nav"))
     me_f = finance.get("/auth/me")
-    check("會計看得到金流、看不到設定",
-          "finance" in me_f.get("visible_nav", []) and "settings" not in me_f.get("visible_nav", []),
+    check("會計師看得到全部 6 個分頁（設定唯讀）",
+          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "settings"],
           me_f.get("visible_nav"))
+    check("會計師沒有專案／進度／主檔的編輯權",
+          not me_f.get("permissions", {}).get("edit_project")
+          and not me_f.get("permissions", {}).get("edit_tracking")
+          and not me_f.get("permissions", {}).get("manage_masters"),
+          me_f.get("permissions"))
+
+    staff = Client("drafter").login()
+    me_s = staff.get("/auth/me")
+    check("員工看得到金流以外的 5 個分頁，登入直達 /mywork",
+          me_s.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "settings"]
+          and me_s.get("default_route") == "/mywork",
+          {k: me_s.get(k) for k in ("visible_nav", "default_route")})
 
     viewer_name = f"viewer{stamp}"
     created = owner.post("/employees", {
         "username": viewer_name, "name": "測試檢視", "roles": ["viewer"],
     })
-    check("經營者能建立員工帳號", owner.status == 201, f"{owner.status} {created}")
+    check("經理能建立員工帳號", owner.status == 201, f"{owner.status} {created}")
     viewer = Client(viewer_name).login(required=False)
     if viewer.status != 200:
         check("檢視帳號能登入", False, "登入失敗")
@@ -167,30 +189,40 @@ def main():
         check("檢視角色沒有金流分頁", "finance" not in nav and "dashboard" in nav, nav)
 
     # ── B. 建案一頁完成 ─────────────────────────────────────────────
-    print("\n▌B. 建案一頁完成（含請款分期）")
+    print("\n▌B. 建案一頁完成（勾流程＋請款分期）")
     customers = owner.get("/customers?active=true")
     customer_id = customers["results"][0]["id"]
     users = owner.get("/options")["users"]
-    owner_id = next(u["id"] for u in users if u["name"] == "王董")
+    owner_id = next(u["id"] for u in users if u["name"] == "經理")
+
+    catalog = owner.get("/flow-catalog")
+    item_by_code = {i["code"]: i for s in catalog for i in s.get("items", [])}
+    check("流程目錄：5 大階段、19 工作項",
+          len(catalog) == 5 and len(item_by_code) == 19,
+          f"{len(catalog)} 階段 {len(item_by_code)} 項")
 
     bad = owner.post("/projects", {
-        "name": f"驗收案-超額-{stamp}", "project_type": "steel",
+        "name": f"驗收案-超額-{stamp}",
         "customer": customer_id, "owner": owner_id, "contract_amount": "10000000",
         "milestones": [{"label": "一", "percentage": "60"}, {"label": "二", "percentage": "60"}],
     })
     check("分期合計超過 100% 被擋下", owner.status == 400, f"{owner.status} {bad}")
 
+    chosen_codes = ["1.1", "3.2", "3.4", "4.1", "4.5", "5.2"]
     project = owner.post("/projects", {
-        "name": f"驗收案-{stamp}", "project_type": "steel",
+        "name": f"驗收案-{stamp}",
         "customer": customer_id, "owner": owner_id, "contract_amount": "10000000",
+        "flow_items": [item_by_code[c]["id"] for c in chosen_codes],
         "milestones": [
             {"label": "第一期（簽約）", "percentage": "30", "condition": "合約簽訂後"},
-            {"label": "第二期（出貨）", "percentage": "40",
+            {"label": "第二期（進料）", "percentage": "40",
+             "trigger_flow_item": item_by_code["3.4"]["id"],
              "expected_date": str(date.today().replace(day=1))},
             {"label": "尾款（驗收）", "percentage": "30"},
         ],
     })
-    check("一個請求建案＋三期應收款", owner.status == 201, f"{owner.status} {project}")
+    check("一個請求：建案（免選鋼構／土建）＋勾 6 流程＋三期應收款",
+          owner.status == 201, f"{owner.status} {project}")
     pid = project.get("id")
 
     detail = owner.get(f"/projects/{pid}")
@@ -200,12 +232,71 @@ def main():
           rows and float(rows[0]["amount"]) == 3000000, rows and rows[0].get("amount"))
     check("順序自動編號 1,2,3", [r["seq"] for r in rows] == [1, 2, 3], rows)
 
+    units = detail.get("flow_units", [])
+    check("勾 6 個流程 → 生 6 張單元，照目錄順序",
+          [u["flow_code"] for u in units] == chosen_codes, [u.get("flow_code") for u in units])
+    check("第二期掛上觸發流程 3.4",
+          rows and rows[1].get("trigger_unit_name") == item_by_code["3.4"]["name"],
+          rows and rows[1].get("trigger_unit_name"))
+    check("卡片迷你甘特資料（flow_gantt）依大階段彙總",
+          [g["seq"] for g in detail.get("flow_gantt", [])] == [1, 3, 4, 5],
+          detail.get("flow_gantt"))
+
     added = owner.post("/billing-milestones", {
         "project": pid, "label": "追加保留款", "percentage": "0",
     })
     check("加一期不用填順序，自動排最後", owner.status == 201 and added.get("seq") == 4,
           f"{owner.status} {added}")
     owner.delete(f"/billing-milestones/{added['id']}")
+
+    # ── B2. 流程軌：指派、員工操作、順序鎖、金流自動觸發 ────────────
+    print("\n▌B2. 流程軌（指派→員工完成→期別自動可請款）")
+    unit_by_code = {u["flow_code"]: u for u in units}
+    drafter_id = next(u["id"] for u in users if u["name"] == "繪圖師")
+
+    r = staff.patch(f"/flow-units/{unit_by_code['3.2']['id']}", {"assignee": drafter_id})
+    check("員工不能自己改排程（403）", staff.status == 403, f"{staff.status} {r}")
+
+    r = owner.patch(f"/flow-units/{unit_by_code['3.2']['id']}", {
+        "assignee": drafter_id, "description": "全區施工圖", "plan_end": str(date.today()),
+    })
+    check("管理者指派負責人＋寫工作內容", owner.status == 200, f"{owner.status} {r}")
+
+    mine = staff.get("/flow-units?assignee=me")
+    check("我的任務：被指派的單元出現在清單",
+          any(u["id"] == unit_by_code["3.2"]["id"] for u in mine.get("results", [])),
+          mine.get("count"))
+
+    r = staff.post(f"/flow-units/{unit_by_code['3.4']['id']}/transition", {"to_state": "doing"})
+    check("員工動別人的單元 → 403", staff.status == 403, f"{staff.status} {r}")
+
+    r = staff.post(f"/flow-units/{unit_by_code['3.2']['id']}/transition", {"to_state": "done"})
+    check("負責人完成自己的任務（不需主管再確認）",
+          staff.status == 200 and r.get("state") == "done", f"{staff.status} {r}")
+
+    m2 = rows[1]["id"]
+    before = finance.get(f"/billing-milestones/{m2}")
+    check("觸發流程還沒完成，第二期仍是未到", before.get("state") == "pending", before.get("state"))
+    r = finance.post(f"/flow-units/{unit_by_code['3.4']['id']}/transition", {"to_state": "done"})
+    check("會計師動別人的流程 → 403（D40：會計師只能改金流）",
+          finance.status == 403, f"{finance.status} {r}")
+    r = owner.post(f"/flow-units/{unit_by_code['3.4']['id']}/transition", {"to_state": "done"})
+    check("經理能直接完成流程", owner.status == 200, f"{owner.status} {r}")
+    after = finance.get(f"/billing-milestones/{m2}")
+    check("★ 觸發流程完成 → 第二期自動轉可請款",
+          after.get("state") == "claimable" and bool(after.get("claimable_at")), after.get("state"))
+    logs2 = finance.get(f"/billing-milestones/{m2}/logs")
+    check("自動轉換有留歷程", any("自動" in (log.get("reason") or "") for log in logs2), logs2[:1])
+
+    r = owner.post(f"/projects/{pid}/set-flows", {
+        "flow_items": [item_by_code[c]["id"] for c in ("1.1", "3.2", "3.4", "4.1", "4.5", "5.2", "5.3")],
+    })
+    check("編輯流程：加勾 5.3", owner.status == 200 and r.get("added") == ["尾款請款與收款"], f"{owner.status} {r}")
+    r = owner.post(f"/projects/{pid}/set-flows", {
+        "flow_items": [item_by_code[c]["id"] for c in ("1.1", "3.2", "3.4", "4.1", "4.5", "5.2")],
+    })
+    check("編輯流程：取消勾（未開始無紀錄→直接移除）",
+          owner.status == 200 and r.get("removed") == ["尾款請款與收款"], f"{owner.status} {r}")
 
     # ── C. 應收四狀態 ───────────────────────────────────────────────
     print("\n▌C. 應收生命週期（未到→可請款→已請款→已收款）")
@@ -259,8 +350,8 @@ def main():
         "subcontract": sc["id"], "title": f"驗收計價-{stamp}",
         "amount": "500000", "billing_date": today,
     })
-    check("會計登錄一筆計價（稅額自動 5%）",
-          finance.status == 201 and float(pending.get("tax_amount", 0)) == 25000,
+    check("會計登錄一筆計價（D48：金額即稅後，稅額 0）",
+          finance.status == 201 and float(pending.get("tax_amount", 1)) == 0,
           f"{finance.status} {pending}")
     if pending:
         r = finance.post(f"/payables/{pending['id']}/transition", {"to_state": "approved"})
@@ -325,26 +416,63 @@ def main():
         check("檢視角色直接抓合約檔 → 擋下", viewer.status in (403, 404), viewer.status)
 
     # ── G. 進度補登 ────────────────────────────────────────────────
-    print("\n▌G. 進度補登")
-    unit = finance.post("/tracking-units", {
+    print("\n▌G. 構件批次（七站）與自動彙總")
+    unit = owner.post("/tracking-units", {
         "project": pid, "name": "驗收批次", "unit_type": "batch",
         "qty_total": "10", "unit_of_measure": "支",
     })
-    check("會計能補登：建批次（模板自動用預設）",
-          finance.status == 201 and unit.get("stage_total") == 5, f"{finance.status} {unit}")
+    check("經理能補登：建批次（鋼構七站模板自動帶入）",
+          owner.status == 201 and unit.get("stage_total") == 7, f"{owner.status} {unit}")
 
-    r = finance.post(f"/tracking-units/{unit['id']}/report-progress", {"delta": "4"})
-    check("回報進度 +4", finance.status == 200 and r["unit"]["qty_done"] == "4.00", f"{finance.status} {r}")
+    r = owner.post(f"/tracking-units/{unit['id']}/report-progress", {"delta": "4"})
+    check("回報進度 +4", owner.status == 200 and r["unit"]["qty_done"] == "4.00", f"{owner.status} {r}")
 
-    r = finance.post(f"/tracking-units/{unit['id']}/move-stage", {"direction": "forward"})
+    r = owner.post(f"/tracking-units/{unit['id']}/move-stage", {"direction": "forward"})
     check("推進一站，完成度歸零",
-          finance.status == 200 and r["unit"]["stage_seq"] == 2 and r["unit"]["qty_done"] == "0.00", r)
+          owner.status == 200 and r["unit"]["stage_seq"] == 2 and r["unit"]["qty_done"] == "0.00", r)
 
-    r = finance.post(f"/tracking-units/{unit['id']}/move-stage", {"direction": "backward"})
-    check("退回不用選原因類別（辦公室補登，別攔）", finance.status == 200, f"{finance.status} {r}")
+    r = owner.post(f"/tracking-units/{unit['id']}/move-stage", {"direction": "backward"})
+    check("退回不用選原因類別（辦公室補登，別攔）", owner.status == 200, f"{owner.status} {r}")
 
-    board = finance.get(f"/tracking-units/board?project={pid}")
-    check("看板照模板分軌", len(board.get("boards", [])) >= 1, board.get("total"))
+    # 批次過站 → 4.1（廠內加工）自動彙總。門檻：加工完成（第 3 站）
+    fu = owner.get(f"/flow-units?project={pid}&q=廠內加工")
+    u41 = next((u for u in fu.get("results", [])), {})
+    check("批次建立後，4.1 分母＝批次數（1 批）",
+          u41.get("qty_total") == "1.00" and u41.get("is_batch_driven"), u41)
+    owner.post(f"/tracking-units/{unit['id']}/move-stage", {"direction": "forward"})
+    owner.post(f"/tracking-units/{unit['id']}/move-stage", {"direction": "forward"})
+    u41 = owner.get(f"/flow-units/{u41['id']}") if u41.get("id") else {}
+    check("★ 批次走到「加工完成」→ 4.1 自動變已完成",
+          u41.get("state") == "done" and u41.get("qty_done") == "1.00", u41)
+    r = owner.post(f"/flow-units/{u41['id']}/report-progress", {"delta": "1"})
+    check("批次彙總的單元不能手動回報（400）", owner.status == 400, f"{owner.status} {r}")
+
+    # 工作項目：流程單元的內容物清單（2026-08-17）
+    task = owner.post("/flow-tasks", {
+        "unit": u41["id"], "name": "鐵材", "qty": "500", "unit_of_measure": "噸",
+    })
+    check("流程單元能新增工作項目", owner.status == 201 and task.get("status") == "未開始", task)
+    r = owner.patch(f"/flow-tasks/{task['id']}", {"status": "已下訂單"})
+    check("工作項目狀態可自訂文字", r.get("status") == "已下訂單", r)
+
+    # 工作分配：每個項目自己的狀態清單＝工段，可把分量派給員工（D41/D45）
+    r = owner.patch(f"/flow-tasks/{task['id']}", {"statuses": ["切割中"]})
+    check("項目能維護自己的狀態清單", owner.status == 200
+          and r.get("statuses") == ["切割中"], f"{owner.status} {r}")
+    worker_id = next(u["id"] for u in users if u["name"] == "工廠員工1")
+    assign = owner.post("/task-assignments", {
+        "task": task["id"], "status": "切割中", "assignee": worker_id, "qty_assigned": "200",
+    })
+    check("分配工段給員工（對方收通知）", owner.status == 201, f"{owner.status} {assign}")
+    worker = Client("worker01").login()
+    r = worker.patch(f"/task-assignments/{assign['id']}", {"qty_done": "200"})
+    check("員工回報做完自己的分量", worker.status == 200 and r.get("is_done"), f"{worker.status} {r}")
+    t = owner.get(f"/flow-tasks/{task['id']}")
+    check("總進度＝工段完成度平均（200/500 → 40%）", t.get("progress_pct") == 40.0,
+          t.get("progress_pct"))
+
+    owner.delete(f"/flow-tasks/{task['id']}")
+    check("工作項目可刪除（分配一併刪除）", owner.status == 204, owner.status)
 
     # ── H. 儀表板 ──────────────────────────────────────────────────
     print("\n▌H. 儀表板")

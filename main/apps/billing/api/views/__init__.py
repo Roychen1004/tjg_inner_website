@@ -32,7 +32,9 @@ STATE_ORDER = {
 class BillingMilestoneViewSet(BaseModelViewSet):
     """應收款：未到 → 可請款 → 已請款 → 已收款。"""
 
-    queryset = BillingMilestone.objects.select_related("project")
+    queryset = BillingMilestone.objects.select_related(
+        "project", "trigger_unit__flow_item", "accountant"
+    )
     serializer_class = BillingMilestoneSerializer
     write_serializer_class = BillingMilestoneWriteSerializer
     scope_function = staticmethod(scope_billing)
@@ -46,6 +48,11 @@ class BillingMilestoneViewSet(BaseModelViewSet):
             qs = qs.filter(project_id=project)
         if state := params.get("state"):
             qs = qs.filter(state__in=state.split(","))
+        # 「我的任務」待收款清單：指定給我收的期別（D45）
+        if accountant := params.get("accountant"):
+            qs = qs.filter(
+                accountant=self.request.user if accountant == "me" else accountant
+            )
         if bool_param(self.request, "outstanding"):
             qs = qs.exclude(state=MilestoneState.RECEIVED)
         if q := params.get("q"):
@@ -60,8 +67,17 @@ class BillingMilestoneViewSet(BaseModelViewSet):
         milestone.recalc_amount()
 
     def perform_update(self, serializer):
+        old_trigger = serializer.instance.trigger_unit_id
         milestone = serializer.save()
         milestone.recalc_amount()  # 已請款的列 recalc_amount() 內部自己會跳過
+        # D46：取消（或換掉）觸發連結時，還停在「可請款」的狀態要同步退回未到
+        if old_trigger and milestone.trigger_unit_id != old_trigger:
+            from main.apps.billing.services import trigger_service
+
+            trigger_service.revert_claimable(
+                milestone, self.request.user,
+                "觸發流程連結被取消，系統自動退回未到",
+            )
 
     def perform_destroy(self, instance):
         if instance.state in (MilestoneState.INVOICED, MilestoneState.RECEIVED):

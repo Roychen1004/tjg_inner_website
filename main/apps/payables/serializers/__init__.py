@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from main.apps.payables.models import TAX_RATE, Payable, PayableLog, Subcontract
+from main.apps.payables.models import Payable, PayableLog, Subcontract
 from main.apps.payables.services import terms_service
 from main.utils.choices import PayableState, PaymentMethod
 from main.utils.permissions import has_permission
@@ -97,6 +97,9 @@ class PayableSerializer(serializers.ModelSerializer):
     vendor_name = serializers.CharField(source="vendor.name", read_only=True)
     subcontract_title = serializers.CharField(source="subcontract.title", read_only=True, default="")
     subcontract_code = serializers.CharField(source="subcontract.code", read_only=True, default="")
+    flow_unit_name = serializers.CharField(
+        source="flow_unit.flow_item.name", read_only=True, default=""
+    )
     category_label = serializers.CharField(source="get_category_display", read_only=True)
     state_label = serializers.CharField(source="get_state_display", read_only=True)
     method_label = serializers.CharField(source="get_payment_method_display", read_only=True)
@@ -110,6 +113,7 @@ class PayableSerializer(serializers.ModelSerializer):
         fields = [
             "id", "subcontract", "subcontract_code", "subcontract_title",
             "project", "project_name", "vendor", "vendor_name",
+            "flow_unit", "flow_unit_name",
             "category", "category_label", "title",
             "amount", "tax_amount", "retention_amount", "payable_amount",
             "state", "state_label", "next_states",
@@ -155,7 +159,7 @@ class PayableWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payable
         fields = [
-            "subcontract", "project", "vendor", "category", "title",
+            "subcontract", "project", "vendor", "flow_unit", "category", "title",
             "amount", "tax_amount", "retention_amount",
             "billing_date", "due_date", "payment_method", "check_due_date",
             "check_no", "invoice_no", "note",
@@ -192,6 +196,12 @@ class PayableWriteSerializer(serializers.ModelSerializer):
                 ):
                     raise serializers.ValidationError({field: f"沒有綁分包合約時，必須指定{label}"})
 
+        # 掛的流程單元必須屬於同一個案子——掛錯案子，成本就算錯案子
+        flow_unit = attrs.get("flow_unit") or getattr(self.instance, "flow_unit", None)
+        project = attrs.get("project") or getattr(self.instance, "project", None)
+        if flow_unit is not None and project is not None and flow_unit.project_id != project.pk:
+            raise serializers.ValidationError({"flow_unit": "流程單元不屬於這個專案"})
+
         amount = attrs.get("amount", getattr(self.instance, "amount", None))
 
         # ⚠️ 「沒填」與「填 0」是兩件事。
@@ -207,8 +217,9 @@ class PayableWriteSerializer(serializers.ModelSerializer):
         if amount is not None and retention and retention > amount:
             raise serializers.ValidationError({"retention_amount": "保留款不能超過本次計價金額"})
 
+        # D48：金額一律填稅後，稅額沒填就是 0（不再自動加 5%）
         if attrs.get("tax_amount") is None and amount is not None:
-            attrs["tax_amount"] = (amount * TAX_RATE).quantize(Decimal("1"))
+            attrs["tax_amount"] = Decimal("0")
 
         # 付款日沒填 → 由計價日與合約條件推算。推不出來就留空，不亂猜
         billing_date = attrs.get("billing_date", getattr(self.instance, "billing_date", None))

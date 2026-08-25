@@ -18,8 +18,9 @@ from rest_framework.views import APIView
 from main.apps.billing.models import BillingMilestone
 from main.apps.core.models import ActivityLog
 from main.apps.projects.models import Project
-from main.apps.tracking.models import TrackingUnit
-from main.utils.choices import MilestoneState, Status
+from main.apps.tracking.models import FlowUnit, TrackingUnit
+from main.apps.tracking.services.flow_service import gantt_rows
+from main.utils.choices import FlowState, MilestoneState, Status
 from main.utils.permissions import has_permission
 from main.utils.scoping import (
     can_view_amount,
@@ -46,11 +47,21 @@ class DashboardOverviewView(APIView):
             TrackingUnit.objects.select_related("current_stage", "project"), user
         ).filter(project__is_closed=False)
 
-        unit_stats = units.aggregate(
-            total=Count("id"),
-            atrisk=Count("id", filter=Q(status=Status.ATRISK)),
-            delayed=Count("id", filter=Q(status=Status.DELAYED)),
+        today = timezone.localdate()
+        flow_units = FlowUnit.objects.filter(project__in=projects).exclude(
+            state=FlowState.NA
         )
+        flow_stats = flow_units.aggregate(
+            open=Count("id", filter=Q(state__in=[FlowState.TODO, FlowState.DOING])),
+            overdue=Count(
+                "id",
+                filter=Q(state__in=[FlowState.TODO, FlowState.DOING], plan_end__lt=today),
+            ),
+            unassigned=Count(
+                "id", filter=Q(state=FlowState.DOING, assignee__isnull=True),
+            ),
+        )
+        batch_delayed = units.filter(status=Status.DELAYED).count()
 
         cards = [
             {
@@ -59,17 +70,15 @@ class DashboardOverviewView(APIView):
                 "status": "neutral",
             },
             {
-                "key": "tracking_units", "label": "追蹤單元",
-                "value": unit_stats["total"], "unit": "筆",
+                "key": "open_flows", "label": "進行中流程",
+                "value": flow_stats["open"], "unit": "項",
                 "status": "neutral",
             },
             {
                 "key": "attention", "label": "需要關注",
-                "value": unit_stats["atrisk"] + unit_stats["delayed"], "unit": "筆",
-                "status": "bad" if unit_stats["delayed"] else (
-                    "warn" if unit_stats["atrisk"] else "good"
-                ),
-                "detail": f"延誤 {unit_stats['delayed']}、注意 {unit_stats['atrisk']}",
+                "value": flow_stats["overdue"] + batch_delayed, "unit": "筆",
+                "status": "bad" if flow_stats["overdue"] + batch_delayed else "good",
+                "detail": f"逾期流程 {flow_stats['overdue']}、延誤批次 {batch_delayed}",
             },
         ]
 
@@ -141,30 +150,46 @@ class DashboardOverviewView(APIView):
         return sorted(grouped.values(), key=lambda g: -g["total"])
 
     def _project_rows(self, projects, user):
-        """各案一行：階段、追蹤單元數、收款率。列表最多 10 筆。"""
+        """各案一行：目前大階段（由流程單元推導）、開放流程數、收款率。最多 10 筆。"""
+        from django.utils import timezone
+
+        today = timezone.localdate()
         rows = []
-        qs = projects.select_related(
-            "main_stage", "main_template", "customer"
-        ).prefetch_related("main_template__stages").with_amounts().annotate(
-            unit_count=Count("units", distinct=True),
-            attention=Count(
-                "units",
-                filter=Q(units__status__in=[Status.ATRISK, Status.DELAYED]),
-                distinct=True,
-            ),
-        )[:10]
+        qs = projects.select_related("customer").prefetch_related(
+            "flow_units__flow_item__stage"
+        ).with_amounts()[:10]
         for project in qs:
+            units = [
+                u for u in project.flow_units.all() if u.state != FlowState.NA
+            ]
+            open_units = [
+                u for u in units if u.state in (FlowState.TODO, FlowState.DOING)
+            ]
+            # 目前大階段＝最前面還有事沒做完的那一段；全做完就是最後一段
+            if open_units:
+                current = min((u.flow_item.stage for u in open_units), key=lambda s: s.seq)
+            elif units:
+                current = max((u.flow_item.stage for u in units), key=lambda s: s.seq)
+            else:
+                current = None
+            overdue_units = sum(
+                1
+                for u in open_units
+                if u.plan_end and u.plan_end < today
+            )
             row = {
                 "id": project.pk,
                 "code": project.code,
                 "name": project.name,
                 "customer": project.customer.name if project.customer else "",
-                "stage_name": project.main_stage.name,
-                "stage_seq": project.main_stage.seq,
-                "stage_total": sum(1 for s in project.main_template.stages.all() if s.is_active),
-                "unit_count": project.unit_count,
-                "attention": project.attention,
+                "stage_name": current.name if current else "尚未勾選流程",
+                "stage_seq": current.seq if current else 0,
+                "stage_total": 5,
+                "flow_gantt": gantt_rows(project),
+                "unit_count": len(open_units),
+                "attention": overdue_units,
                 "status": project.status,
+                "lifecycle": project.lifecycle,
                 "due_date": project.due_date,
                 "is_overdue": project.is_overdue,
             }
@@ -198,7 +223,50 @@ class DashboardAttentionView(APIView):
             TrackingUnit.objects.select_related("project", "current_stage"), user
         ).filter(project__is_closed=False)
 
-        # 1. 延誤與注意
+        # 0. 流程單元：逾期／進行中沒負責人／本週應完成
+        flow_units = FlowUnit.objects.filter(
+            project__in=scope_projects(Project.objects.active(), user)
+        ).select_related("project", "flow_item", "assignee")
+        soon7 = today + timedelta(days=7)
+        for u in flow_units.filter(
+            state__in=[FlowState.TODO, FlowState.DOING], plan_end__lt=today
+        ).order_by("plan_end")[:20]:
+            who = u.assignee.name if u.assignee else "（未指派）"
+            items.append({
+                "type": "flow_overdue",
+                "severity": "bad",
+                "title": f"{u.project.name}·{u.flow_item.name}",
+                "reason": f"預計 {u.plan_end} 完成，已逾期 {(today - u.plan_end).days} 天。負責人：{who}",
+                "action": "追進度",
+                "link": f"/projects?open={u.project_id}",
+                "unit_id": u.pk,
+            })
+        for u in flow_units.filter(state=FlowState.DOING, assignee__isnull=True)[:10]:
+            items.append({
+                "type": "flow_unassigned",
+                "severity": "warn",
+                "title": f"{u.project.name}·{u.flow_item.name}",
+                "reason": "進行中但沒有負責人——沒人負責的事不會自己完成",
+                "action": "指派負責人",
+                "link": f"/projects?open={u.project_id}",
+                "unit_id": u.pk,
+            })
+        for u in flow_units.filter(
+            state__in=[FlowState.TODO, FlowState.DOING],
+            plan_end__gte=today, plan_end__lte=soon7,
+        ).order_by("plan_end")[:10]:
+            who = u.assignee.name if u.assignee else "（未指派）"
+            items.append({
+                "type": "flow_due_soon",
+                "severity": "info",
+                "title": f"{u.project.name}·{u.flow_item.name}",
+                "reason": f"預計 {u.plan_end} 完成。負責人：{who}",
+                "action": "確認進度",
+                "link": f"/projects?open={u.project_id}",
+                "unit_id": u.pk,
+            })
+
+        # 1. 批次延誤與注意
         for unit in units.filter(status__in=[Status.ATRISK, Status.DELAYED])[:20]:
             items.append({
                 "type": "unit_status",

@@ -75,6 +75,12 @@ def move_stage(unit_id, direction, actor, note="", expected_stage_id=None):
         ActivityCategory.TRACKING, actor=actor, project=unit.project, obj=unit,
     )
     logger.info("追蹤單元 %s：%s → %s（%s）", unit.code, from_stage.name, to_stage.name, direction)
+
+    # 批次走站 → 階段 4 的流程單元（加工/表處/出貨/安裝）進度跟著動（同交易）
+    if unit.unit_type == UnitType.BATCH:
+        from main.apps.tracking.services import flow_service
+
+        flow_service.sync_batch_rollup(unit.project, actor)
     return unit, log
 
 

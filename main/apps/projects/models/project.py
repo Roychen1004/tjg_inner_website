@@ -6,12 +6,19 @@ from django.utils import timezone
 from simple_history.models import HistoricalRecords
 
 from main.apps.core.models import TimeStampedModel
-from main.utils.choices import ChangeOrderStatus, ProjectType, Status, TemplateAppliesTo
+from main.utils.choices import (
+    ChangeOrderStatus,
+    ProjectLifecycle,
+    ProjectType,
+    Status,
+    TemplateAppliesTo,
+)
 
 
 class ProjectQuerySet(models.QuerySet):
     def active(self):
-        return self.filter(is_closed=False)
+        """真的在跑的案子。未成交／暫停不算——它們不進看板統計與金流預測。"""
+        return self.filter(lifecycle=ProjectLifecycle.ACTIVE)
 
     def overdue(self):
         return self.filter(is_closed=False, due_date__lt=timezone.localdate())
@@ -73,7 +80,11 @@ class Project(TimeStampedModel):
     )
     contract_amount = models.DecimalField(
         "合約總額", max_digits=14, decimal_places=2, null=True, blank=True,
-        help_text="單位：新台幣元。投標中未定可留空",
+        help_text="單位：新台幣元。簽約前留空",
+    )
+    estimate_amount = models.DecimalField(
+        "估價金額", max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text="未簽約時金流預測與期別金額用它當基準；簽約後以合約額為準",
     )
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="專案負責人",
@@ -94,6 +105,12 @@ class Project(TimeStampedModel):
     )
 
     status = models.CharField("狀態", max_length=10, choices=Status.choices, default=Status.ONTRACK)
+    lifecycle = models.CharField(
+        "生命週期", max_length=10, choices=ProjectLifecycle.choices,
+        default=ProjectLifecycle.ACTIVE,
+        help_text="進行中／未成交／暫停／已結案。從詢價就建案（2026-08-14 確認）",
+    )
+    # is_closed 由 lifecycle 推導（save() 同步）。留著是因為索引與既有查詢都用它
     is_closed = models.BooleanField("已結案", default=False)
 
     note = models.CharField("備註", max_length=500, blank=True)
@@ -115,6 +132,7 @@ class Project(TimeStampedModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["status"]),
+            models.Index(fields=["lifecycle"]),
             models.Index(fields=["is_closed", "due_date"]),
             models.Index(fields=["owner"]),
             models.Index(fields=["project_type"]),
@@ -144,6 +162,17 @@ class Project(TimeStampedModel):
         """有效合約額＝原合約額＋已核准變更。里程碑金額以此為基礎計算。"""
         base = self.contract_amount or Decimal("0")
         return base + self.approved_change_amount
+
+    @property
+    def amount_base(self):
+        """期別金額與金流預測的基準。
+
+        簽約後＝有效合約額；簽約前＝估價金額——估價中的案子也要進
+        現金流預測（確定性最低的「預估」級），不然預測少算整個未來。
+        """
+        if self.contract_amount is not None:
+            return self.effective_amount
+        return self.estimate_amount or Decimal("0")
 
     @property
     def received_amount(self):
@@ -191,6 +220,10 @@ class Project(TimeStampedModel):
     def save(self, *args, **kwargs):
         if not self.code:
             self.code = self.generate_code()
+        # is_closed 是 lifecycle 的影子欄位，永遠由這裡同步，不各自維護
+        self.is_closed = self.lifecycle == ProjectLifecycle.CLOSED
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            kwargs["update_fields"] = list(set(kwargs["update_fields"]) | {"is_closed"})
         if not self.main_template_id:
             self.main_template = __import__(
                 "main.apps.masters.models", fromlist=["StageTemplate"]

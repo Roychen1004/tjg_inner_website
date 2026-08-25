@@ -5,13 +5,14 @@ from .views import (
     CustomerViewSet,
     DepartmentViewSet,
     EmployeeViewSet,
+    FlowCatalogView,
     OptionsView,
     VendorViewSet,
 )
 
 app_name = "masters"
 
-# 一張表一個端點。讀給全體（下拉選單），寫給經營者與系統管理員——
+# 一張表一個端點。讀給全體（下拉選單），寫給經理與系統管理員——
 # 靠 read_permission / write_permission 分，不是靠兩組網址
 router = DefaultRouter(trailing_slash=False)
 router.register("customers", CustomerViewSet, basename="customer")
@@ -21,5 +22,6 @@ router.register("departments", DepartmentViewSet, basename="department")
 
 urlpatterns = [
     path("options", OptionsView.as_view(), name="options"),
+    path("flow-catalog", FlowCatalogView.as_view(), name="flow-catalog"),
     *router.urls,
 ]

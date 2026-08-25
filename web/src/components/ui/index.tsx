@@ -10,14 +10,17 @@
  */
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Info,
   Loader2,
   Search,
   X,
   XCircle,
 } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { StatusCode } from "@/api/types";
 
@@ -384,6 +387,177 @@ export const inputClass =
   "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink " +
   "outline-none focus:border-stage-2 focus:ring-2 focus:ring-stage-2/20 disabled:bg-slate-50";
 
+// ── 日期欄位（自製大日曆，D48）────────────────────────────────────
+// 原生 input[type=date] 的彈出日曆由瀏覽器決定大小、改不了，老闆嫌太小。
+// 自己畫：格子大（40px）、有「今天／清除」，點外面或 Esc 關閉。
+
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+function isoOf(y: number, m: number, d: number) {
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+export function DateInput({
+  value,
+  onChange,
+  className = "",
+  placeholder = "選日期",
+  "aria-label": ariaLabel,
+}: {
+  /** YYYY-MM-DD，空字串＝未選 */
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  placeholder?: string;
+  "aria-label"?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  // 顯示中的月份（每月一日）
+  const [view, setView] = useState(() => {
+    const d = value ? new Date(value) : new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const wrap = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    // capture＋stopPropagation：Esc 只關日曆，不連外層的卡片一起關
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  function toggle() {
+    if (!open) {
+      const d = value ? new Date(value) : new Date();
+      setView(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+    setOpen((v) => !v);
+  }
+
+  function pick(day: number) {
+    onChange(isoOf(view.getFullYear(), view.getMonth(), day));
+    setOpen(false);
+  }
+
+  const today = new Date();
+  const todayIso = isoOf(today.getFullYear(), today.getMonth(), today.getDate());
+  const daysInMonth = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+  const leading = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
+
+  return (
+    <div ref={wrap} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={ariaLabel ?? placeholder}
+        aria-expanded={open}
+        className={`${inputClass} flex min-h-10 items-center justify-between text-left`}
+      >
+        <span className={value ? "tabular-nums" : "text-ink-3"}>{value || placeholder}</span>
+        <CalendarDays size={16} className="shrink-0 text-ink-3" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-[19rem] rounded-xl bg-card p-2.5 shadow-xl ring-1 ring-line">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setView((v) => new Date(v.getFullYear(), v.getMonth() - 1, 1))}
+              aria-label="上個月"
+              className="rounded-lg p-1.5 text-ink-2 hover:bg-page"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="text-sm font-bold tabular-nums text-ink">
+              {view.getFullYear()} 年 {view.getMonth() + 1} 月
+            </span>
+            <button
+              type="button"
+              onClick={() => setView((v) => new Date(v.getFullYear(), v.getMonth() + 1, 1))}
+              aria-label="下個月"
+              className="rounded-lg p-1.5 text-ink-2 hover:bg-page"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+
+          <div className="mt-1 grid grid-cols-7 text-center text-[11px] font-semibold text-ink-3">
+            {WEEKDAYS.map((w) => (
+              <span key={w} className="py-1">
+                {w}
+              </span>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {Array.from({ length: leading }, (_, i) => (
+              <span key={`b${i}`} />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const iso = isoOf(view.getFullYear(), view.getMonth(), i + 1);
+              const selected = iso === value;
+              const isToday = iso === todayIso;
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  onClick={() => pick(i + 1)}
+                  className={[
+                    "h-10 rounded-lg text-sm tabular-nums transition-base",
+                    selected
+                      ? "bg-stage-2 font-bold text-white"
+                      : "text-ink hover:bg-page",
+                    !selected && isToday ? "ring-1 ring-stage-2" : "",
+                  ].join(" ")}
+                >
+                  {i + 1}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-1.5 flex justify-between border-t border-line pt-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(todayIso);
+                setOpen(false);
+              }}
+              className="rounded-lg px-2 py-1 text-xs font-semibold text-ink-2 hover:bg-page"
+            >
+              今天
+            </button>
+            {value && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  setOpen(false);
+                }}
+                className="rounded-lg px-2 py-1 text-xs font-semibold text-ink-3 hover:bg-page"
+              >
+                清除
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * 表單錯誤總結
  *
@@ -469,6 +643,10 @@ export function Button({
 /**
  * 手機從底部滑入（拇指容易搆到），桌機置中。
  * 不做動畫特效——只做讓人看得懂「這是暫時蓋在上面的東西」所需的最少視覺。
+ *
+ * `side`（D47/D48）：改成從**右側**滑出的側欄（桌機約 1/3 螢幕寬），
+ * **沒有遮罩**——左邊的頁面照常點選、捲動，跟側欄是同一個平面。
+ * 關閉靠 X、Esc 或側欄裡的按鈕。
  */
 export function Modal({
   open,
@@ -476,25 +654,57 @@ export function Modal({
   title,
   children,
   footer,
+  side = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  side?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
+    // 側欄模式不鎖頁面捲動——左邊要能照常滑動
+    if (!side) document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      if (!side) document.body.style.overflow = "";
     };
-  }, [open, onClose]);
+  }, [open, onClose, side]);
 
   if (!open) return null;
+
+  if (side) {
+    // 無遮罩側欄：頁面照常互動，是同一個平面（D48）
+    return (
+      <div
+        role="dialog"
+        aria-label={title}
+        className="fixed inset-y-0 right-0 z-50 w-full overflow-y-auto border-l border-line bg-card shadow-2xl sm:w-[max(33vw,420px)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-card px-4 py-3">
+          <h3 className="text-sm font-bold text-ink">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="關閉"
+            className="rounded-lg p-1.5 text-ink-3 hover:bg-page"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-4 py-4">{children}</div>
+        {footer && (
+          <div className="sticky bottom-0 flex gap-2 border-t border-line bg-card px-4 py-3">
+            {footer}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -507,8 +717,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[90dvh] w-full overflow-y-auto rounded-t-2xl bg-card
-                   sm:max-w-lg sm:rounded-2xl"
+        className="max-h-[90dvh] w-full overflow-y-auto rounded-t-2xl bg-card sm:max-w-lg sm:rounded-2xl"
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-line bg-card px-4 py-3">
           <h3 className="text-sm font-bold text-ink">{title}</h3>

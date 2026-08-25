@@ -9,8 +9,9 @@
  * 版面刻意跟「應付」長得一樣——同樣的四張卡片、同樣的狀態徽章、
  * 同樣的「變更狀態」按鈕。會計看得懂一邊就看得懂另一邊。
  */
-import { AlertTriangle, Banknote, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, Banknote, ExternalLink, Pencil, Plus } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   useBillingSummary,
@@ -29,6 +30,7 @@ import {
   ErrorState,
   KpiCard,
   Money,
+  SearchInput,
   Select,
   Spinner,
 } from "@/components/ui";
@@ -50,6 +52,7 @@ export default function Receivables() {
   const [searchParams, setSearchParams] = useStickyParams("billing.filters", KEYS);
   const project = searchParams.get("project") ?? "";
   const state = searchParams.get("state") ?? "";
+  const [q, setQ] = useState("");
 
   const setParam = (name: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -62,6 +65,7 @@ export default function Receivables() {
   const { data, isLoading, error, refetch } = useMilestones({
     project: project || undefined,
     state: state || undefined,
+    q: q || undefined,
     page_size: 50,
   });
   const [transitioning, setTransitioning] = useState<Milestone | null>(null);
@@ -103,6 +107,8 @@ export default function Receivables() {
       )}
 
       <section className="flex flex-wrap items-center gap-2">
+        {/* 跟應付一樣的搜尋欄（D48） */}
+        <SearchInput value={q} onChange={setQ} placeholder="搜尋期別、請款單號、專案…" />
         <Select
           value={project}
           onChange={(v) => setParam("project", v)}
@@ -173,7 +179,12 @@ function Row({
   const style = STATE_STYLE[row.state] ?? STATE_STYLE.pending;
   const overdue = (row.days_since_claimable ?? 0) > 7;
   return (
-    <Card as="li" className="p-3">
+    // 整列可點（D47）：點哪裡都開明細編輯；右側按鈕區自己攔截點擊
+    <Card
+      as="li"
+      className={`p-3 ${onEdit ? "cursor-pointer transition-base hover:ring-stage-2" : ""}`}
+      onClick={onEdit}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -192,8 +203,16 @@ function Row({
           </p>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2">
+            {row.state === "pending" && row.trigger_unit_name && (
+              <span style={{ color: "var(--color-stage-2)" }}>
+                完成「{row.trigger_unit_name}」→ 自動可請款
+              </span>
+            )}
             {row.state === "pending" && (
-              <span>預計請款 {row.expected_date ?? "未定（不會出現在現金流）"}</span>
+              <span>
+                預計請款 {row.forecast_date ?? "未定（不會出現在現金流）"}
+                {!row.expected_date && row.forecast_date && "（取自觸發流程排程）"}
+              </span>
             )}
             {row.state === "claimable" && (
               <span className={overdue ? "font-semibold" : ""} style={overdue ? { color: "var(--color-delayed)" } : undefined}>
@@ -212,11 +231,26 @@ function Row({
           </div>
         </div>
 
-        <div className="shrink-0 text-right">
+        <div
+          className="shrink-0 text-right"
+          onClick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
           <p className="text-base font-bold text-ink">
             <Money value={row.amount} />
           </p>
           <div className="mt-2 flex items-center justify-end gap-1.5">
+            {/* 跳去連結的流程卡片（D47） */}
+            {row.trigger_unit && (
+              <Link
+                to={`/tracking?view=flow&unit=${row.trigger_unit}`}
+                title={`前往觸發流程「${row.trigger_unit_name}」的卡片`}
+                className="flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+              >
+                <ExternalLink size={13} />
+                流程
+              </Link>
+            )}
             {onEdit && (
               <Button onClick={onEdit} aria-label="編輯">
                 <Pencil size={13} />

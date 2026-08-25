@@ -2,9 +2,242 @@ from rest_framework import serializers
 
 from main.apps.masters.models import StageTemplate
 from main.apps.masters.serializers import StageSerializer
-from main.apps.tracking.models import ProgressLog, TrackingUnit, TrackingUnitStageLog
-from main.utils.choices import TemplateAppliesTo, UnitType
+from main.apps.tracking.models import (
+    FlowTask,
+    FlowTaskAssignment,
+    FlowUnit,
+    ProgressLog,
+    TrackingUnit,
+    TrackingUnitStageLog,
+)
+from main.apps.tracking.models.flow_task import TERMINAL_STATUSES
+from main.utils.choices import FlowState, TemplateAppliesTo, UnitType
 from main.utils.permissions import has_permission
+
+
+# ── 工作分配（工作項目 × 工段 × 員工）──────────────────────────────
+class FlowTaskAssignmentSerializer(serializers.ModelSerializer):
+    """一列＝派給一個員工的一份工段分量（如「切割中 50 噸 → 工廠員工1」）。
+
+    也直接餵「我的任務」的工作分配清單，所以帶上專案／流程／項目的名字。
+    """
+
+    assignee_name = serializers.CharField(source="assignee.name", read_only=True, default="")
+    is_done = serializers.BooleanField(read_only=True)
+    unit = serializers.IntegerField(source="task.unit_id", read_only=True)
+    task_name = serializers.CharField(source="task.name", read_only=True)
+    task_qty = serializers.DecimalField(
+        source="task.qty", max_digits=12, decimal_places=2, read_only=True,
+    )
+    unit_of_measure = serializers.CharField(source="task.unit_of_measure", read_only=True)
+    flow_name = serializers.CharField(source="task.unit.flow_item.name", read_only=True)
+    project_name = serializers.CharField(source="task.unit.project.name", read_only=True)
+
+    class Meta:
+        model = FlowTaskAssignment
+        fields = [
+            "id", "task", "status", "assignee", "assignee_name",
+            "qty_assigned", "qty_done", "is_done",
+            "unit", "task_name", "task_qty", "unit_of_measure",
+            "flow_name", "project_name",
+        ]
+        extra_kwargs = {"assignee": {"required": True, "allow_null": False}}
+
+    def validate(self, attrs):
+        task = attrs.get("task") or (self.instance.task if self.instance else None)
+        if self.instance and attrs.get("task") and attrs["task"] != self.instance.task:
+            raise serializers.ValidationError({"task": "工作分配不能搬到別的工作項目"})
+
+        status_ = attrs.get("status", getattr(self.instance, "status", ""))
+        if status_ in TERMINAL_STATUSES:
+            raise serializers.ValidationError(
+                {"status": "「未開始」與「已完成」是頭尾狀態，不是可分配的工段"}
+            )
+        if task and status_ not in task.statuses:
+            raise serializers.ValidationError(
+                {"status": f"「{status_}」不在「{task.name}」的狀態清單裡——先在該項目上新增狀態"}
+            )
+
+        qty_assigned = attrs.get(
+            "qty_assigned", getattr(self.instance, "qty_assigned", None)
+        )
+        qty_done = attrs.get("qty_done", getattr(self.instance, "qty_done", 0))
+        if qty_assigned is not None and qty_assigned <= 0:
+            raise serializers.ValidationError({"qty_assigned": "分配數量必須大於 0"})
+        if qty_done < 0:
+            raise serializers.ValidationError({"qty_done": "完成數量不可為負"})
+        if qty_assigned is not None and qty_done > qty_assigned:
+            raise serializers.ValidationError(
+                {"qty_done": f"完成數量不可超過分配數量（{qty_assigned:g}）"}
+            )
+
+        # 同一項目同一工段的分配總量不可超過項目數量——分 250 噸出去但只有 200 噸是錯字
+        if task and task.qty and qty_assigned is not None:
+            others = task.assignments.filter(status=status_)
+            if self.instance:
+                others = others.exclude(pk=self.instance.pk)
+            already = sum(a.qty_assigned for a in others)
+            if already + qty_assigned > task.qty:
+                remain = task.qty - already
+                raise serializers.ValidationError({
+                    "qty_assigned": f"「{status_}」已分配 {already:g}，"
+                                    f"最多還能分 {remain:g}（項目總量 {task.qty:g}）"
+                })
+        return attrs
+
+
+# ── 工作項目（流程單元的內容物清單）────────────────────────────────
+class FlowTaskSerializer(serializers.ModelSerializer):
+    """一列＝一個內容物：名稱、數量、單位、狀態、自己的狀態清單＋各工段分配。"""
+
+    # 要 prefetch_related("assignments")，不然一列項目一次查詢
+    assignments = FlowTaskAssignmentSerializer(many=True, read_only=True)
+    progress_pct = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = FlowTask
+        fields = [
+            "id", "unit", "name", "qty", "unit_of_measure", "status", "statuses",
+            "assignments", "progress_pct",
+        ]
+        extra_kwargs = {"status": {"required": False, "allow_blank": True}}
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("請填寫內容物名稱，如「鐵材」")
+        return value
+
+    def validate_statuses(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("狀態清單必須是清單")
+        cleaned = []
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                raise serializers.ValidationError("狀態必須是文字，不可空白")
+            name = item.strip()
+            if len(name) > 20:
+                raise serializers.ValidationError(f"狀態「{name[:20]}…」太長（最多 20 字）")
+            if name in TERMINAL_STATUSES:
+                continue  # 頭尾是隱含的，不進工段清單
+            if name not in cleaned:
+                cleaned.append(name)
+        if len(cleaned) > 20:
+            raise serializers.ValidationError("狀態最多 20 個")
+        # 已有分配掛著的工段不能移除——分配會變孤兒
+        if self.instance:
+            in_use = {a.status for a in self.instance.assignments.all()}
+            if missing := in_use - set(cleaned):
+                raise serializers.ValidationError(
+                    f"「{'、'.join(sorted(missing))}」已有工作分配，不能移除；請先刪除分配"
+                )
+        return cleaned
+
+    def validate(self, attrs):
+        # 項目不能搬去別張單元——歷史會對不上
+        if self.instance and attrs.get("unit") and attrs["unit"] != self.instance.unit:
+            raise serializers.ValidationError({"unit": "工作項目不能搬到別的流程單元"})
+        # 空白狀態不覆蓋：建立時走模型預設「未開始」，修改時保留原值
+        if not attrs.get("status", "未開始").strip():
+            attrs.pop("status", None)
+            if self.instance is None:
+                attrs["status"] = "未開始"
+        return attrs
+
+
+# ── 流程單元（2026-08-14 流程制改版）───────────────────────────────
+class FlowUnitSerializer(serializers.ModelSerializer):
+    """流程單元。沒有任何金額欄位——員工與檢視角色都拿得到完整資料。"""
+
+    project_name = serializers.CharField(source="project.name", read_only=True)
+    project_code = serializers.CharField(source="project.code", read_only=True)
+
+    seq = serializers.IntegerField(source="flow_item.seq", read_only=True)
+    flow_code = serializers.CharField(source="flow_item.code", read_only=True)
+    flow_name = serializers.CharField(source="flow_item.name", read_only=True)
+    stage_seq = serializers.IntegerField(source="flow_item.stage.seq", read_only=True)
+    stage_name = serializers.CharField(source="flow_item.stage.name", read_only=True)
+    # 工作內容／產出物／完成條件是單元自己的欄位（生成時從目錄抄預設，之後每案可改）
+    is_gate = serializers.BooleanField(source="flow_item.is_gate", read_only=True)
+
+    state_label = serializers.CharField(source="get_state_display", read_only=True)
+    assignee_name = serializers.CharField(source="assignee.name", read_only=True, default="")
+    subcontractor_name = serializers.CharField(
+        source="subcontractor.name", read_only=True, default=""
+    )
+
+    completion_ratio = serializers.FloatField(read_only=True)
+    is_overdue = serializers.BooleanField(read_only=True)
+    is_batch_driven = serializers.BooleanField(read_only=True)
+    can_operate = serializers.SerializerMethodField()
+    # 要 prefetch_related("tasks")，不然一列單元一次查詢
+    tasks = FlowTaskSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = FlowUnit
+        fields = [
+            "id", "project", "project_name", "project_code",
+            "flow_item", "seq", "flow_code", "flow_name", "stage_seq", "stage_name",
+            "description", "deliverables", "done_criteria", "is_gate",
+            "state", "state_label", "assignee", "assignee_name", "detail",
+            "plan_start", "plan_end", "actual_start", "actual_end",
+            "qty_total", "qty_done", "unit_of_measure", "progress_pct",
+            "completion_ratio", "is_overdue", "is_batch_driven",
+            "subcontractor", "subcontractor_name", "note", "can_operate", "tasks",
+        ]
+
+    def get_can_operate(self, obj) -> bool:
+        from main.apps.tracking.services.flow_service import can_operate
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and can_operate(user, obj))
+
+
+class FlowUnitWriteSerializer(serializers.ModelSerializer):
+    """排程表逐列填的欄位：負責人、詳細內容、預計起訖、數量、分包商。
+
+    project 與 flow_item 不在這裡——單元由建案勾選或 set-flows 產生，
+    不能事後把一張單元搬到別的案子或改成別的流程。
+    """
+
+    class Meta:
+        model = FlowUnit
+        fields = [
+            "assignee", "detail", "plan_start", "plan_end",
+            "qty_total", "unit_of_measure", "subcontractor", "note",
+            "description", "deliverables", "done_criteria",
+        ]
+
+    def validate(self, attrs):
+        start = attrs.get("plan_start", getattr(self.instance, "plan_start", None))
+        end = attrs.get("plan_end", getattr(self.instance, "plan_end", None))
+        if start and end and end < start:
+            raise serializers.ValidationError({"plan_end": "預計完成日不可早於預計開始日"})
+        qty = attrs.get("qty_total", getattr(self.instance, "qty_total", None))
+        done = getattr(self.instance, "qty_done", 0) if self.instance else 0
+        if qty is not None and done and qty < done:
+            raise serializers.ValidationError(
+                {"qty_total": f"總數量不可小於已完成數量（{done:g}）"}
+            )
+        return attrs
+
+
+class FlowTransitionSerializer(serializers.Serializer):
+    to_state = serializers.ChoiceField(choices=FlowState.choices)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+
+class FlowReportSerializer(serializers.Serializer):
+    delta = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    qty_done = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    progress_pct = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+    def validate(self, attrs):
+        if not any(k in attrs for k in ("delta", "qty_done", "progress_pct")):
+            raise serializers.ValidationError("請提供增減量、完成數量或完成百分比其中之一")
+        return attrs
 
 
 class TrackingUnitCardSerializer(serializers.ModelSerializer):

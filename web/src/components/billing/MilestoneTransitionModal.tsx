@@ -8,7 +8,7 @@ import { useState } from "react";
 import { ApiError } from "@/api/client";
 import { useTransitionMilestone } from "@/api/hooks";
 import type { Milestone } from "@/api/types";
-import { Button, Field, FormErrors, Modal, Money, inputClass } from "@/components/ui";
+import { Button, DateInput, Field, FormErrors, inputClass, Modal, Money } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 
 export default function MilestoneTransitionModal({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
@@ -95,7 +95,7 @@ export default function MilestoneTransitionModal({ milestone, onClose }: { miles
       {isInvoicing && (
         <>
           <Field label="請款日" required hint="預計收款日＝請款日＋客戶帳期，會自動帶入">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
+            <DateInput value={date} onChange={setDate} />
           </Field>
           <Field label="請款單號">
             <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={inputClass} />
@@ -105,7 +105,7 @@ export default function MilestoneTransitionModal({ milestone, onClose }: { miles
 
       {isReceiving && (
         <Field label="收款日" required>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
+          <DateInput value={date} onChange={setDate} />
         </Field>
       )}
 

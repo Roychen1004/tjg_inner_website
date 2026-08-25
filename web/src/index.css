@@ -92,3 +92,14 @@ a.btn {
       opacity 150ms;
   }
 }
+
+/* D47：日期欄位放大——16px 也能避免 iOS 聚焦時自動縮放頁面 */
+input[type="date"] {
+  font-size: 1rem;
+  min-height: 2.5rem;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  width: 1.25rem;
+  height: 1.25rem;
+  cursor: pointer;
+}

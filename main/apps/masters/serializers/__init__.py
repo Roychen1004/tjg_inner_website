@@ -1,6 +1,30 @@
 from rest_framework import serializers
 
-from main.apps.masters.models import Customer, Stage, StageTemplate, Vendor
+from main.apps.masters.models import Customer, FlowItem, FlowStage, Stage, StageTemplate, Vendor
+
+
+class FlowItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlowItem
+        fields = [
+            "id", "seq", "code", "name",
+            "description", "deliverables", "done_criteria",
+            "is_gate", "batch_stage_seq",
+        ]
+
+
+class FlowStageSerializer(serializers.ModelSerializer):
+    """大階段＋底下的工作項。建案表單的勾選清單一次取完。"""
+
+    items = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FlowStage
+        fields = ["id", "seq", "code", "name", "gate", "items"]
+
+    def get_items(self, obj) -> list[dict]:
+        items = sorted((i for i in obj.items.all() if i.is_active), key=lambda i: i.seq)
+        return FlowItemSerializer(items, many=True).data
 
 
 class StageSerializer(serializers.ModelSerializer):

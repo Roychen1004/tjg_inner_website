@@ -1,10 +1,11 @@
 """
-建立 admin 超級使用者與測試帳號（經營者、會計）
+建立 admin 超級使用者與員工名冊（D40：經理、會計師、繪圖師、行政人員、工廠員工×10）
 
 冪等 —— 可重複執行。已存在的帳號只更新姓名與角色，不覆寫密碼。
-密碼由 .env 的 DJANGO_SUPERUSER_PASSWORD / SEED_DEMO_PASSWORD 提供。
+密碼由 .env 的 DJANGO_SUPERUSER_PASSWORD / SEED_DEMO_PASSWORD 提供；
+正式機各帳號的實際密碼記在 docs/帳號密碼.md。
 
-⚠️ 測試帳號是為了驗收而建，正式上線前應改成真實員工帳號。
+⚠️ 姓名先與職稱相同，之後在 設定→員工 改成真名即可（帳號不用動）。
 """
 import os
 
@@ -17,12 +18,21 @@ from main.apps.core.models import Department, Role, User
 DEPARTMENTS = [
     ("MGT", "經營管理部", None),
     ("FIN", "財務部", None),
+    ("ENG", "工程部", None),
 ]
 
 # username, 姓名, 員工編號, 職稱, 部門代號, 角色
+# 2026-08-18 D40 老闆定的名冊：經理＋會計師＋繪圖師＋行政人員＋工廠員工×10，
+# 姓名先與職稱相同（工廠員工加編號），之後在 設定→員工 改成真名。
+# 各帳號的密碼記在 docs/帳號密碼.md（本命令只在新建時給密碼）。
 DEMO_USERS = [
-    ("owner", "王董", "E001", "總經理", "MGT", [Role.OWNER]),
-    ("finance", "劉會計", "E002", "會計主任", "FIN", [Role.FINANCE]),
+    ("manager", "經理", "E001", "經理", "MGT", [Role.OWNER]),
+    ("accountant", "會計師", "E002", "會計師", "FIN", [Role.FINANCE]),
+    ("drafter", "繪圖師", "E003", "繪圖師", "ENG", [Role.STAFF]),
+    ("clerk", "行政人員", "E004", "行政人員", "MGT", [Role.STAFF]),
+] + [
+    (f"worker{i:02d}", f"工廠員工{i}", f"E{i + 4:03d}", "工廠員工", "ENG", [Role.STAFF])
+    for i in range(1, 11)
 ]
 
 
@@ -49,7 +59,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.MIGRATE_HEADING("建立帳號"))
 
-        # 角色群組（Django Group）：三種角色各一個
+        # 角色群組（Django Group）：每種角色各一個
         for code, _label in Role.choices:
             Group.objects.get_or_create(name=code)
 

@@ -18,7 +18,7 @@ MAX_PERIODS = {"week": 26, "month": 24}
 class CashflowForecastView(APIView):
     """未來哪個月會缺錢。
 
-    只給經營者與會計——這是全公司的資金狀況。
+    只給經理與會計師——這是全公司的資金狀況。
     專案負責人看得到自己案子的損益（見下面的 ProjectPnlView），
     但不需要看到公司整體的資金部位。
     """
@@ -39,7 +39,7 @@ class CashflowForecastView(APIView):
             return Response(
                 {
                     "type": "permission_denied",
-                    "detail": "現金流預測只開放給經營者與會計——這是全公司的資金狀況",
+                    "detail": "現金流預測只開放給經理與會計師——這是全公司的資金狀況",
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -60,7 +60,8 @@ class CashflowForecastView(APIView):
         if raw := params.get("certainty"):
             certainties = [c for c in raw.split(",") if c in Certainty.values]
 
-        projects = scope_projects(Project.objects.filter(is_closed=False), request.user)
+        # active()：未成交與暫停的案子不進預測——那些錢短期內不會動
+        projects = scope_projects(Project.objects.active(), request.user)
         if project_id := params.get("project"):
             projects = projects.filter(pk=project_id)
 

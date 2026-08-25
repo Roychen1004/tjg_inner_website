@@ -11,6 +11,8 @@
 export type StatusCode = "ontrack" | "atrisk" | "delayed";
 export type UnitType = "batch" | "work_item";
 export type MilestoneState = "pending" | "claimable" | "invoiced" | "received";
+export type FlowStateCode = "todo" | "doing" | "done" | "na";
+export type ProjectLifecycle = "active" | "lost" | "paused" | "closed";
 
 export interface Paginated<T> {
   count: number;
@@ -42,13 +44,160 @@ export interface StageTemplate {
   stages: Stage[];
 }
 
+// ── 流程目錄與流程單元（2026-08 流程制）─────────────────────────────
+export interface FlowCatalogItem {
+  id: number;
+  seq: number;
+  code: string;
+  name: string;
+  description: string;
+  deliverables: string;
+  done_criteria: string;
+  is_gate: boolean;
+  /** 有值＝這一項的進度由構件批次自動彙總 */
+  batch_stage_seq: number | null;
+}
+
+export interface FlowCatalogStage {
+  id: number;
+  seq: number;
+  code: string;
+  name: string;
+  /** 這一大階段的收斂點（例：「合約簽訂」） */
+  gate: string;
+  items: FlowCatalogItem[];
+}
+
+export interface FlowUnit {
+  id: number;
+  project: number;
+  project_name: string;
+  project_code: string;
+  flow_item: number;
+  seq: number;
+  flow_code: string;
+  flow_name: string;
+  stage_seq: number;
+  stage_name: string;
+  description: string;
+  deliverables: string;
+  done_criteria: string;
+  is_gate: boolean;
+  state: FlowStateCode;
+  state_label: string;
+  assignee: number | null;
+  assignee_name: string;
+  detail: string;
+  plan_start: string | null;
+  plan_end: string | null;
+  actual_start: string | null;
+  actual_end: string | null;
+  qty_total: string | null;
+  qty_done: string;
+  unit_of_measure: string;
+  progress_pct: string | null;
+  completion_ratio: number;
+  is_overdue: boolean;
+  /** true＝進度由構件批次自動彙總，不能手動回報 */
+  is_batch_driven: boolean;
+  subcontractor: number | null;
+  subcontractor_name: string;
+  note: string;
+  /** 負責人本人或有進度維護權限的人 */
+  can_operate: boolean;
+  /** 工作項目：這一步的內容物清單（如「鐵材 500 噸：已下訂單」） */
+  tasks: FlowTask[];
+}
+
+/** 工作分配（D41）：工作項目的一個工段分量派給一個員工 */
+export interface FlowTaskAssignment {
+  id: number;
+  task: number;
+  /** 工段名，如「切割中」——來自單元的 task_statuses */
+  status: string;
+  assignee: number | null;
+  assignee_name: string;
+  qty_assigned: string;
+  qty_done: string;
+  is_done: boolean;
+  // 「我的任務」清單用的補充資訊
+  unit: number;
+  task_name: string;
+  task_qty: string | null;
+  unit_of_measure: string;
+  flow_name: string;
+  project_name: string;
+}
+
+/** 流程單元的工作項目。狀態清單是**每個項目自己的**（D45） */
+export interface FlowTask {
+  id: number;
+  unit: number;
+  name: string;
+  qty: string | null;
+  unit_of_measure: string;
+  status: string;
+  /** 這個項目的工段清單（使用者自己加；未開始／已完成是隱含頭尾） */
+  statuses: string[];
+  assignments: FlowTaskAssignment[];
+  /** 總進度＝各工段完成度的平均 */
+  progress_pct: number;
+}
+
+/** 員工視圖（D46）：一列＝一個員工手上／該月完成的東西 */
+export interface WorkloadUnit {
+  id: number;
+  project_name: string;
+  flow_name: string;
+  state: FlowStateCode;
+  plan_end: string | null;
+  actual_end: string | null;
+}
+
+export interface WorkloadAssignment {
+  id: number;
+  unit: number;
+  project_name: string;
+  flow_name: string;
+  task_name: string;
+  status: string;
+  qty_done: number;
+  qty_assigned: number;
+  unit_of_measure: string;
+  /** 最後回報日（做完的分配＝完成日） */
+  reported_at: string;
+}
+
+export interface StaffWorkload {
+  month: string;
+  staff: Array<{
+    id: number;
+    name: string;
+    title: string;
+    open_units: WorkloadUnit[];
+    open_assignments: WorkloadAssignment[];
+    done_units: WorkloadUnit[];
+    done_assignments: WorkloadAssignment[];
+  }>;
+}
+
+/** 卡片迷你甘特：一大階段縮成一條 bar */
+export interface GanttBar {
+  seq: number;
+  name: string;
+  start: string | null;
+  end: string | null;
+  total: number;
+  done: number;
+  doing: number;
+  overdue: boolean;
+}
+
 // ── 專案 ────────────────────────────────────────────────────────────
 export interface ProjectRow {
   id: number;
   code: string;
   name: string;
-  project_type: string;
-  project_type_label: string;
   customer_name: string;
   owner_name: string;
   /** 沒有看金額權限時為 null——不是 0，是「不給看」 */
@@ -61,29 +210,29 @@ export interface ProjectRow {
   actual_end_date: string | null;
   is_overdue: boolean;
   days_left: number | null;
-  main_stage_name: string;
-  main_stage_seq: number;
-  main_stage_total: number;
   status: StatusCode;
+  lifecycle: ProjectLifecycle;
+  lifecycle_label: string;
   is_closed: boolean;
   unit_count: number;
   attention_count: number;
+  flow_gantt: GanttBar[];
 }
 
 export interface ProjectDetail extends ProjectRow {
   customer: { id: number; name: string; contact_name: string; contact_phone: string } | null;
   owner: { id: number; name: string; title: string } | null;
-  main_stage: Stage;
-  main_stages: Stage[];
   /** 應收款直接掛在專案明細上。檢視角色拿到空陣列 */
   milestones: Milestone[];
+  /** 建案時勾的流程，依目錄順序 */
+  flow_units: FlowUnit[];
   approved_change_amount: string | null;
+  /** 未簽約前的估價金額（金流預測用）。沒有看金額權限時為 null */
+  estimate_amount: string | null;
   note: string;
   contract_terms: string;
   quote_info: string;
   doc_links: string;
-  can_advance: boolean;
-  can_rollback: boolean;
   can_edit: boolean;
   can_view_amounts: boolean;
 }
@@ -157,26 +306,6 @@ export interface TrackingDetail extends TrackingCard {
   quick_increments: number[];
 }
 
-export interface BoardColumn {
-  stage: Stage;
-  count: number;
-  units: TrackingCard[];
-}
-
-/** 一條流程一個看板。混合案有兩條流程，就有兩個看板上下堆疊 */
-export interface Board {
-  template: StageTemplate;
-  count: number;
-  columns: BoardColumn[];
-}
-
-export interface BoardData {
-  boards: Board[];
-  total: number;
-  shown: number;
-  truncated: boolean;
-  truncated_hint: string | null;
-}
 
 export interface MoveStageResult {
   unit: TrackingDetail;
@@ -202,8 +331,17 @@ export interface Milestone {
   state_label: string;
   /** 這筆現在可以轉去哪些狀態，由後端算好 */
   next_states: Option[];
+  /** 觸發流程：該流程單元完成 → 這一期自動轉「可請款」 */
+  trigger_unit: number | null;
+  trigger_unit_name: string;
+  trigger_unit_state: FlowStateCode | "";
+  /** 負責收款的會計師（D45）：觸發時通知他、出現在他的「我的任務」 */
+  accountant: number | null;
+  accountant_name: string;
   /** 預計請款日。由人填；沒填的列不會出現在現金流預測裡 */
   expected_date: string | null;
+  /** 預測請款日＝expected_date，沒填就取觸發流程的預計完成日 */
+  forecast_date: string | null;
   claimable_at: string | null;
   invoice_date: string | null;
   invoice_no: string;
@@ -251,6 +389,7 @@ export interface DashboardOverview {
       stage_total: number;
       unit_count: number;
       attention: number;
+      flow_gantt: GanttBar[];
       contract_amount?: string;
       received_amount?: string;
       collection_rate?: number;
@@ -286,7 +425,8 @@ export interface Activity {
 // ── 選項 ────────────────────────────────────────────────────────────
 export interface OptionsData {
   status: Option[];
-  project_type: Option[];
+  project_lifecycle: Option[];
+  flow_state: Option[];
   unit_type: Option[];
   milestone_state: Option[];
   change_order_status: Option[];
@@ -300,7 +440,11 @@ export interface OptionsData {
   role: Option[];
   status_colors: Record<string, string>;
   users: Array<{ id: number; name: string; employee_no: string | null }>;
-  projects: Array<{ id: number; code: string; name: string; project_type: string }>;
+  /** 會計師角色的啟用帳號——期別「負責收款」下拉用（D45） */
+  accountants: Array<{ id: number; name: string }>;
+  /** 工作項目狀態的建議字——沿用大家之前新增過的（頻率高的在前） */
+  task_status_suggestions: string[];
+  projects: Array<{ id: number; code: string; name: string }>;
 }
 
 export interface Notification {
@@ -316,7 +460,7 @@ export interface Notification {
 
 // ── 附件 ────────────────────────────────────────────────────────────
 /** 附件掛在哪。用名字而不是 ContentType id——那是資料庫內部編號 */
-export type AttachmentTarget = "project" | "tracking-unit" | "milestone";
+export type AttachmentTarget = "project" | "tracking-unit" | "flow-unit" | "milestone";
 
 export interface Attachment {
   id: number;
@@ -388,6 +532,9 @@ export interface Payable {
   subcontract_title: string;
   project: number;
   project_name: string;
+  /** 這筆錢花在哪個流程上（可不掛） */
+  flow_unit: number | null;
+  flow_unit_name: string;
   vendor: number;
   vendor_name: string;
   category: string;

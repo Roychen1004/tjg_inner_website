@@ -1,4 +1,8 @@
+from urllib.parse import quote
+
 from django.db.models import Count, Q
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -6,7 +10,6 @@ from rest_framework.response import Response
 
 from main.apps.projects.models import ChangeOrder, Project
 from main.apps.projects.serializers import (
-    AdvanceStageSerializer,
     ChangeOrderSerializer,
     ChangeOrderWriteSerializer,
     ProjectDetailSerializer,
@@ -26,8 +29,8 @@ class ProjectViewSet(BaseModelViewSet):
     """
 
     queryset = Project.objects.select_related(
-        "customer", "owner", "main_stage", "main_template"
-    ).prefetch_related("main_template__stages")
+        "customer", "owner"
+    ).prefetch_related("flow_units__flow_item__stage")
     serializer_class = ProjectListSerializer
     detail_serializer_class = ProjectDetailSerializer
     write_serializer_class = ProjectWriteSerializer
@@ -56,14 +59,17 @@ class ProjectViewSet(BaseModelViewSet):
             qs = qs.filter(project_type=pt)
         if st := params.get("status"):
             qs = qs.filter(status=st)
+        if lc := params.get("lifecycle"):
+            qs = qs.filter(lifecycle__in=lc.split(","))
         if owner := params.get("owner"):
             qs = qs.filter(owner_id=owner)
 
         closed = bool_param(self.request, "closed")
         if closed is not None:
             qs = qs.filter(is_closed=closed)
-        elif self.action == "list":
-            # 預設不顯示已結案——首頁要回答「現在有什麼在跑」
+        elif self.action == "list" and not params.get("lifecycle"):
+            # 預設不顯示已結案——首頁要回答「現在有什麼在跑」。
+            # 明選了生命週期（含「已結案」）就以那個為準，不再疊預設
             qs = qs.filter(is_closed=False)
 
         # annotate() 會產生 GROUP BY，Django 就不再認得 Meta.ordering，
@@ -75,43 +81,121 @@ class ProjectViewSet(BaseModelViewSet):
         ctx["request"] = self.request
         return ctx
 
+    def destroy(self, request, *args, **kwargs):
+        # 刪專案是拍板的事——會計有 edit_project（一般寫入權），但刪除只有經理能按
+        from main.utils.permissions import has_permission
+
+        if not has_permission(request.user, "delete_project"):
+            return Response(
+                {"type": "permission_denied", "detail": "只有經理能刪除專案"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     def perform_destroy(self, instance):
+        """整案連流程單元、構件批次、應收分期、變更單一起刪（CASCADE）。
+
+        兩道防線：
+          · 已請款／已收款的案子不能刪——錢的歷程不可竄改（鐵律 5），
+            建錯的案子改生命週期（未成交／已結案）就好
+          · 掛著分包合約或應付款的不能刪（FK PROTECT，先給人話）
+        附件另外清：GenericFK 不會跟著 CASCADE，不清會留孤兒檔案。
+        """
+        from main.utils.choices import MilestoneState
         from main.utils.exceptions import BusinessRuleError
 
-        if instance.units.exists():
-            raise BusinessRuleError("此專案底下還有追蹤單元，請先刪除或轉移後再刪除專案")
+        if instance.milestones.filter(
+            state__in=[MilestoneState.INVOICED, MilestoneState.RECEIVED]
+        ).exists():
+            raise BusinessRuleError(
+                "此專案已有請款或收款紀錄，不能刪除。"
+                "建錯或沒成交的案子，請到「編輯專案」把案件狀態改成未成交或已結案"
+            )
+        if instance.subcontracts.exists() or instance.payables.exists():
+            raise BusinessRuleError(
+                "此專案掛著分包合約或應付款，不能刪除。請先到「金流 → 應付」處理"
+            )
+        self._delete_attachments(instance)
         instance.delete()
 
-    @extend_schema(request=AdvanceStageSerializer, responses=ProjectDetailSerializer)
-    @action(detail=True, methods=["post"], url_path="advance-stage")
-    def advance_stage(self, request, pk=None):
-        """推進／回退專案主線。
+    @staticmethod
+    def _delete_attachments(project):
+        from django.contrib.contenttypes.models import ContentType
 
-        推進到結案且尚有未收款時回 409，body 帶著具體金額——
-        前端顯示「尚有 N 筆合計 X 元未收款，確定結案？」再帶 confirmed=true 重送。
+        from main.apps.billing.models import BillingMilestone
+        from main.apps.core.models import Attachment
+        from main.apps.tracking.models import FlowUnit, TrackingUnit
+
+        targets = [
+            (Project, [project.pk]),
+            (FlowUnit, list(project.flow_units.values_list("pk", flat=True))),
+            (TrackingUnit, list(project.units.values_list("pk", flat=True))),
+            (BillingMilestone, list(project.milestones.values_list("pk", flat=True))),
+        ]
+        for model, ids in targets:
+            if not ids:
+                continue
+            ct = ContentType.objects.get_for_model(model)
+            for attachment in Attachment.objects.filter(content_type=ct, object_id__in=ids):
+                attachment.delete()  # 連磁碟上的檔案一起刪，不留孤兒
+
+    @extend_schema(request=None, responses=ProjectDetailSerializer)
+    @action(detail=True, methods=["post"], url_path="set-flows")
+    def set_flows(self, request, pk=None):
+        """調整這個案子勾了哪些流程。body：{"flow_items": [id, ...]}
+
+        · 新勾的 → 生一張流程單元
+        · 取消勾的 → 未開始且沒附件就刪；有紀錄的改標「不適用」（歷史要留）
+        · 重新勾回「不適用」的 → 還原成未開始
+        順序永遠是目錄的順序，這裡收到什麼順序都一樣。
         """
         from main.utils.permissions import has_permission
 
         if not has_permission(request.user, "edit_project"):
             return Response(
-                {"type": "permission_denied", "detail": "你沒有推進專案階段的權限"},
+                {"type": "permission_denied", "detail": "你沒有編輯專案流程的權限"},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         project = self.get_object()
-        serializer = AdvanceStageSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        project, warnings = project_service.advance_main_stage(
-            project.pk,
-            serializer.validated_data["direction"],
-            request.user,
-            note=serializer.validated_data.get("note", ""),
-            confirmed=str(request.data.get("confirmed", "")).lower() in ("true", "1"),
+        result = project_service.set_flows(
+            project, request.data.get("flow_items", []), request.user
         )
         project.refresh_from_db()
-        data = ProjectDetailSerializer(project, context=self.get_serializer_context()).data
-        return Response({"project": data, "warnings": warnings})
+        return Response({
+            "project": ProjectDetailSerializer(
+                project, context=self.get_serializer_context()
+            ).data,
+            **result,
+        })
+
+    @extend_schema(responses=OpenApiTypes.BINARY)
+    @action(detail=True, methods=["get"], url_path="gantt-xlsx")
+    def gantt_xlsx(self, request, pk=None):
+        """下載這個案子的甘特圖 Excel。
+
+        ?variant=progress（預設）＝內部進度追蹤；?variant=plan＝簽約前
+        給業主看的工期規劃（無進度/狀態/負責人與圖例）。
+        左邊是流程清單、右邊是日期網格著色，視覺規則跟網頁一致。
+        看得到案子就能下載（金額不在這張表裡，不用另外限權限）。
+        """
+        from main.apps.projects.services import gantt_export
+
+        variant = request.query_params.get("variant", "progress")
+        if variant not in ("progress", "plan"):
+            return Response(
+                {"type": "validation_error", "detail": "variant 只能是 progress 或 plan"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        project = self.get_object()
+        content = gantt_export.build_xlsx(project, variant)
+        response = HttpResponse(
+            content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        quoted = quote(gantt_export.filename(project, variant))
+        response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quoted}"
+        return response
 
     @action(detail=True, methods=["get"])
     def summary(self, request, pk=None):
@@ -189,12 +273,12 @@ class ChangeOrderViewSet(BaseModelViewSet):
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        """核准變更單。只有經營者能按（決策：牽涉合約金額）。"""
+        """核准變更單。只有經理能按（決策：牽涉合約金額）。"""
         from main.utils.permissions import has_permission
 
         if not has_permission(request.user, "approve_change_order"):
             return Response(
-                {"type": "permission_denied", "detail": "只有經營者能核准變更追加單"},
+                {"type": "permission_denied", "detail": "只有經理能核准變更追加單"},
                 status=status.HTTP_403_FORBIDDEN,
             )
         change_order = self.get_object()

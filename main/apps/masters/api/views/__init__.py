@@ -7,7 +7,7 @@
 
 改成一個端點，讀寫用不同權限：
     read_permission  = None（登入即可）  全體員工都要用下拉
-    write_permission = manage_masters   只有經營者與系統管理員能改
+    write_permission = manage_masters   只有經理與系統管理員能改
 
 哪些主檔在這裡維護、哪些留在 Django Admin（決策 D26）：
     客戶、廠商、員工 —— 每週都會動，欄位少 → 前端
@@ -26,13 +26,29 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from main.apps.core.models import Department, Role, User
-from main.apps.masters.models import Customer, Vendor
-from main.apps.masters.serializers import CustomerSerializer, VendorSerializer
+from main.apps.masters.models import Customer, FlowStage, Vendor
+from main.apps.masters.serializers import CustomerSerializer, FlowStageSerializer, VendorSerializer
 from main.utils.choices import VendorType
 from main.utils.exceptions import BusinessRuleError
 from main.utils.viewsets import BaseModelViewSet
 
 DEFAULT_PASSWORD = "28494320"
+
+
+# ── 流程目錄 ───────────────────────────────────────────────────────
+class FlowCatalogView(APIView):
+    """GET /flow-catalog —— 五大階段＋各階段工作項，建案勾選清單一次取完。
+
+    唯讀。目錄的內容與順序在 Django Admin 維護（改流程不改程式），
+    但**順序對使用者永遠是唯讀的**——這是「訂料一定排在放樣後面」的保證。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=FlowStageSerializer(many=True))
+    def get(self, request):
+        stages = FlowStage.objects.filter(is_active=True).prefetch_related("items").order_by("seq")
+        return Response(FlowStageSerializer(stages, many=True).data)
 
 
 # ── 客戶 ───────────────────────────────────────────────────────────
@@ -69,7 +85,7 @@ class CustomerWriteSerializer(serializers.ModelSerializer):
 
 
 class CustomerViewSet(BaseModelViewSet):
-    """客戶。讀給全體（下拉選單），寫給經營者與系統管理員。"""
+    """客戶。讀給全體（下拉選單），寫給經理與系統管理員。"""
 
     queryset = Customer.objects.all()
     serializer_class = CustomerDetailSerializer
@@ -356,7 +372,8 @@ class OptionsView(APIView):
 
         return Response({
             "status": opts(c.Status),
-            "project_type": opts(c.ProjectType),
+            "project_lifecycle": opts(c.ProjectLifecycle),
+            "flow_state": opts(c.FlowState),
             "unit_type": opts(c.UnitType),
             "milestone_state": opts(c.MilestoneState),
             "change_order_status": opts(c.ChangeOrderStatus),
@@ -372,9 +389,27 @@ class OptionsView(APIView):
             "users": list(User.objects.filter(is_active=True).values(
                 "id", "name", "employee_no"
             )),
+            # D45：期別「負責收款的會計師」下拉——finance 角色的啟用帳號
+            "accountants": list(
+                User.objects.filter(is_active=True, groups__name="finance")
+                .distinct().values("id", "name")
+            ),
+            # D45：工作項目狀態的建議清單——沿用大家之前新增過的字（頻率高的在前）
+            "task_status_suggestions": self._task_status_suggestions(),
             # 下拉選單用，只回 id/code/name，不分頁——這是選單不是列表
             "projects": list(
                 scope_projects(Project.objects.filter(is_closed=False), request.user)
-                .values("id", "code", "name", "project_type")[:200]
+                .values("id", "code", "name")[:200]
             ),
         })
+
+    @staticmethod
+    def _task_status_suggestions():
+        from collections import Counter
+
+        from main.apps.tracking.models import FlowTask
+
+        counter = Counter()
+        for statuses in FlowTask.objects.exclude(statuses=[]).values_list("statuses", flat=True):
+            counter.update(s for s in statuses if isinstance(s, str))
+        return [name for name, _ in counter.most_common(20)]

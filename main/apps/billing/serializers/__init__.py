@@ -11,6 +11,16 @@ class BillingMilestoneSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source="project.name", read_only=True)
     project_code = serializers.CharField(source="project.code", read_only=True)
     state_label = serializers.CharField(source="get_state_display", read_only=True)
+    trigger_unit_name = serializers.CharField(
+        source="trigger_unit.flow_item.name", read_only=True, default=""
+    )
+    trigger_unit_state = serializers.CharField(
+        source="trigger_unit.state", read_only=True, default=""
+    )
+    accountant_name = serializers.CharField(
+        source="accountant.name", read_only=True, default=""
+    )
+    forecast_date = serializers.DateField(read_only=True)
     outstanding_amount = serializers.SerializerMethodField()
     next_states = serializers.SerializerMethodField()
     days_since_claimable = serializers.SerializerMethodField()
@@ -22,7 +32,9 @@ class BillingMilestoneSerializer(serializers.ModelSerializer):
             "id", "project", "project_name", "project_code",
             "seq", "label", "condition", "percentage", "amount",
             "state", "state_label", "next_states",
-            "expected_date", "claimable_at",
+            "trigger_unit", "trigger_unit_name", "trigger_unit_state",
+            "accountant", "accountant_name",
+            "expected_date", "forecast_date", "claimable_at",
             "invoice_date", "invoice_no", "due_date", "receive_date",
             "outstanding_amount", "days_since_claimable", "note", "can_edit",
         ]
@@ -59,7 +71,10 @@ class BillingMilestoneSerializer(serializers.ModelSerializer):
 class BillingMilestoneWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = BillingMilestone
-        fields = ["project", "seq", "label", "condition", "percentage", "expected_date", "note"]
+        fields = [
+            "project", "seq", "label", "condition", "percentage",
+            "trigger_unit", "accountant", "expected_date", "note",
+        ]
         extra_kwargs = {"seq": {"required": False}}
         # 預設的唯一性檢查會吐出英文的 "The fields project, seq must make a unique set"，
         # 而且掛在 non_field_errors 上。關掉它，改用下面自己寫的檢查。
@@ -72,6 +87,18 @@ class BillingMilestoneWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         project = attrs.get("project") or getattr(self.instance, "project", None)
+        trigger = attrs.get("trigger_unit")
+        if trigger and project and trigger.project_id != project.pk:
+            raise serializers.ValidationError({"trigger_unit": "觸發流程不屬於這個專案"})
+        # D46：一個流程只能掛一期——掛了第二期，「這步完成收哪期」就說不清了
+        if trigger:
+            clash = BillingMilestone.objects.filter(trigger_unit=trigger)
+            if self.instance:
+                clash = clash.exclude(pk=self.instance.pk)
+            if other := clash.first():
+                raise serializers.ValidationError({
+                    "trigger_unit": f"這個流程已經掛了「{other.label}」，先取消那筆連結再掛新的"
+                })
         seq = attrs.get("seq", getattr(self.instance, "seq", None))
         # 新增時沒給順序就自動排最後——使用者不需要知道「順序」這種內部概念
         if seq is None and self.instance is None and project:

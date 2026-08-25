@@ -8,40 +8,46 @@
  * 做法：網址仍是唯一的真相來源，只是**進頁面時若網址沒帶參數，
  * 就從上次記住的補回去**。使用者主動清空篩選時也會記住「清空」這件事。
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 
 export function useStickyParams(storageKey: string, keys: string[]) {
   const [searchParams, setSearchParams] = useSearchParams();
+  // ★ 只在「剛進頁面」補回記住的參數。之後的每一次變化——包括清空——
+  // 都只記錄不補回；不然選「全部專案」的下一瞬間，記住的專案又被塞回來，
+  // 使用者永遠回不到全部（D47 修正）
+  const restoredOnce = useRef(false);
 
   useEffect(() => {
-    const hasAny = keys.some((k) => searchParams.has(k));
-    if (hasAny) {
-      // 網址上有東西 → 記住它
-      const snapshot: Record<string, string> = {};
-      for (const k of keys) {
-        const v = searchParams.get(k);
-        if (v) snapshot[k] = v;
-      }
-      localStorage.setItem(storageKey, JSON.stringify(snapshot));
-      return;
-    }
-    // 網址是乾淨的 → 用上次記住的補回去
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
-      const next = new URLSearchParams(searchParams);
-      let changed = false;
-      for (const k of keys) {
-        if (saved[k]) {
-          next.set(k, saved[k]);
-          changed = true;
+    if (!restoredOnce.current) {
+      restoredOnce.current = true;
+      const hasAny = keys.some((k) => searchParams.has(k));
+      if (!hasAny) {
+        try {
+          const saved = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
+          const next = new URLSearchParams(searchParams);
+          let changed = false;
+          for (const k of keys) {
+            if (saved[k]) {
+              next.set(k, saved[k]);
+              changed = true;
+            }
+          }
+          if (changed) setSearchParams(next, { replace: true });
+        } catch {
+          // localStorage 壞掉不該讓整頁掛掉——沒有記憶就沒有記憶
+          localStorage.removeItem(storageKey);
         }
+        return;
       }
-      if (changed) setSearchParams(next, { replace: true });
-    } catch {
-      // localStorage 壞掉不該讓整頁掛掉——沒有記憶就沒有記憶
-      localStorage.removeItem(storageKey);
     }
+    // 記住現況（可能是空的——「清空」也是一種要記住的選擇）
+    const snapshot: Record<string, string> = {};
+    for (const k of keys) {
+      const v = searchParams.get(k);
+      if (v) snapshot[k] = v;
+    }
+    localStorage.setItem(storageKey, JSON.stringify(snapshot));
   }, [searchParams, setSearchParams, storageKey, keys.join(",")]);
 
   return [searchParams, setSearchParams] as const;

@@ -11,13 +11,12 @@
 import { useMemo, useState } from "react";
 
 import { ApiError } from "@/api/client";
-import { useOptions, useSavePayable } from "@/api/hooks";
+import { useFlowUnits, useOptions, useSavePayable } from "@/api/hooks";
 import { useVendors } from "@/api/hooks/useVendors";
 import type { Payable, Subcontract } from "@/api/types";
-import { Button, Field, FormErrors, Modal, Money, inputClass } from "@/components/ui";
+import { Button, DateInput, Field, FormErrors, inputClass, Modal, Money } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 
-const TAX_RATE = 0.05;
 
 export default function PayableForm({
   project,
@@ -40,6 +39,7 @@ export default function PayableForm({
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     vendor: String(payable?.vendor ?? ""),
+    flow_unit: payable?.flow_unit ? String(payable.flow_unit) : "",
     category: payable?.category ?? subcontract?.category ?? "material",
     title: payable?.title ?? "",
     amount: payable?.amount ?? "",
@@ -57,10 +57,18 @@ export default function PayableForm({
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // 這筆錢屬於哪個案子——有合約跟合約走，否則用呼叫端給的專案
+  const flowProject = subcontract?.project ?? payable?.project ?? project;
+  const { data: flowUnits } = useFlowUnits(
+    { project: flowProject, state: "todo,doing,done", page_size: 100 },
+    Boolean(flowProject),
+  );
+
   // 系統會怎麼算——在按下儲存之前就讓人看到
   const preview = useMemo(() => {
     const amount = Number(form.amount) || 0;
-    const tax = form.tax_amount === "" ? Math.round(amount * TAX_RATE) : Number(form.tax_amount);
+    // D48：金額一律稅後，稅額固定 0（舊資料填過的由後端保留）
+    const tax = 0;
     const retentionPct = Number(subcontract?.retention_pct ?? 0);
     const retention =
       form.retention_amount === ""
@@ -77,11 +85,11 @@ export default function PayableForm({
         subcontract: subcontract?.id ?? payable?.subcontract ?? null,
         project: subcontract?.project ?? project,
         vendor: subcontract?.vendor ?? (form.vendor ? Number(form.vendor) : undefined),
+        flow_unit: form.flow_unit ? Number(form.flow_unit) : null,
         category: form.category,
         title: form.title,
         amount: form.amount,
         // 空字串代表「沒填，讓系統算」；填了 0 代表「真的是 0」。
-        // 兩者不能都送成 0，否則免稅項目會被硬加 5%
         tax_amount: form.tax_amount === "" ? null : form.tax_amount,
         retention_amount: form.retention_amount === "" ? undefined : form.retention_amount,
         billing_date: form.billing_date || null,
@@ -113,6 +121,7 @@ export default function PayableForm({
 
   const HANDLED = [
     "vendor", "title", "amount", "retention_amount", "check_due_date", "category", "project",
+    "flow_unit",
   ];
   const isCheck = form.payment_method === "check";
 
@@ -175,7 +184,24 @@ export default function PayableForm({
         <input value={form.title} onChange={set("title")} className={inputClass} />
       </Field>
 
-      <Field label="未稅金額" required error={error?.fieldError("amount")}>
+      {flowProject !== undefined && (flowUnits?.results.length ?? 0) > 0 && (
+        <Field
+          label="花在哪個流程（選填）"
+          hint="掛上去之後，看流程單元就知道這一步花了多少錢"
+          error={error?.fieldError("flow_unit")}
+        >
+          <select value={form.flow_unit} onChange={set("flow_unit")} className={inputClass}>
+            <option value="">不掛流程</option>
+            {(flowUnits?.results ?? []).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.flow_code} {u.flow_name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      <Field label="金額（稅後實際金額）" required error={error?.fieldError("amount")}>
         <input
           type="number"
           inputMode="numeric"
@@ -188,8 +214,7 @@ export default function PayableForm({
       {/* ★ 算給人看。存檔後才發現少扣保留款，就要走退狀態、填原因那一整套 */}
       {preview.amount > 0 && (
         <dl className="mb-3 space-y-1 rounded-lg bg-page px-3 py-2 text-[11px]">
-          <Line label="未稅" value={preview.amount} />
-          <Line label={`稅額（${form.tax_amount === "" ? "自動 5%" : "自填"}）`} value={preview.tax} />
+          <Line label="金額" value={preview.amount} />
           {preview.retention > 0 && <Line label="扣保留款" value={-preview.retention} />}
           <div className="flex justify-between border-t border-line pt-1 font-bold text-ink">
             <dt>實際會匯出去</dt>
@@ -202,19 +227,9 @@ export default function PayableForm({
 
       <details className="mb-3">
         <summary className="cursor-pointer text-xs font-semibold text-ink-2">
-          稅額與保留款要自己填？
+          保留款要自己填？
         </summary>
-        <div className="mt-2 grid grid-cols-2 gap-3">
-          <Field label="稅額" hint="留空＝自動 5%。免稅請填 0">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={form.tax_amount}
-              onChange={set("tax_amount")}
-              placeholder="自動"
-              className={inputClass}
-            />
-          </Field>
+        <div className="mt-2">
           <Field label="保留款" error={error?.fieldError("retention_amount")} hint="留空＝依合約比例">
             <input
               type="number"
@@ -230,15 +245,13 @@ export default function PayableForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="計價日" hint="包商送單日。付款日由此起算">
-          <input
-            type="date"
+          <DateInput
             value={form.billing_date}
-            onChange={set("billing_date")}
-            className={inputClass}
+            onChange={(v) => set("billing_date")({ target: { value: v } })}
           />
         </Field>
         <Field label="預計付款日" hint="留空＝依合約帳期自動算">
-          <input type="date" value={form.due_date} onChange={set("due_date")} className={inputClass} />
+          <DateInput value={form.due_date} onChange={(v) => set("due_date")({ target: { value: v } })} />
         </Field>
       </div>
 
@@ -260,11 +273,9 @@ export default function PayableForm({
           </p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="支票到期日" error={error?.fieldError("check_due_date")}>
-              <input
-                type="date"
+              <DateInput
                 value={form.check_due_date}
-                onChange={set("check_due_date")}
-                className={inputClass}
+                onChange={(v) => set("check_due_date")({ target: { value: v } })}
               />
             </Field>
             <Field label="票號">

@@ -15,6 +15,7 @@ import { Link } from "react-router-dom";
 import { useActivities, useAttention, useDashboard } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { AttentionItem } from "@/api/types";
+import MiniGantt from "@/components/tracking/MiniGantt";
 import {
   Card,
   EmptyState,
@@ -25,7 +26,6 @@ import {
   SectionTitle,
   SeverityIcon,
   Spinner,
-  StageTrack,
   StatusBadge,
 } from "@/components/ui";
 
@@ -119,11 +119,8 @@ export default function Dashboard() {
                 </div>
 
                 <div className="mt-2.5">
-                  <StageTrack
-                    current={project.stage_seq}
-                    total={project.stage_total}
-                    name={project.stage_name}
-                  />
+                  {/* 主線由流程進度自動呈現；沒勾流程時 MiniGantt 自己會提示 */}
+                  <MiniGantt bars={project.flow_gantt} />
                 </div>
 
                 {data.can_view_amounts && project.collection_rate !== undefined && (
@@ -142,10 +139,10 @@ export default function Dashboard() {
                 )}
 
                 <div className="mt-2 flex items-center gap-3 text-[11px] text-ink-2">
-                  <span>{project.unit_count} 個追蹤單元</span>
+                  <span>{project.unit_count} 個流程未完成</span>
                   {project.attention > 0 && (
                     <span style={{ color: "var(--color-atrisk)" }}>
-                      {project.attention} 個需關注
+                      {project.attention} 個逾期
                     </span>
                   )}
                   {project.is_overdue && (

@@ -1,19 +1,24 @@
 /**
  * 新增／修改專案
  *
- * 合約簽下來的那一刻，付款分期就已經知道了——所以**建案時一起填**：
- * 分期照合約抄、合約 PDF 與設計圖直接在表單裡選好，按一次「建立」全部完成。
- * （檔案要掛在案子上，所以實際順序是建案成功後立刻上傳——使用者不必知道這件事）
+ * 建案一頁完成（2026-08 流程制）：
+ *   · 勾流程——五大階段 19 項預設全勾，把不需要的取消；每勾一項生成一張流程單元
+ *   · 填分期——照合約抄，每期可掛「觸發流程」：該流程完成 → 自動轉可請款
+ *   · 選檔案——合約 PDF 與設計圖，按一次「建立」全部完成
  *
+ * 從詢價就建案：還沒簽約可以只填「估價金額」，金流預測會用它（預估級）。
  * 表單只問必填。合約條款、報價、圖紙連結收進「更多設定」。
  */
-import { ChevronDown, Plus, X } from "lucide-react";
+import { ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { ApiError, api } from "@/api/client";
-import { useOptions } from "@/api/hooks";
+import { useFlowCatalog, useOptions } from "@/api/hooks";
+import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { ProjectDetail } from "@/api/types";
-import { Button, Field, FormErrors, inputClass, Modal, Select } from "@/components/ui";
+import FlowPicker from "@/components/forms/FlowPicker";
+import { Button, DateInput, Field, FormErrors, inputClass, Modal, Select } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -21,6 +26,8 @@ interface MilestoneRow {
   label: string;
   percentage: string;
   expected_date: string;
+  /** 觸發流程的目錄 id（字串存放）。該流程完成→這一期自動可請款 */
+  trigger: string;
 }
 
 /** 常見的分期模板。點一下帶入，再照合約改 */
@@ -32,10 +39,11 @@ const SPLIT_PRESETS: Array<{ key: string; rows: Array<[string, number]> }> = [
 
 interface FormState {
   name: string;
-  project_type: string;
   customer: string;
   owner: string;
   contract_amount: string;
+  estimate_amount: string;
+  lifecycle: string;
   start_date: string;
   due_date: string;
   note: string;
@@ -46,10 +54,11 @@ interface FormState {
 
 const EMPTY: FormState = {
   name: "",
-  project_type: "steel",
   customer: "",
   owner: "",
   contract_amount: "",
+  estimate_amount: "",
+  lifecycle: "active",
   start_date: "",
   due_date: "",
   note: "",
@@ -68,10 +77,12 @@ export default function ProjectForm({
   project?: ProjectDetail | null;
 }) {
   const { data: options } = useOptions();
+  const { data: catalog } = useFlowCatalog(open);
   const toast = useToast();
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [milestones, setMilestones] = useState<MilestoneRow[]>([]);
+  const [flows, setFlows] = useState<Set<number> | null>(null);
   const [more, setMore] = useState(false);
   const [loadedId, setLoadedId] = useState<number | null>(null);
   // 建案時一起選好的檔案，存檔成功後自動上傳
@@ -84,10 +95,11 @@ export default function ProjectForm({
     setLoadedId(project.id);
     setForm({
       name: project.name,
-      project_type: project.project_type,
       customer: project.customer ? String(project.customer.id) : "",
       owner: project.owner ? String(project.owner.id) : "",
       contract_amount: project.contract_amount ?? "",
+      estimate_amount: project.estimate_amount ?? "",
+      lifecycle: project.lifecycle,
       start_date: project.start_date ?? "",
       due_date: project.due_date ?? "",
       note: project.note,
@@ -100,8 +112,13 @@ export default function ProjectForm({
     setLoadedId(null);
     setForm(EMPTY);
     setMilestones([]);
+    setFlows(null);
     setContractFiles([]);
     setDrawingFiles([]);
+  }
+  // 新增時預設全勾（老闆確認過：預設全勾再取消）
+  if (open && !project && flows === null && catalog) {
+    setFlows(new Set(catalog.flatMap((s) => s.items.map((i) => i.id))));
   }
 
   const customers = useQuery({
@@ -122,8 +139,10 @@ export default function ProjectForm({
     onSuccess: async (saved) => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["project"] });
+      qc.invalidateQueries({ queryKey: ["flow-units"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["billing"] });
+      qc.invalidateQueries({ queryKey: ["cashflow"] });
       qc.invalidateQueries({ queryKey: ["options"] });
       if (project) {
         toast.success(`${saved.name} 已更新`);
@@ -162,6 +181,7 @@ export default function ProjectForm({
       } else {
         toast.success(`已建立「${saved.name}」`, [
           `編號 ${saved.code}`,
+          flows?.size ? `${flows.size} 個流程單元已生成，到專案明細指派負責人與排期` : "",
           milestones.length ? `${milestones.length} 期應收款` : "",
           files.length ? `${files.length} 個檔案已上傳` : "",
         ].filter(Boolean));
@@ -183,10 +203,11 @@ export default function ProjectForm({
   function submit() {
     save.mutate({
       name: form.name.trim(),
-      project_type: form.project_type,
       customer: Number(form.customer),
       owner: Number(form.owner),
       contract_amount: form.contract_amount || "0",
+      estimate_amount: form.estimate_amount || null,
+      lifecycle: form.lifecycle,
       start_date: form.start_date || null,
       due_date: form.due_date || null,
       note: form.note,
@@ -196,12 +217,14 @@ export default function ProjectForm({
       ...(project
         ? {}
         : {
+            flow_items: [...(flows ?? new Set<number>())],
             milestones: milestones
               .filter((m) => m.label.trim() && m.percentage)
               .map((m) => ({
                 label: m.label.trim(),
                 percentage: m.percentage,
                 expected_date: m.expected_date || null,
+                trigger_flow_item: m.trigger ? Number(m.trigger) : null,
               })),
           }),
     });
@@ -211,6 +234,12 @@ export default function ProjectForm({
 
   const set = (key: keyof FormState) => (value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  // 分期可掛的觸發流程＝目前勾選中的流程（依目錄順序）
+  const triggerOptions = (catalog ?? [])
+    .flatMap((s) => s.items)
+    .filter((i) => flows?.has(i.id))
+    .map((i) => ({ value: String(i.id), label: `${i.code} ${i.name}` }));
 
   return (
     <Modal open={open} onClose={close} title={project ? "修改專案" : "新增專案"}>
@@ -224,24 +253,11 @@ export default function ProjectForm({
       </Field>
 
       <Field
-        label="專案類型"
-        required
-        hint="決定底下能建哪種追蹤單元：鋼構是構件批次（算數量），土建是工項（算百分比）"
-      >
-        <Select
-          value={form.project_type}
-          onChange={set("project_type")}
-          options={options?.project_type ?? []}
-          className="w-full"
-        />
-      </Field>
-
-      <Field
         label="客戶"
         required
         hint={
           customers.data && customers.data.results.length === 0
-            ? "客戶清單是空的。到「設定 → 客戶」新增（限經營者與系統管理員）"
+            ? "客戶清單是空的。到「設定 → 客戶」新增（限經理與系統管理員）"
             : undefined
         }
         error={error?.fieldError("customer")}
@@ -269,20 +285,57 @@ export default function ProjectForm({
         />
       </Field>
 
-      <Field label="合約金額" hint="單位：元。各期金額＝合約額 × 比例，之後可由變更追加單調整">
-        <input
-          type="number"
-          inputMode="numeric"
-          value={form.contract_amount}
-          onChange={(e) => set("contract_amount")(e.target.value)}
-          className={inputClass}
-        />
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="合約金額" hint="簽約後填。各期金額＝合約額×比例" error={error?.fieldError("contract_amount")}>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={form.contract_amount}
+            onChange={(e) => set("contract_amount")(e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="估價金額" hint="還沒簽約先填這個，金流預測用（預估級）" error={error?.fieldError("estimate_amount")}>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={form.estimate_amount}
+            onChange={(e) => set("estimate_amount")(e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+      </div>
+
+      {project && (
+        <Field
+          label="案件狀態"
+          hint="未成交／暫停的案子不進金流預測；結案直接在這裡改成「已結案」"
+        >
+          <Select
+            value={form.lifecycle}
+            onChange={set("lifecycle")}
+            options={options?.project_lifecycle ?? []}
+            className="w-full"
+          />
+        </Field>
+      )}
+
+      {!project && (
+        // 不用 Field 包——FlowPicker 內部有自己的 label，巢狀 label 會互相搶點擊
+        <div className="mb-3">
+          <p className="mb-1 text-xs font-semibold text-ink-2">這個案子要走哪些流程</p>
+          {catalog && flows ? (
+            <FlowPicker stages={catalog} selected={flows} onChange={setFlows} />
+          ) : (
+            <p className="text-xs text-ink-3">載入流程目錄…</p>
+          )}
+        </div>
+      )}
 
       {!project && (
         <Field
           label="請款分期（照合約抄）"
-          hint="合約怎麼寫就怎麼填。金額＝合約額×比例，自動算；之後在專案明細隨時可改"
+          hint="每期可掛「觸發流程」：該流程完成，系統自動把那一期轉成可請款並通知"
         >
           <div>
             {milestones.length === 0 && (
@@ -294,7 +347,7 @@ export default function ProjectForm({
                     onClick={() =>
                       setMilestones(
                         preset.rows.map(([label, pct]) => ({
-                          label, percentage: String(pct), expected_date: "",
+                          label, percentage: String(pct), expected_date: "", trigger: "",
                         })),
                       )
                     }
@@ -306,7 +359,9 @@ export default function ProjectForm({
                 ))}
                 <button
                   type="button"
-                  onClick={() => setMilestones([{ label: "第一期", percentage: "", expected_date: "" }])}
+                  onClick={() =>
+                    setMilestones([{ label: "第一期", percentage: "", expected_date: "", trigger: "" }])
+                  }
                   className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-3 hover:bg-page"
                 >
                   自訂…
@@ -315,50 +370,76 @@ export default function ProjectForm({
             )}
 
             {milestones.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {milestones.map((row, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <input
-                      value={row.label}
+                  <div key={i} className="rounded-lg bg-page p-2">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        value={row.label}
+                        onChange={(e) =>
+                          setMilestones((rows) =>
+                            rows.map((r, j) => (j === i ? { ...r, label: e.target.value } : r)),
+                          )
+                        }
+                        placeholder="期別名稱（如：第一期（簽約））"
+                        className={`${inputClass} mb-0 min-w-0 flex-1`}
+                      />
+                      <label className="flex shrink-0 items-center gap-1 text-[11px] text-ink-3">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          value={row.percentage}
+                          onChange={(e) =>
+                            setMilestones((rows) =>
+                              rows.map((r, j) => (j === i ? { ...r, percentage: e.target.value } : r)),
+                            )
+                          }
+                          placeholder="比例"
+                          aria-label="比例（%）"
+                          className={`${inputClass} mb-0 w-16 text-right`}
+                        />
+                        %
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setMilestones((rows) => rows.filter((_, j) => j !== i))}
+                        aria-label="刪除這一期"
+                        className="rounded p-1 text-ink-3 hover:text-[var(--color-delayed)]"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {/* 觸發流程與日期各佔一行（D47）——擠同一排會被壓到看不出是什麼 */}
+                    <select
+                      value={row.trigger}
                       onChange={(e) =>
                         setMilestones((rows) =>
-                          rows.map((r, j) => (j === i ? { ...r, label: e.target.value } : r)),
+                          rows.map((r, j) => (j === i ? { ...r, trigger: e.target.value } : r)),
                         )
                       }
-                      placeholder="名稱"
-                      className={`${inputClass} mb-0 flex-1`}
-                    />
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={row.percentage}
-                      onChange={(e) =>
-                        setMilestones((rows) =>
-                          rows.map((r, j) => (j === i ? { ...r, percentage: e.target.value } : r)),
-                        )
-                      }
-                      placeholder="%"
-                      className={`${inputClass} mb-0 w-16 text-right`}
-                    />
-                    <input
-                      type="date"
-                      value={row.expected_date}
-                      onChange={(e) =>
-                        setMilestones((rows) =>
-                          rows.map((r, j) => (j === i ? { ...r, expected_date: e.target.value } : r)),
-                        )
-                      }
-                      title="預計請款日（現金流用，可先留白）"
-                      className={`${inputClass} mb-0 w-36`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setMilestones((rows) => rows.filter((_, j) => j !== i))}
-                      aria-label="刪除這一期"
-                      className="rounded p-1 text-ink-3 hover:text-[var(--color-delayed)]"
+                      title="觸發流程：完成後這一期自動轉可請款"
+                      className={`${inputClass} mb-0 mt-1.5`}
                     >
-                      <X size={14} />
-                    </button>
+                      <option value="">不掛觸發流程（手動轉可請款）</option>
+                      {triggerOptions.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          完成「{o.label}」→ 可請款
+                        </option>
+                      ))}
+                    </select>
+                    <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-3">
+                      <span className="shrink-0">預計請款日（現金流用，可留白）</span>
+                      <DateInput
+                        value={row.expected_date}
+                        onChange={(v) =>
+                          setMilestones((rows) =>
+                            rows.map((r, j) => (j === i ? { ...r, expected_date: v } : r)),
+                          )
+                        }
+                        className="min-w-0 flex-1"
+                        aria-label="預計請款日"
+                      />
+                    </label>
                   </div>
                 ))}
                 <div className="flex items-center justify-between">
@@ -367,7 +448,7 @@ export default function ProjectForm({
                     onClick={() =>
                       setMilestones((rows) => [
                         ...rows,
-                        { label: `第${rows.length + 1}期`, percentage: "", expected_date: "" },
+                        { label: `第${rows.length + 1}期`, percentage: "", expected_date: "", trigger: "" },
                       ])
                     }
                     className="flex items-center gap-1 rounded px-1.5 py-1 text-xs font-semibold text-ink-2 hover:bg-page"
@@ -412,20 +493,10 @@ export default function ProjectForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="開工日">
-          <input
-            type="date"
-            value={form.start_date}
-            onChange={(e) => set("start_date")(e.target.value)}
-            className={inputClass}
-          />
+          <DateInput value={form.start_date} onChange={set("start_date")} />
         </Field>
         <Field label="預計完工" error={error?.fieldError("due_date")}>
-          <input
-            type="date"
-            value={form.due_date}
-            onChange={(e) => set("due_date")(e.target.value)}
-            className={inputClass}
-          />
+          <DateInput value={form.due_date} onChange={set("due_date")} />
         </Field>
       </div>
 
@@ -475,7 +546,7 @@ export default function ProjectForm({
         </>
       )}
 
-      <FormErrors error={error} handled={["name", "customer", "owner", "due_date"]} />
+      <FormErrors error={error} handled={["name", "customer", "owner", "due_date", "contract_amount", "estimate_amount"]} />
 
       <div className="flex gap-2">
         <Button onClick={close} className="flex-1">
@@ -491,7 +562,88 @@ export default function ProjectForm({
           {uploading ? "上傳檔案中…" : project ? "儲存" : "建立專案"}
         </Button>
       </div>
+
+      {project && <DeleteProjectZone project={project} onDeleted={close} />}
     </Modal>
+  );
+}
+
+/**
+ * 刪專案——只有經理看得到（delete_project 權限）。
+ * 兩段式確認；已有請款／收款紀錄或掛著應付款的案子後端會擋，
+ * 錯誤訊息會說該改走「案件狀態」。
+ */
+function DeleteProjectZone({
+  project,
+  onDeleted,
+}: {
+  project: ProjectDetail;
+  onDeleted: () => void;
+}) {
+  const { data: user } = useCurrentUser();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [confirming, setConfirming] = useState(false);
+
+  const remove = useMutation({
+    mutationFn: () => api.delete<void>(`/projects/${project.id}`),
+    onSuccess: () => {
+      // 展開中的就是被刪的案子——收掉，不然明細會打 404
+      if (searchParams.get("open") === String(project.id)) {
+        const next = new URLSearchParams(searchParams);
+        next.delete("open");
+        setSearchParams(next, { replace: true });
+      }
+      qc.invalidateQueries();
+      toast.success(`已刪除「${project.name}」`);
+      onDeleted();
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError ? e.body.detail ?? "刪除失敗" : "刪除失敗",
+      ),
+  });
+
+  if (!user?.permissions.delete_project) return null;
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      {confirming ? (
+        <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--color-delayed-bg)" }}>
+          <p className="text-xs font-semibold" style={{ color: "var(--color-delayed)" }}>
+            確定刪除「{project.name}」？
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">
+            流程單元、構件批次、應收分期、變更單與附件會一起刪除，<strong>不能復原</strong>。
+            只是不做了的案子，改「案件狀態」就好，不用刪。
+          </p>
+          <div className="mt-2 flex gap-2">
+            <Button onClick={() => setConfirming(false)} className="flex-1">
+              留著
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => remove.mutate()}
+              loading={remove.isPending}
+              className="flex-1"
+            >
+              確認刪除
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-semibold text-ink-3
+                     transition-base hover:text-[var(--color-delayed)]"
+        >
+          <Trash2 size={12} />
+          刪除專案（建錯的才刪；不做了改案件狀態）
+        </button>
+      )}
+    </div>
   );
 }
 

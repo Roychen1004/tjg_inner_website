@@ -242,6 +242,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0.1/flow-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /flow-catalog —— 五大階段＋各階段工作項，建案勾選清單一次取完。
+         *
+         *     唯讀。目錄的內容與順序在 Django Admin 維護（改流程不改程式），
+         *     但**順序對使用者永遠是唯讀的**——這是「訂料一定排在放樣後面」的保證。
+         */
+        get: operations["flow_catalog_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0.1/customers": {
         parameters: {
             query?: never;
@@ -249,10 +271,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經理與系統管理員。 */
         get: operations["customers_list"];
         put?: never;
-        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經理與系統管理員。 */
         post: operations["customers_create"];
         delete?: never;
         options?: never;
@@ -267,16 +289,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經理與系統管理員。 */
         get: operations["customers_retrieve"];
-        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經理與系統管理員。 */
         put: operations["customers_update"];
         post?: never;
-        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經理與系統管理員。 */
         delete: operations["customers_destroy"];
         options?: never;
         head?: never;
-        /** @description 客戶。讀給全體（下拉選單），寫給經營者與系統管理員。 */
+        /** @description 客戶。讀給全體（下拉選單），寫給經理與系統管理員。 */
         patch: operations["customers_partial_update"];
         trace?: never;
     };
@@ -533,7 +555,31 @@ export interface paths {
         patch: operations["projects_partial_update"];
         trace?: never;
     };
-    "/api/v0.1/projects/{id}/advance-stage": {
+    "/api/v0.1/projects/{id}/gantt-xlsx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 下載這個案子的甘特圖 Excel。
+         *
+         *     ?variant=progress（預設）＝內部進度追蹤；?variant=plan＝簽約前
+         *     給業主看的工期規劃（無進度/狀態/負責人與圖例）。
+         *     左邊是流程清單、右邊是日期網格著色，視覺規則跟網頁一致。
+         *     看得到案子就能下載（金額不在這張表裡，不用另外限權限）。
+         */
+        get: operations["projects_gantt_xlsx_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/projects/{id}/set-flows": {
         parameters: {
             query?: never;
             header?: never;
@@ -543,12 +589,14 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description 推進／回退專案主線。
+         * @description 調整這個案子勾了哪些流程。body：{"flow_items": [id, ...]}
          *
-         *     推進到結案且尚有未收款時回 409，body 帶著具體金額——
-         *     前端顯示「尚有 N 筆合計 X 元未收款，確定結案？」再帶 confirmed=true 重送。
+         *     · 新勾的 → 生一張流程單元
+         *     · 取消勾的 → 未開始且沒附件就刪；有紀錄的改標「不適用」（歷史要留）
+         *     · 重新勾回「不適用」的 → 還原成未開始
+         *     順序永遠是目錄的順序，這裡收到什麼順序都一樣。
          */
-        post: operations["projects_advance_stage_create"];
+        post: operations["projects_set_flows_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -647,12 +695,285 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 核准變更單。只有經營者能按（決策：牽涉合約金額）。 */
+        /** @description 核准變更單。只有經理能按（決策：牽涉合約金額）。 */
         post: operations["change_orders_approve_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/staff-workload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /staff-workload?month=YYYY-MM（D46）
+         *
+         *     回答的問題：**每個員工手上有什麼、這個月做完了什麼**。
+         *     「手上」＝進行中的工作分配＋負責的未完成流程；
+         *     「做完」＝該月回報做滿的分配＋該月實際完成的流程。
+         *     不含任何金額，所有登入者都能看。
+         */
+        get: operations["staff_workload_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/flow-units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        get: operations["flow_units_list"];
+        put?: never;
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        post: operations["flow_units_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/flow-units/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        get: operations["flow_units_retrieve"];
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        put: operations["flow_units_update"];
+        post?: never;
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        delete: operations["flow_units_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        patch: operations["flow_units_partial_update"];
+        trace?: never;
+    };
+    "/api/v0.1/flow-units/{id}/report-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description 流程單元 —— 建案勾選的每個流程各一張。
+         *
+         *     建立不走這裡（用 POST /projects 或 /projects/{id}/set-flows），
+         *     這裡負責：排程表逐列修改（PATCH）、狀態轉換、進度回報、我的任務清單。
+         */
+        post: operations["flow_units_report_progress_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/flow-units/{id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 開始／完成／重啟／標不適用。負責人可以動自己的單元。 */
+        post: operations["flow_units_transition_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/flow-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 工作項目 —— 流程單元的內容物清單（如「鐵材 500 噸：已下訂單」）。
+         *
+         *     讀取直接內嵌在流程單元的 `tasks` 欄位，這裡負責增刪改。
+         *     操作權跟單元一致：負責人本人或有進度維護權限的人。
+         */
+        get: operations["flow_tasks_list"];
+        put?: never;
+        /**
+         * @description 工作項目 —— 流程單元的內容物清單（如「鐵材 500 噸：已下訂單」）。
+         *
+         *     讀取直接內嵌在流程單元的 `tasks` 欄位，這裡負責增刪改。
+         *     操作權跟單元一致：負責人本人或有進度維護權限的人。
+         */
+        post: operations["flow_tasks_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/flow-tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 工作項目 —— 流程單元的內容物清單（如「鐵材 500 噸：已下訂單」）。
+         *
+         *     讀取直接內嵌在流程單元的 `tasks` 欄位，這裡負責增刪改。
+         *     操作權跟單元一致：負責人本人或有進度維護權限的人。
+         */
+        get: operations["flow_tasks_retrieve"];
+        /**
+         * @description 工作項目 —— 流程單元的內容物清單（如「鐵材 500 噸：已下訂單」）。
+         *
+         *     讀取直接內嵌在流程單元的 `tasks` 欄位，這裡負責增刪改。
+         *     操作權跟單元一致：負責人本人或有進度維護權限的人。
+         */
+        put: operations["flow_tasks_update"];
+        post?: never;
+        /**
+         * @description 工作項目 —— 流程單元的內容物清單（如「鐵材 500 噸：已下訂單」）。
+         *
+         *     讀取直接內嵌在流程單元的 `tasks` 欄位，這裡負責增刪改。
+         *     操作權跟單元一致：負責人本人或有進度維護權限的人。
+         */
+        delete: operations["flow_tasks_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description 工作項目 —— 流程單元的內容物清單（如「鐵材 500 噸：已下訂單」）。
+         *
+         *     讀取直接內嵌在流程單元的 `tasks` 欄位，這裡負責增刪改。
+         *     操作權跟單元一致：負責人本人或有進度維護權限的人。
+         */
+        patch: operations["flow_tasks_partial_update"];
+        trace?: never;
+    };
+    "/api/v0.1/task-assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 工作分配（D41）——把工作項目的一個工段分量派給一個員工。
+         *
+         *     權限兩層：
+         *       · 分配／改派／刪除　＝單元的 can_operate（主要負責人或有進度維護權）
+         *       · 回報完成量　　　　＝被分到的員工本人（只能動 qty_done）
+         */
+        get: operations["task_assignments_list"];
+        put?: never;
+        /**
+         * @description 工作分配（D41）——把工作項目的一個工段分量派給一個員工。
+         *
+         *     權限兩層：
+         *       · 分配／改派／刪除　＝單元的 can_operate（主要負責人或有進度維護權）
+         *       · 回報完成量　　　　＝被分到的員工本人（只能動 qty_done）
+         */
+        post: operations["task_assignments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0.1/task-assignments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description 工作分配（D41）——把工作項目的一個工段分量派給一個員工。
+         *
+         *     權限兩層：
+         *       · 分配／改派／刪除　＝單元的 can_operate（主要負責人或有進度維護權）
+         *       · 回報完成量　　　　＝被分到的員工本人（只能動 qty_done）
+         */
+        get: operations["task_assignments_retrieve"];
+        /**
+         * @description 工作分配（D41）——把工作項目的一個工段分量派給一個員工。
+         *
+         *     權限兩層：
+         *       · 分配／改派／刪除　＝單元的 can_operate（主要負責人或有進度維護權）
+         *       · 回報完成量　　　　＝被分到的員工本人（只能動 qty_done）
+         */
+        put: operations["task_assignments_update"];
+        post?: never;
+        /**
+         * @description 工作分配（D41）——把工作項目的一個工段分量派給一個員工。
+         *
+         *     權限兩層：
+         *       · 分配／改派／刪除　＝單元的 can_operate（主要負責人或有進度維護權）
+         *       · 回報完成量　　　　＝被分到的員工本人（只能動 qty_done）
+         */
+        delete: operations["task_assignments_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description 工作分配（D41）——把工作項目的一個工段分量派給一個員工。
+         *
+         *     權限兩層：
+         *       · 分配／改派／刪除　＝單元的 can_operate（主要負責人或有進度維護權）
+         *       · 回報完成量　　　　＝被分到的員工本人（只能動 qty_done）
+         */
+        patch: operations["task_assignments_partial_update"];
         trace?: never;
     };
     "/api/v0.1/tracking-units": {
@@ -677,29 +998,6 @@ export interface paths {
          *     走哪條流程由 `stage_template` 決定，不是由 if/else 決定。
          */
         post: operations["tracking_units_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v0.1/tracking-units/board": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description 看板資料：階段軌道 ＋ 每一欄的卡片。
-         *
-         *     刻意**不分頁**，但改用兩道硬限制守住記憶體：
-         *       · 必須指定 project 或 unit_type（不讓人一次撈全公司）
-         *       · 單次最多 300 張卡，超過回傳計數並要求縮小範圍
-         */
-        get: operations["tracking_units_board_retrieve"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -994,7 +1292,7 @@ export interface paths {
         /**
          * @description 未來哪個月會缺錢。
          *
-         *     只給經營者與會計——這是全公司的資金狀況。
+         *     只給經理與會計師——這是全公司的資金狀況。
          *     專案負責人看得到自己案子的損益（見下面的 ProjectPnlView），
          *     但不需要看到公司整體的資金部位。
          */
@@ -1211,8 +1509,8 @@ export interface paths {
          * @description 狀態轉換：待計價 → 已核可 → 已付款。
          *
          *     兩道權限刻意分開（職能分離）：
-         *       · `approve_payable` 決定「這筆該不該付、付多少」——只有經營者
-         *       · `pay_payable`     執行付款並登錄——經營者與會計
+         *       · `approve_payable` 決定「這筆該不該付、付多少」——只有經理
+         *       · `pay_payable`     執行付款並登錄——經理與會計
          */
         post: operations["payables_transition_create"];
         delete?: never;
@@ -1276,11 +1574,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description 專案主線推進／回退 */
-        AdvanceStageRequest: {
-            direction: components["schemas"]["DirectionEnum"];
-            note?: string;
-        };
         /**
          * @description * `project_main` - 專案主線
          *     * `steel_batch` - 鋼構構件批次
@@ -1342,7 +1635,7 @@ export interface components {
              */
             readonly uploaded_at: string;
             /**
-             * @description 刪除限**上傳者本人或經營者**。
+             * @description 刪除限**上傳者本人或經理**。
              *
              *     合約與簽收單是爭議時的依據。讓任何有編輯權的人都能刪掉別人上傳的合約，
              *     等於把公司的證據交給運氣。
@@ -1399,11 +1692,29 @@ export interface components {
                 [key: string]: unknown;
             }[];
             /**
+             * 觸發流程
+             * @description 這個流程完成 → 本期自動轉「可請款」並通知（金流軌）。沒填預計請款日時，現金流預估用它的預計完成日
+             */
+            trigger_unit?: number | null;
+            /** @default  */
+            readonly trigger_unit_name: string;
+            /** @default  */
+            readonly trigger_unit_state: string;
+            /**
+             * 負責收款的會計師
+             * @description D45：觸發流程完成轉可請款時通知這個人，並出現在他的「我的任務」待收款清單
+             */
+            accountant?: number | null;
+            /** @default  */
+            readonly accountant_name: string;
+            /**
              * 預計請款日
              * Format: date
              * @description 現金流預估靠它。填大概的月份即可，之後隨時可改
              */
             expected_date?: string | null;
+            /** Format: date */
+            readonly forecast_date: string;
             /**
              * 轉可請款時間
              * Format: date-time
@@ -1439,7 +1750,7 @@ export interface components {
             /** 專案 */
             project: number;
             /** 順序 */
-            seq: number;
+            seq?: number;
             /**
              * 名稱
              * @description 如「第一期（簽約）」
@@ -1455,6 +1766,16 @@ export interface components {
              * Format: decimal
              */
             percentage: string;
+            /**
+             * 觸發流程
+             * @description 這個流程完成 → 本期自動轉「可請款」並通知（金流軌）。沒填預計請款日時，現金流預估用它的預計完成日
+             */
+            trigger_unit?: number | null;
+            /**
+             * 負責收款的會計師
+             * @description D45：觸發流程完成轉可請款時通知這個人，並出現在他的「我的任務」待收款清單
+             */
+            accountant?: number | null;
             /**
              * 預計請款日
              * Format: date
@@ -1468,7 +1789,7 @@ export interface components {
             /** 專案 */
             project: number;
             /** 順序 */
-            seq: number;
+            seq?: number;
             /**
              * 名稱
              * @description 如「第一期（簽約）」
@@ -1484,6 +1805,16 @@ export interface components {
              * Format: decimal
              */
             percentage: string;
+            /**
+             * 觸發流程
+             * @description 這個流程完成 → 本期自動轉「可請款」並通知（金流軌）。沒填預計請款日時，現金流預估用它的預計完成日
+             */
+            trigger_unit?: number | null;
+            /**
+             * 負責收款的會計師
+             * @description D45：觸發流程完成轉可請款時通知這個人，並出現在他的「我的任務」待收款清單
+             */
+            accountant?: number | null;
             /**
              * 預計請款日
              * Format: date
@@ -1642,6 +1973,7 @@ export interface components {
             readonly owned_project_ids: number[];
             /** 需修改密碼 */
             must_change_password?: boolean;
+            /** @description 登入後落地頁。員工的世界是「我的任務」，不是全公司總覽。 */
             readonly default_route: string;
             /**
              * 超級使用者狀態
@@ -1946,6 +2278,348 @@ export interface components {
              */
             is_active?: boolean;
         };
+        FlowReportRequest: {
+            /** Format: decimal */
+            delta?: string;
+            /** Format: decimal */
+            qty_done?: string;
+            /** Format: decimal */
+            progress_pct?: string;
+            note?: string;
+        };
+        /** @description 大階段＋底下的工作項。建案表單的勾選清單一次取完。 */
+        FlowStage: {
+            readonly id: number;
+            /**
+             * 順序
+             * @description 1 起算
+             */
+            seq: number;
+            /**
+             * 代號
+             * @description s1..s5
+             */
+            code: string;
+            /** 名稱 */
+            name: string;
+            /**
+             * 出口門檻
+             * @description 跨過這個階段時必須存在的產出物，如「報價依據圖定版」
+             */
+            gate?: string;
+            readonly items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** @description 一列＝一個內容物：名稱、數量、單位、狀態、自己的狀態清單＋各工段分配。 */
+        FlowTask: {
+            readonly id: number;
+            /** 流程單元 */
+            unit: number;
+            /**
+             * 內容物
+             * @description 要採購／製作的東西，如「鐵材」
+             */
+            name: string;
+            /**
+             * 數量
+             * Format: decimal
+             */
+            qty?: string | null;
+            /** 單位 */
+            unit_of_measure?: string;
+            /** 狀態 */
+            status?: string;
+            /** 狀態清單（工段） */
+            statuses?: unknown;
+            readonly assignments: components["schemas"]["FlowTaskAssignment"][];
+            /** Format: double */
+            readonly progress_pct: number;
+        };
+        /**
+         * @description 一列＝派給一個員工的一份工段分量（如「切割中 50 噸 → 工廠員工1」）。
+         *
+         *     也直接餵「我的任務」的工作分配清單，所以帶上專案／流程／項目的名字。
+         */
+        FlowTaskAssignment: {
+            readonly id: number;
+            /** 工作項目 */
+            task: number;
+            /**
+             * 工段
+             * @description 對應單元狀態選項裡的一項（頭尾「未開始／已完成」除外），如「切割中」
+             */
+            status: string;
+            /** 負責員工 */
+            assignee: number;
+            /** @default  */
+            readonly assignee_name: string;
+            /**
+             * 分配數量
+             * Format: decimal
+             */
+            qty_assigned: string;
+            /**
+             * 已完成數量
+             * Format: decimal
+             */
+            qty_done?: string;
+            readonly is_done: boolean;
+            readonly unit: number;
+            readonly task_name: string;
+            /** Format: decimal */
+            readonly task_qty: string;
+            readonly unit_of_measure: string;
+            readonly flow_name: string;
+            readonly project_name: string;
+        };
+        /**
+         * @description 一列＝派給一個員工的一份工段分量（如「切割中 50 噸 → 工廠員工1」）。
+         *
+         *     也直接餵「我的任務」的工作分配清單，所以帶上專案／流程／項目的名字。
+         */
+        FlowTaskAssignmentRequest: {
+            /** 工作項目 */
+            task: number;
+            /**
+             * 工段
+             * @description 對應單元狀態選項裡的一項（頭尾「未開始／已完成」除外），如「切割中」
+             */
+            status: string;
+            /** 負責員工 */
+            assignee: number;
+            /**
+             * 分配數量
+             * Format: decimal
+             */
+            qty_assigned: string;
+            /**
+             * 已完成數量
+             * Format: decimal
+             */
+            qty_done?: string;
+        };
+        /** @description 一列＝一個內容物：名稱、數量、單位、狀態、自己的狀態清單＋各工段分配。 */
+        FlowTaskRequest: {
+            /** 流程單元 */
+            unit: number;
+            /**
+             * 內容物
+             * @description 要採購／製作的東西，如「鐵材」
+             */
+            name: string;
+            /**
+             * 數量
+             * Format: decimal
+             */
+            qty?: string | null;
+            /** 單位 */
+            unit_of_measure?: string;
+            /** 狀態 */
+            status?: string;
+            /** 狀態清單（工段） */
+            statuses?: unknown;
+        };
+        FlowTransitionRequest: {
+            to_state: components["schemas"]["ToStateEfeEnum"];
+            note?: string;
+        };
+        /** @description 流程單元。沒有任何金額欄位——員工與檢視角色都拿得到完整資料。 */
+        FlowUnit: {
+            readonly id: number;
+            /** 專案 */
+            project: number;
+            readonly project_name: string;
+            readonly project_code: string;
+            /** 流程工作項 */
+            flow_item: number;
+            readonly seq: number;
+            readonly flow_code: string;
+            readonly flow_name: string;
+            readonly stage_seq: number;
+            readonly stage_name: string;
+            /** 工作內容 */
+            description?: string;
+            /** 產出物 */
+            deliverables?: string;
+            /** 完成條件 */
+            done_criteria?: string;
+            readonly is_gate: boolean;
+            /** 狀態 */
+            state?: components["schemas"]["StateEfeEnum"];
+            readonly state_label: string;
+            /**
+             * 負責人
+             * @description 指派時對方會收到通知，在「我的任務」看到這件事
+             */
+            assignee?: number | null;
+            /** @default  */
+            readonly assignee_name: string;
+            /**
+             * 詳細內容
+             * @description 專案管理者寫給負責人的工作說明——要做什麼、注意什麼、交付什麼
+             */
+            detail?: string;
+            /**
+             * 預計開始
+             * Format: date
+             */
+            plan_start?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             * @description 甘特圖與金流預測靠它
+             */
+            plan_end?: string | null;
+            /**
+             * 實際開始
+             * Format: date
+             */
+            actual_start?: string | null;
+            /**
+             * 實際完成
+             * Format: date
+             */
+            actual_end?: string | null;
+            /**
+             * 總數量
+             * Format: decimal
+             */
+            qty_total?: string | null;
+            /**
+             * 已完成數量
+             * Format: decimal
+             */
+            qty_done?: string;
+            /** 單位 */
+            unit_of_measure?: string;
+            /**
+             * 完成百分比
+             * Format: decimal
+             */
+            progress_pct?: string | null;
+            /** Format: double */
+            readonly completion_ratio: number;
+            readonly is_overdue: boolean;
+            readonly is_batch_driven: boolean;
+            /**
+             * 分包商／協力廠
+             * @description 這件事外包給誰。錢在「金流 → 應付」逐筆掛回本單元
+             */
+            subcontractor?: number | null;
+            /** @default  */
+            readonly subcontractor_name: string;
+            /** 備註 */
+            note?: string;
+            readonly can_operate: boolean;
+            readonly tasks: components["schemas"]["FlowTask"][];
+        };
+        /**
+         * @description 排程表逐列填的欄位：負責人、詳細內容、預計起訖、數量、分包商。
+         *
+         *     project 與 flow_item 不在這裡——單元由建案勾選或 set-flows 產生，
+         *     不能事後把一張單元搬到別的案子或改成別的流程。
+         */
+        FlowUnitWrite: {
+            /**
+             * 負責人
+             * @description 指派時對方會收到通知，在「我的任務」看到這件事
+             */
+            assignee?: number | null;
+            /**
+             * 詳細內容
+             * @description 專案管理者寫給負責人的工作說明——要做什麼、注意什麼、交付什麼
+             */
+            detail?: string;
+            /**
+             * 預計開始
+             * Format: date
+             */
+            plan_start?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             * @description 甘特圖與金流預測靠它
+             */
+            plan_end?: string | null;
+            /**
+             * 總數量
+             * Format: decimal
+             */
+            qty_total?: string | null;
+            /** 單位 */
+            unit_of_measure?: string;
+            /**
+             * 分包商／協力廠
+             * @description 這件事外包給誰。錢在「金流 → 應付」逐筆掛回本單元
+             */
+            subcontractor?: number | null;
+            /** 備註 */
+            note?: string;
+            /** 工作內容 */
+            description?: string;
+            /** 產出物 */
+            deliverables?: string;
+            /** 完成條件 */
+            done_criteria?: string;
+        };
+        /**
+         * @description 排程表逐列填的欄位：負責人、詳細內容、預計起訖、數量、分包商。
+         *
+         *     project 與 flow_item 不在這裡——單元由建案勾選或 set-flows 產生，
+         *     不能事後把一張單元搬到別的案子或改成別的流程。
+         */
+        FlowUnitWriteRequest: {
+            /**
+             * 負責人
+             * @description 指派時對方會收到通知，在「我的任務」看到這件事
+             */
+            assignee?: number | null;
+            /**
+             * 詳細內容
+             * @description 專案管理者寫給負責人的工作說明——要做什麼、注意什麼、交付什麼
+             */
+            detail?: string;
+            /**
+             * 預計開始
+             * Format: date
+             */
+            plan_start?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             * @description 甘特圖與金流預測靠它
+             */
+            plan_end?: string | null;
+            /**
+             * 總數量
+             * Format: decimal
+             */
+            qty_total?: string | null;
+            /** 單位 */
+            unit_of_measure?: string;
+            /**
+             * 分包商／協力廠
+             * @description 這件事外包給誰。錢在「金流 → 應付」逐筆掛回本單元
+             */
+            subcontractor?: number | null;
+            /** 備註 */
+            note?: string;
+            /** 工作內容 */
+            description?: string;
+            /** 產出物 */
+            deliverables?: string;
+            /** 完成條件 */
+            done_criteria?: string;
+        };
+        /**
+         * @description * `active` - 進行中
+         *     * `lost` - 未成交
+         *     * `paused` - 暫停
+         *     * `closed` - 已結案
+         * @enum {string}
+         */
+        LifecycleEnum: "active" | "lost" | "paused" | "closed";
         LoginRequest: {
             /** 帳號 */
             username: string;
@@ -1960,6 +2634,8 @@ export interface components {
             condition?: string;
             /** Format: date */
             expected_date?: string | null;
+            /** @description 觸發流程的目錄 id（要在 flow_items 勾選清單裡）。該流程完成→本期自動可請款 */
+            trigger_flow_item?: number | null;
         };
         /** @description 建案時一起填的請款分期，一列一期 */
         MilestoneRowRequest: {
@@ -1969,6 +2645,8 @@ export interface components {
             condition?: string;
             /** Format: date */
             expected_date?: string | null;
+            /** @description 觸發流程的目錄 id（要在 flow_items 勾選清單裡）。該流程完成→本期自動可請款 */
+            trigger_flow_item?: number | null;
         };
         MilestoneTransitionRequest: {
             to_state: components["schemas"]["ToState2f5Enum"];
@@ -2074,6 +2752,51 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Employee"][];
         };
+        PaginatedFlowTaskAssignmentList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["FlowTaskAssignment"][];
+        };
+        PaginatedFlowTaskList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["FlowTask"][];
+        };
+        PaginatedFlowUnitList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["FlowUnit"][];
+        };
         PaginatedPayableList: {
             /** @example 123 */
             count: number;
@@ -2170,6 +2893,16 @@ export interface components {
              */
             percentage?: string;
             /**
+             * 觸發流程
+             * @description 這個流程完成 → 本期自動轉「可請款」並通知（金流軌）。沒填預計請款日時，現金流預估用它的預計完成日
+             */
+            trigger_unit?: number | null;
+            /**
+             * 負責收款的會計師
+             * @description D45：觸發流程完成轉可請款時通知這個人，並出現在他的「我的任務」待收款清單
+             */
+            accountant?: number | null;
+            /**
              * 預計請款日
              * Format: date
              * @description 現金流預估靠它。填大概的月份即可，之後隨時可改
@@ -2260,6 +2993,102 @@ export interface components {
              */
             is_active?: boolean;
         };
+        /**
+         * @description 一列＝派給一個員工的一份工段分量（如「切割中 50 噸 → 工廠員工1」）。
+         *
+         *     也直接餵「我的任務」的工作分配清單，所以帶上專案／流程／項目的名字。
+         */
+        PatchedFlowTaskAssignmentRequest: {
+            /** 工作項目 */
+            task?: number;
+            /**
+             * 工段
+             * @description 對應單元狀態選項裡的一項（頭尾「未開始／已完成」除外），如「切割中」
+             */
+            status?: string;
+            /** 負責員工 */
+            assignee?: number;
+            /**
+             * 分配數量
+             * Format: decimal
+             */
+            qty_assigned?: string;
+            /**
+             * 已完成數量
+             * Format: decimal
+             */
+            qty_done?: string;
+        };
+        /** @description 一列＝一個內容物：名稱、數量、單位、狀態、自己的狀態清單＋各工段分配。 */
+        PatchedFlowTaskRequest: {
+            /** 流程單元 */
+            unit?: number;
+            /**
+             * 內容物
+             * @description 要採購／製作的東西，如「鐵材」
+             */
+            name?: string;
+            /**
+             * 數量
+             * Format: decimal
+             */
+            qty?: string | null;
+            /** 單位 */
+            unit_of_measure?: string;
+            /** 狀態 */
+            status?: string;
+            /** 狀態清單（工段） */
+            statuses?: unknown;
+        };
+        /**
+         * @description 排程表逐列填的欄位：負責人、詳細內容、預計起訖、數量、分包商。
+         *
+         *     project 與 flow_item 不在這裡——單元由建案勾選或 set-flows 產生，
+         *     不能事後把一張單元搬到別的案子或改成別的流程。
+         */
+        PatchedFlowUnitWriteRequest: {
+            /**
+             * 負責人
+             * @description 指派時對方會收到通知，在「我的任務」看到這件事
+             */
+            assignee?: number | null;
+            /**
+             * 詳細內容
+             * @description 專案管理者寫給負責人的工作說明——要做什麼、注意什麼、交付什麼
+             */
+            detail?: string;
+            /**
+             * 預計開始
+             * Format: date
+             */
+            plan_start?: string | null;
+            /**
+             * 預計完成
+             * Format: date
+             * @description 甘特圖與金流預測靠它
+             */
+            plan_end?: string | null;
+            /**
+             * 總數量
+             * Format: decimal
+             */
+            qty_total?: string | null;
+            /** 單位 */
+            unit_of_measure?: string;
+            /**
+             * 分包商／協力廠
+             * @description 這件事外包給誰。錢在「金流 → 應付」逐筆掛回本單元
+             */
+            subcontractor?: number | null;
+            /** 備註 */
+            note?: string;
+            /** 工作內容 */
+            description?: string;
+            /** 產出物 */
+            deliverables?: string;
+            /** 完成條件 */
+            done_criteria?: string;
+        };
         PatchedPayableWriteRequest: {
             /**
              * 分包合約
@@ -2270,6 +3099,11 @@ export interface components {
             project?: number;
             /** 廠商 */
             vendor?: number;
+            /**
+             * 所屬流程
+             * @description 這筆錢是為了哪件事花的——訂料款掛「訂料與採購」、表處委外款掛「表面處理」。追蹤單元的花錢內容由此對回來
+             */
+            flow_unit?: number | null;
             /** 類別 */
             category?: components["schemas"]["Category651Enum"];
             /**
@@ -2322,10 +3156,12 @@ export interface components {
             note?: string;
         };
         /**
-         * @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+         * @description 建立／修改。
          *
-         *     合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
-         *     付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+         *     建案一頁完成（2026-08-14 流程制改版）：
+         *       · flow_items —— 勾選這個案子有哪些流程，每勾一項生成一張流程單元。
+         *         順序由目錄的 seq 決定，這裡收到什麼順序都一樣。
+         *       · milestones —— 簽約後把合約的付款分期一起填；估價中可以先不填。
          */
         PatchedProjectWriteRequest: {
             /** 案名 */
@@ -2337,9 +3173,15 @@ export interface components {
             /**
              * 合約總額
              * Format: decimal
-             * @description 單位：新台幣元。投標中未定可留空
+             * @description 單位：新台幣元。簽約前留空
              */
             contract_amount?: string | null;
+            /**
+             * 估價金額
+             * Format: decimal
+             * @description 未簽約時金流預測與期別金額用它當基準；簽約後以合約額為準
+             */
+            estimate_amount?: string | null;
             /** 專案負責人 */
             owner?: number;
             /**
@@ -2357,6 +3199,16 @@ export interface components {
             /** 狀態 */
             status?: components["schemas"]["Status726Enum"];
             /**
+             * 生命週期
+             * @description 進行中／未成交／暫停／已結案。從詢價就建案（2026-08-14 確認）
+             *
+             *     * `active` - 進行中
+             *     * `lost` - 未成交
+             *     * `paused` - 暫停
+             *     * `closed` - 已結案
+             */
+            lifecycle?: components["schemas"]["LifecycleEnum"];
+            /**
              * 合約條款
              * @description 工期、請款條件、罰則、保固
              */
@@ -2369,6 +3221,8 @@ export interface components {
              */
             doc_links?: string;
             milestones?: components["schemas"]["MilestoneRowRequest"][];
+            /** @description 勾選的流程工作項 id 清單。只在建立時整批帶入，之後用 set-flows 調整 */
+            flow_items?: number[];
         };
         PatchedSubcontractWriteRequest: {
             /**
@@ -2517,6 +3371,13 @@ export interface components {
             /** 廠商 */
             vendor: number;
             readonly vendor_name: string;
+            /**
+             * 所屬流程
+             * @description 這筆錢是為了哪件事花的——訂料款掛「訂料與採購」、表處委外款掛「表面處理」。追蹤單元的花錢內容由此對回來
+             */
+            flow_unit?: number | null;
+            /** @default  */
+            readonly flow_unit_name: string;
             /** 類別 */
             category: components["schemas"]["Category651Enum"];
             readonly category_label: string;
@@ -2632,6 +3493,11 @@ export interface components {
             project?: number;
             /** 廠商 */
             vendor?: number;
+            /**
+             * 所屬流程
+             * @description 這筆錢是為了哪件事花的——訂料款掛「訂料與採購」、表處委外款掛「表面處理」。追蹤單元的花錢內容由此對回來
+             */
+            flow_unit?: number | null;
             /** 類別 */
             category?: components["schemas"]["Category651Enum"];
             /**
@@ -2693,6 +3559,11 @@ export interface components {
             project?: number;
             /** 廠商 */
             vendor?: number;
+            /**
+             * 所屬流程
+             * @description 這筆錢是為了哪件事花的——訂料款掛「訂料與採購」、表處委外款掛「表面處理」。追蹤單元的花錢內容由此對回來
+             */
+            flow_unit?: number | null;
             /** 類別 */
             category?: components["schemas"]["Category651Enum"];
             /**
@@ -2758,7 +3629,7 @@ export interface components {
          * @enum {string}
          */
         PaymentTermTypeEnum: "month_end" | "from_invoice" | "from_acceptance";
-        /** @description 明細用。多帶主線階段全貌、應收款、合約條款與可執行的操作。 */
+        /** @description 明細用。多帶流程單元、應收款、合約條款與可執行的操作。 */
         ProjectDetail: {
             readonly id: number;
             /**
@@ -2797,21 +3668,29 @@ export interface components {
             actual_end_date?: string | null;
             readonly is_overdue: boolean;
             readonly days_left: number | null;
-            readonly main_stage_name: string;
-            readonly main_stage_seq: number;
-            readonly main_stage_total: number;
             /** 狀態 */
             status?: components["schemas"]["Status726Enum"];
+            /**
+             * 生命週期
+             * @description 進行中／未成交／暫停／已結案。從詢價就建案（2026-08-14 確認）
+             *
+             *     * `active` - 進行中
+             *     * `lost` - 未成交
+             *     * `paused` - 暫停
+             *     * `closed` - 已結案
+             */
+            lifecycle?: components["schemas"]["LifecycleEnum"];
+            readonly lifecycle_label: string;
             /** 已結案 */
             is_closed?: boolean;
             readonly unit_count: number;
             readonly attention_count: number;
-            readonly customer: components["schemas"]["Customer"];
-            readonly owner: components["schemas"]["UserBrief"];
-            readonly main_stage: components["schemas"]["Stage"];
-            readonly main_stages: {
+            /** @description 卡片迷你甘特：五大階段各一條 bar（起訖日、完成數、有沒有逾期）。 */
+            readonly flow_gantt: {
                 [key: string]: unknown;
             }[];
+            readonly customer: components["schemas"]["Customer"];
+            readonly owner: components["schemas"]["UserBrief"];
             /**
              * @description 應收款直接掛在專案明細上——案子的錢跟案子一起看，不用切分頁。
              *
@@ -2820,7 +3699,12 @@ export interface components {
             readonly milestones: {
                 [key: string]: unknown;
             }[];
+            /** @description 整個案子的流程清單，依目錄順序。前端按 stage_seq 分五段畫排程表。 */
+            readonly flow_units: {
+                [key: string]: unknown;
+            }[];
             readonly approved_change_amount: string | null;
+            readonly estimate_amount: string | null;
             /** 備註 */
             note?: string;
             /**
@@ -2835,8 +3719,6 @@ export interface components {
              * @description 圖紙雲端連結、聯絡窗口等
              */
             doc_links?: string;
-            readonly can_advance: boolean;
-            readonly can_rollback: boolean;
             readonly can_edit: boolean;
             readonly can_view_amounts: boolean;
         };
@@ -2879,15 +3761,27 @@ export interface components {
             actual_end_date?: string | null;
             readonly is_overdue: boolean;
             readonly days_left: number | null;
-            readonly main_stage_name: string;
-            readonly main_stage_seq: number;
-            readonly main_stage_total: number;
             /** 狀態 */
             status?: components["schemas"]["Status726Enum"];
+            /**
+             * 生命週期
+             * @description 進行中／未成交／暫停／已結案。從詢價就建案（2026-08-14 確認）
+             *
+             *     * `active` - 進行中
+             *     * `lost` - 未成交
+             *     * `paused` - 暫停
+             *     * `closed` - 已結案
+             */
+            lifecycle?: components["schemas"]["LifecycleEnum"];
+            readonly lifecycle_label: string;
             /** 已結案 */
             is_closed?: boolean;
             readonly unit_count: number;
             readonly attention_count: number;
+            /** @description 卡片迷你甘特：五大階段各一條 bar（起訖日、完成數、有沒有逾期）。 */
+            readonly flow_gantt: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * @description * `civil` - 土建
@@ -2897,24 +3791,32 @@ export interface components {
          */
         ProjectTypeEnum: "civil" | "steel" | "mixed";
         /**
-         * @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+         * @description 建立／修改。
          *
-         *     合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
-         *     付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+         *     建案一頁完成（2026-08-14 流程制改版）：
+         *       · flow_items —— 勾選這個案子有哪些流程，每勾一項生成一張流程單元。
+         *         順序由目錄的 seq 決定，這裡收到什麼順序都一樣。
+         *       · milestones —— 簽約後把合約的付款分期一起填；估價中可以先不填。
          */
         ProjectWrite: {
             /** 案名 */
             name: string;
             /** 專案類型 */
-            project_type: components["schemas"]["ProjectTypeEnum"];
+            project_type?: components["schemas"]["ProjectTypeEnum"];
             /** 客戶 */
             customer: number;
             /**
              * 合約總額
              * Format: decimal
-             * @description 單位：新台幣元。投標中未定可留空
+             * @description 單位：新台幣元。簽約前留空
              */
             contract_amount?: string | null;
+            /**
+             * 估價金額
+             * Format: decimal
+             * @description 未簽約時金流預測與期別金額用它當基準；簽約後以合約額為準
+             */
+            estimate_amount?: string | null;
             /** 專案負責人 */
             owner: number;
             /**
@@ -2931,6 +3833,16 @@ export interface components {
             note?: string;
             /** 狀態 */
             status?: components["schemas"]["Status726Enum"];
+            /**
+             * 生命週期
+             * @description 進行中／未成交／暫停／已結案。從詢價就建案（2026-08-14 確認）
+             *
+             *     * `active` - 進行中
+             *     * `lost` - 未成交
+             *     * `paused` - 暫停
+             *     * `closed` - 已結案
+             */
+            lifecycle?: components["schemas"]["LifecycleEnum"];
             /**
              * 合約條款
              * @description 工期、請款條件、罰則、保固
@@ -2945,24 +3857,32 @@ export interface components {
             doc_links?: string;
         };
         /**
-         * @description 建立／修改。主線模板與起始階段由系統決定，不讓使用者選。
+         * @description 建立／修改。
          *
-         *     合約的請款條件在建案時一起填（milestones）——合約簽下來的那一刻，
-         *     付款分期就已經知道了，沒有理由讓使用者存檔後再去另一個分頁補。
+         *     建案一頁完成（2026-08-14 流程制改版）：
+         *       · flow_items —— 勾選這個案子有哪些流程，每勾一項生成一張流程單元。
+         *         順序由目錄的 seq 決定，這裡收到什麼順序都一樣。
+         *       · milestones —— 簽約後把合約的付款分期一起填；估價中可以先不填。
          */
         ProjectWriteRequest: {
             /** 案名 */
             name: string;
             /** 專案類型 */
-            project_type: components["schemas"]["ProjectTypeEnum"];
+            project_type?: components["schemas"]["ProjectTypeEnum"];
             /** 客戶 */
             customer: number;
             /**
              * 合約總額
              * Format: decimal
-             * @description 單位：新台幣元。投標中未定可留空
+             * @description 單位：新台幣元。簽約前留空
              */
             contract_amount?: string | null;
+            /**
+             * 估價金額
+             * Format: decimal
+             * @description 未簽約時金流預測與期別金額用它當基準；簽約後以合約額為準
+             */
+            estimate_amount?: string | null;
             /** 專案負責人 */
             owner: number;
             /**
@@ -2979,6 +3899,16 @@ export interface components {
             note?: string;
             /** 狀態 */
             status?: components["schemas"]["Status726Enum"];
+            /**
+             * 生命週期
+             * @description 進行中／未成交／暫停／已結案。從詢價就建案（2026-08-14 確認）
+             *
+             *     * `active` - 進行中
+             *     * `lost` - 未成交
+             *     * `paused` - 暫停
+             *     * `closed` - 已結案
+             */
+            lifecycle?: components["schemas"]["LifecycleEnum"];
             /**
              * 合約條款
              * @description 工期、請款條件、罰則、保固
@@ -2992,6 +3922,8 @@ export interface components {
              */
             doc_links?: string;
             milestones?: components["schemas"]["MilestoneRowRequest"][];
+            /** @description 勾選的流程工作項 id 清單。只在建立時整批帶入，之後用 set-flows 調整 */
+            flow_items?: number[];
         };
         ReportProgressRequest: {
             /** Format: decimal */
@@ -3003,12 +3935,13 @@ export interface components {
             note?: string;
         };
         /**
-         * @description * `owner` - 經營者
-         *     * `finance` - 會計
+         * @description * `owner` - 經理
+         *     * `finance` - 會計師
+         *     * `staff` - 員工
          *     * `viewer` - 檢視
          * @enum {string}
          */
-        RolesEnum: "owner" | "finance" | "viewer";
+        RolesEnum: "owner" | "finance" | "staff" | "viewer";
         Stage: {
             readonly id: number;
             /**
@@ -3060,6 +3993,14 @@ export interface components {
          * @enum {string}
          */
         State2f5Enum: "pending" | "claimable" | "invoiced" | "received";
+        /**
+         * @description * `todo` - 未開始
+         *     * `doing` - 進行中
+         *     * `done` - 已完成
+         *     * `na` - 不適用
+         * @enum {string}
+         */
+        StateEfeEnum: "todo" | "doing" | "done" | "na";
         /**
          * @description * `ontrack` - 正常
          *     * `atrisk` - 注意
@@ -3273,6 +4214,14 @@ export interface components {
          * @enum {string}
          */
         ToState2f5Enum: "pending" | "claimable" | "invoiced" | "received";
+        /**
+         * @description * `todo` - 未開始
+         *     * `doing` - 進行中
+         *     * `done` - 已完成
+         *     * `na` - 不適用
+         * @enum {string}
+         */
+        ToStateEfeEnum: "todo" | "doing" | "done" | "na";
         /**
          * @description 看板卡片用的精簡版。
          *
@@ -3993,6 +4942,25 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    flow_catalog_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowStage"][];
                 };
             };
         };
@@ -4732,7 +5700,7 @@ export interface operations {
             };
         };
     };
-    projects_advance_stage_create: {
+    projects_gantt_xlsx_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -4742,13 +5710,29 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdvanceStageRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["AdvanceStageRequest"];
-                "multipart/form-data": components["schemas"]["AdvanceStageRequest"];
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
             };
         };
+    };
+    projects_set_flows_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 專案. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {
@@ -4962,6 +5946,542 @@ export interface operations {
             };
         };
     };
+    staff_workload_retrieve: {
+        parameters: {
+            query?: {
+                /** @description YYYY-MM，預設本月 */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    flow_units_list: {
+        parameters: {
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedFlowUnitList"];
+                };
+            };
+        };
+    };
+    flow_units_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FlowUnitWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowUnitWriteRequest"];
+                "multipart/form-data": components["schemas"]["FlowUnitWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowUnitWrite"];
+                };
+            };
+        };
+    };
+    flow_units_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 流程單元. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowUnit"];
+                };
+            };
+        };
+    };
+    flow_units_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 流程單元. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FlowUnitWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowUnitWriteRequest"];
+                "multipart/form-data": components["schemas"]["FlowUnitWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowUnitWrite"];
+                };
+            };
+        };
+    };
+    flow_units_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 流程單元. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    flow_units_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 流程單元. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFlowUnitWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFlowUnitWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedFlowUnitWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowUnitWrite"];
+                };
+            };
+        };
+    };
+    flow_units_report_progress_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 流程單元. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FlowReportRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowReportRequest"];
+                "multipart/form-data": components["schemas"]["FlowReportRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowUnit"];
+                };
+            };
+        };
+    };
+    flow_units_transition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 流程單元. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowTransitionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowTransitionRequest"];
+                "multipart/form-data": components["schemas"]["FlowTransitionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowUnit"];
+                };
+            };
+        };
+    };
+    flow_tasks_list: {
+        parameters: {
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedFlowTaskList"];
+                };
+            };
+        };
+    };
+    flow_tasks_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowTaskRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowTaskRequest"];
+                "multipart/form-data": components["schemas"]["FlowTaskRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTask"];
+                };
+            };
+        };
+    };
+    flow_tasks_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作項目. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTask"];
+                };
+            };
+        };
+    };
+    flow_tasks_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作項目. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowTaskRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowTaskRequest"];
+                "multipart/form-data": components["schemas"]["FlowTaskRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTask"];
+                };
+            };
+        };
+    };
+    flow_tasks_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作項目. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    flow_tasks_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作項目. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFlowTaskRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFlowTaskRequest"];
+                "multipart/form-data": components["schemas"]["PatchedFlowTaskRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTask"];
+                };
+            };
+        };
+    };
+    task_assignments_list: {
+        parameters: {
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedFlowTaskAssignmentList"];
+                };
+            };
+        };
+    };
+    task_assignments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowTaskAssignmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowTaskAssignmentRequest"];
+                "multipart/form-data": components["schemas"]["FlowTaskAssignmentRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTaskAssignment"];
+                };
+            };
+        };
+    };
+    task_assignments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作分配. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTaskAssignment"];
+                };
+            };
+        };
+    };
+    task_assignments_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作分配. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowTaskAssignmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlowTaskAssignmentRequest"];
+                "multipart/form-data": components["schemas"]["FlowTaskAssignmentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTaskAssignment"];
+                };
+            };
+        };
+    };
+    task_assignments_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作分配. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    task_assignments_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this 工作分配. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFlowTaskAssignmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFlowTaskAssignmentRequest"];
+                "multipart/form-data": components["schemas"]["PatchedFlowTaskAssignmentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTaskAssignment"];
+                };
+            };
+        };
+    };
     tracking_units_list: {
         parameters: {
             query?: {
@@ -5011,25 +6531,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrackingUnitWrite"];
-                };
-            };
-        };
-    };
-    tracking_units_board_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TrackingUnitCard"];
                 };
             };
         };

@@ -5,13 +5,17 @@ from django.db import models
 class Role(models.TextChoices):
     """角色代號。對應 Django Group 的 name，一個使用者可掛多個，權限取聯集。
 
-    只有三種——實際天天用系統的是經營者與會計兩個人（2026-08-13 確認）。
-    「檢視」給未來想讓同仁看進度用：看得到案子與進度，看不到任何金額。
-    角色種類比使用者還多的權限矩陣，只是把簡單的事變難。
+    四種（2026-08-18 D40 依老闆指示重訂標籤與權限）：
+      經理 —— 什麼都看得到、什麼都能改（系統管理員＝superuser，權限相同）
+      會計師 —— 什麼頁面都看得到，只能改金流與自己的任務
+      員工 —— 繪圖師、行政人員、工廠員工：除金流外都看得到（唯讀、無金額），
+              只能動「我的任務」裡指派給自己的單元
+      檢視 —— 備用：同員工的唯讀範圍，但不會被指派任務
     """
 
-    OWNER = "owner", "經營者"
-    FINANCE = "finance", "會計"
+    OWNER = "owner", "經理"
+    FINANCE = "finance", "會計師"
+    STAFF = "staff", "員工"
     VIEWER = "viewer", "檢視"
 
 
@@ -65,4 +69,9 @@ class User(AbstractUser):
 
     @property
     def default_route(self) -> str:
+        """登入後落地頁。員工的世界是「我的任務」，不是全公司總覽。"""
+        if self.has_role(Role.OWNER, Role.FINANCE, Role.VIEWER):
+            return "/dashboard"
+        if self.has_role(Role.STAFF):
+            return "/mywork"
         return "/dashboard"

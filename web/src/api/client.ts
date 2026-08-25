@@ -7,7 +7,7 @@
  *   3. credentials: "include"，讓 cookie 跟著送
  */
 
-const API_BASE = "/api/v0.1";
+export const API_BASE = "/api/v0.1";
 
 /** 後端 main/utils/exceptions.py 產生的錯誤格式 */
 export interface ApiErrorBody {

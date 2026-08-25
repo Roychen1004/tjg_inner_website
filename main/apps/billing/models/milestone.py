@@ -47,6 +47,18 @@ class BillingMilestone(TimeStampedModel):
     state = models.CharField(
         "狀態", max_length=12, choices=MilestoneState.choices, default=MilestoneState.PENDING,
     )
+    trigger_unit = models.ForeignKey(
+        "tracking.FlowUnit", verbose_name="觸發流程",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="triggered_milestones",
+        help_text="這個流程完成 → 本期自動轉「可請款」並通知（金流軌）。"
+                  "沒填預計請款日時，現金流預估用它的預計完成日",
+    )
+    accountant = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="負責收款的會計師",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_milestones",
+        help_text="D45：觸發流程完成轉可請款時通知這個人，"
+                  "並出現在他的「我的任務」待收款清單",
+    )
     expected_date = models.DateField(
         "預計請款日", null=True, blank=True,
         help_text="現金流預估靠它。填大概的月份即可，之後隨時可改",
@@ -98,14 +110,25 @@ class BillingMilestone(TimeStampedModel):
         """還沒收到的錢"""
         return Decimal("0") if self.state == MilestoneState.RECEIVED else self.amount
 
-    def recalc_amount(self):
-        """金額＝有效合約額 × 比例。
+    @property
+    def forecast_date(self):
+        """未到期別的預估請款日：自己填的優先，沒填就用觸發流程的預計完成日。"""
+        if self.expected_date:
+            return self.expected_date
+        if self.trigger_unit_id and self.trigger_unit.plan_end:
+            return self.trigger_unit.plan_end
+        return None
 
+    def recalc_amount(self):
+        """金額＝金額基準 × 比例。
+
+        基準＝有效合約額；未簽約時＝估價金額（2026-08-14 確認）——
+        估價中的案子也要有期別金額，金流預測才有東西可算。
         只在還沒請款時重算——已經送出去給業主的數字不能被系統改掉。
         """
         if self.state in (MilestoneState.INVOICED, MilestoneState.RECEIVED):
             return False
-        new_amount = (self.project.effective_amount * self.percentage / Decimal("100")).quantize(
+        new_amount = (self.project.amount_base * self.percentage / Decimal("100")).quantize(
             Decimal("1")
         )
         if new_amount != self.amount:

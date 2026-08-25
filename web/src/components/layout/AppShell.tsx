@@ -2,6 +2,7 @@ import {
   Bell,
   Boxes,
   Building2,
+  ClipboardCheck,
   FolderKanban,
   LayoutDashboard,
   LogOut,
@@ -10,7 +11,7 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useMarkNotificationsRead, useNotifications } from "@/api/hooks";
 import { type CurrentUser, useLogout } from "@/api/hooks/useAuth";
@@ -24,30 +25,23 @@ import { Modal } from "@/components/ui";
 const NAV_ITEMS: Array<{
   key: string;
   label: string;
-  question: string;
   icon: ComponentType<{ size?: number | string }>;
 }> = [
-  { key: "dashboard", label: "總覽", question: "今天有什麼要處理", icon: LayoutDashboard },
-  { key: "projects", label: "專案", question: "這個案子進行到哪", icon: FolderKanban },
-  { key: "tracking", label: "追蹤看板", question: "東西現在卡在哪一站", icon: Boxes },
-  { key: "finance", label: "金流", question: "錢進來、錢出去、會不會缺", icon: Wallet },
-  {
-    key: "settings",
-    label: "設定",
-    question: "公司的客戶、廠商、員工資料",
-    icon: SlidersHorizontal,
-  },
+  { key: "dashboard", label: "總覽", icon: LayoutDashboard },
+  { key: "projects", label: "專案", icon: FolderKanban },
+  { key: "tracking", label: "追蹤看板", icon: Boxes },
+  { key: "mywork", label: "我的任務", icon: ClipboardCheck },
+  { key: "finance", label: "金流", icon: Wallet },
+  { key: "settings", label: "設定", icon: SlidersHorizontal },
 ];
 
 export default function AppShell({ user }: { user: CurrentUser }) {
   const logout = useLogout();
-  const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const { data: notifications } = useNotifications();
   const markRead = useMarkNotificationsRead();
 
   const items = NAV_ITEMS.filter((item) => user.visible_nav.includes(item.key));
-  const current = items.find((item) => location.pathname.startsWith(`/${item.key}`));
   const unread = notifications?.unread_count ?? 0;
 
   return (
@@ -127,14 +121,8 @@ export default function AppShell({ user }: { user: CurrentUser }) {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-4">
-        {/* 每個畫面回答一個問題，標題就寫出那個問題——
-            使用者知道自己在哪、能在這裡得到什麼 */}
-        {current && (
-          <div className="mb-3">
-            <h2 className="text-base font-bold text-ink">{current.label}</h2>
-            <p className="text-xs text-ink-3">{current.question}</p>
-          </div>
-        )}
+        {/* 頁面不再放大標小標（D40）——導航分頁已經說了你在哪，
+            內容直接開始，省一截垂直空間 */}
         <Outlet />
       </main>
 

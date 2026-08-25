@@ -1,9 +1,13 @@
 """
-示範資料：固越企業總部案（完整鋼構案）＋ 彰化、南投兩案
+示範資料（2026-08-14 流程制）：一個案子走完整條流程
 
-三案的應收款刻意鋪在四種狀態上（已收款、已請款、可請款、未到），
-現金流的三個確定性等級一開機就看得到。
+  · 固越總部　　簽約後施工中：
+      階段 1–3 全部完成、階段 4 由三張構件批次自動彙總、4.5 吊裝進行中
+      應收四期鋪滿四種狀態（已收款／已請款／可請款／未到）
+      應付掛在流程上（鋼材→3.4、噴砂→4.2、運費→4.3），含一張支票
 
+刻意只留一個案子——看懂一個案子怎麼跑，比五個案子擠在畫面上有用。
+帳號名冊見 seed_accounts（D40：經理／會計師／繪圖師／行政人員／工廠員工×10）。
 ⚠️ 僅供開發與教育訓練使用，正式上線前請清除。
 """
 from datetime import date, timedelta
@@ -15,13 +19,16 @@ from django.utils import timezone
 
 from main.apps.billing.models import BillingMilestone, MilestoneLog
 from main.apps.core.models import User
-from main.apps.masters.models import Customer, StageTemplate, Vendor
+from main.apps.masters.models import Customer, FlowItem, StageTemplate, Vendor
 from main.apps.payables.services import terms_service
 from main.apps.projects.models import Project
-from main.apps.tracking.models import TrackingUnit
+from main.apps.tracking.models import FlowUnit, TrackingUnit
+from main.apps.tracking.services import flow_service
 from main.utils.choices import (
+    FlowState,
     MilestoneState,
     PaymentTermType,
+    ProjectLifecycle,
     ProjectType,
     Status,
     SubcontractCategory,
@@ -30,9 +37,14 @@ from main.utils.choices import (
     VendorType,
 )
 
+S1_S2 = ["1.1", "1.2", "1.3", "2.1", "2.2", "2.3"]
+ALL_FLOWS = S1_S2 + ["3.1", "3.2", "3.3", "3.4",
+                     "4.1", "4.2", "4.3", "4.4", "4.5",
+                     "5.1", "5.2", "5.3", "5.4"]
+
 
 class Command(BaseCommand):
-    help = "載入示範資料（固越／彰化／南投三案）。僅供開發與教育訓練"
+    help = "載入示範資料（單案，流程制）。僅供開發與教育訓練"
 
     def add_arguments(self, parser):
         parser.add_argument("--clear", action="store_true", help="先清除既有示範資料")
@@ -42,10 +54,10 @@ class Command(BaseCommand):
         if options["clear"]:
             self._clear()
 
-        if not StageTemplate.objects.exists():
+        if not FlowItem.objects.exists():
             self.stderr.write(self.style.ERROR("請先執行：python manage.py seed_masters"))
             return
-        if not User.objects.filter(username="owner").exists():
+        if not User.objects.filter(username="manager").exists():
             self.stderr.write(self.style.ERROR("請先執行：python manage.py seed_accounts"))
             return
 
@@ -58,14 +70,16 @@ class Command(BaseCommand):
 
     # ── 清除 ───────────────────────────────────────────────────────
     def _clear(self):
-        """刪除順序由 PROTECT 外鍵決定：應付 → 分包合約 → 專案（連帶應收與單元）"""
+        """刪除順序由 PROTECT 外鍵決定：應付 → 分包合約 → 專案（連帶其餘）"""
+        from main.apps.core.models import Notification
         from main.apps.payables.models import Payable, PayableLog, Subcontract
 
         self.stdout.write("清除既有示範資料…")
         PayableLog.objects.all().delete()
         Payable.objects.all().delete()
         Subcontract.objects.all().delete()
-        Project.objects.all().delete()  # cascade：應收款、追蹤單元、歷程、變更單
+        Project.objects.all().delete()  # cascade：應收款、流程單元、批次、歷程、變更單
+        Notification.objects.all().delete()
         self.stdout.write("  完成\n")
 
     # ── 主檔 ───────────────────────────────────────────────────────
@@ -76,12 +90,13 @@ class Command(BaseCommand):
             ("C002", "統一食品", "23456789", PaymentTermType.MONTH_END, 30),
             # 公家機關通常是驗收後起算
             ("C003", "國工局", "", PaymentTermType.FROM_ACCEPTANCE, 45),
+            ("C004", "草屯農會", "34567890", PaymentTermType.MONTH_END, 30),
         ]:
             Customer.objects.update_or_create(
                 code=code,
                 defaults={
                     "name": name, "tax_id": tax,
-                    # 帳期是現金流收入側的來源。三家刻意不同，才看得出差別
+                    # 帳期是現金流收入側的來源。各家刻意不同，才看得出差別
                     "payment_term_type": term, "payment_term_days": days,
                 },
             )
@@ -95,175 +110,143 @@ class Command(BaseCommand):
             Vendor.objects.update_or_create(
                 code=code, defaults={"name": name, "vendor_types": types},
             )
-        self.stdout.write("    3 個客戶、4 家廠商")
+        self.stdout.write("    4 個客戶、4 家廠商")
+
+    # ── 流程單元 ───────────────────────────────────────────────────
+    def _seed_flows(self, project, codes, start, end, done=(), doing=None,
+                    overdue=(), skip_rollup_codes=("4.1", "4.2", "4.3", "4.5")):
+        """生成流程單元並排出甘特能看的日期。
+
+        日期沿工期平均鋪、尾端疊 30%；完成的單元實際日＝預計日。
+        批次彙總的四個單元（skip_rollup_codes）只給日期，狀態交給 sync_batch_rollup。
+        """
+        doing = doing or {}
+        items = list(FlowItem.objects.filter(code__in=codes).order_by("seq"))
+        total_days = max((end - start).days, len(items) * 3)
+        span = total_days / len(items)
+        units = {}
+        for i, item in enumerate(items):
+            plan_start = start + timedelta(days=int(span * i))
+            plan_end = start + timedelta(days=int(span * (i + 1.3)))
+            if item.code in overdue:
+                plan_end = timezone.localdate() - timedelta(days=5)
+
+            state = FlowState.TODO
+            actual_start = actual_end = None
+            if item.code in done and item.code not in skip_rollup_codes:
+                state = FlowState.DONE
+                actual_start, actual_end = plan_start, plan_end
+            elif item.code in doing:
+                state = FlowState.DOING
+                actual_start = plan_start
+
+            unit, _ = FlowUnit.objects.update_or_create(
+                project=project, flow_item=item,
+                defaults={
+                    "state": state,
+                    "plan_start": plan_start, "plan_end": plan_end,
+                    "actual_start": actual_start, "actual_end": actual_end,
+                    "assignee": doing.get(item.code),
+                    "detail": "",
+                    # D40：單元的工作內容等欄位從目錄抄預設值
+                    "description": item.description,
+                    "deliverables": item.deliverables,
+                    "done_criteria": item.done_criteria,
+                },
+            )
+            units[item.code] = unit
+        return units
 
     # ── 專案 ───────────────────────────────────────────────────────
     def _seed_projects(self):
         self.stdout.write("\n▸ 專案")
         today = timezone.localdate()
-        owner = User.objects.get(username="owner")
-        finance = User.objects.get(username="finance")
-        main_tpl = StageTemplate.default_for(TemplateAppliesTo.PROJECT_MAIN)
+        owner = User.objects.get(username="manager")
+        finance = User.objects.get(username="accountant")
+        drafter = User.objects.get(username="drafter")
+        foreman = User.objects.get(username="worker01")
         steel_tpl = StageTemplate.default_for(TemplateAppliesTo.STEEL_BATCH)
-        civil_tpl = StageTemplate.default_for(TemplateAppliesTo.CIVIL_WORK_ITEM)
 
-        # ── 固越企業總部案：走到一半的完整案 ──
+        def stage(code):
+            return steel_tpl.stages.get(code=code)
+
+        # ── 固越總部：簽約後施工中，批次散在四站 ──
         guyue, _ = Project.objects.update_or_create(
             name="固越企業總部新建工程",
             defaults={
-                "project_type": ProjectType.MIXED,
+                "project_type": ProjectType.STEEL,
                 "customer": Customer.objects.get(code="C001"),
                 "contract_amount": Decimal("80000000"),
                 "owner": owner,
                 "start_date": date(2026, 1, 10), "due_date": date(2026, 11, 30),
-                "main_template": main_tpl,
-                "main_stage": main_tpl.stages.get(code="build"),
+                "lifecycle": ProjectLifecycle.ACTIVE,
                 "status": Status.ONTRACK,
                 "contract_terms": "工期 300 日曆天；付款：簽約 15%、進料 25%、出貨安裝 40%、驗收 20%",
             },
         )
+        gu_units = self._seed_flows(
+            guyue, ALL_FLOWS, date(2026, 1, 10), date(2026, 11, 30),
+            done=S1_S2 + ["3.1", "3.2", "3.3", "3.4", "4.4"],
+            doing={"4.5": foreman},
+        )
+        gu_units["3.2"].assignee = drafter
+        gu_units["3.2"].save(update_fields=["assignee"])
+        # D43：詳細內容已併入工作內容——補充說明直接寫進 description
+        gu_units["4.4"].description += "\n\n配合永固土建灌漿時程，預埋提前完成（複測合格）"
+        gu_units["4.4"].save(update_fields=["description"])
 
-        # 應收款四列，四種狀態各一——demo 一眼看懂生命週期
-        milestone_specs = [
-            (1, "第一期（簽約）", "合約簽訂後 30 日內", "15",
-             MilestoneState.RECEIVED, None),
-            (2, "第二期（進料）", "主要鋼材進廠並經監造查驗", "25",
-             MilestoneState.INVOICED, None),
-            (3, "第三期（出貨安裝）", "構件運抵工地並完成吊裝", "40",
-             MilestoneState.CLAIMABLE, None),
-            (4, "第四期（驗收）", "全案完工並經業主驗收合格", "20",
-             MilestoneState.PENDING, today + timedelta(days=75)),
-        ]
-        for seq, label, condition, pct, state, expected in milestone_specs:
-            m, created = BillingMilestone.objects.update_or_create(
-                project=guyue, seq=seq,
-                defaults={
-                    "label": label, "condition": condition,
-                    "percentage": Decimal(pct), "state": state,
-                    "expected_date": expected,
-                },
-            )
-            m.recalc_amount() if state in (MilestoneState.PENDING, MilestoneState.CLAIMABLE) \
-                else self._force_amount(m, guyue, pct)
-            if created:
-                self._backfill_dates(m, today, finance)
-
-        # 追蹤單元：鋼構批次 3 筆＋土建工項 2 筆，散在不同站
-        for name, stage, qty_total, qty_done, status_, note in [
-            ("第一期-1F鋼柱 80支", "done", "80", "80", Status.ONTRACK, ""),
-            ("第一期-樓板鋼樑 120支", "install", "120", "45", Status.ONTRACK, ""),
-            ("第二期-樓梯鋼構", "fab", "36", "12", Status.ATRISK, "等噴砂廠回料"),
+        for name, st, qty_total, qty_done, status_, note in [
+            ("第一期-1F鋼柱 80支", "installed", "80", "80", Status.ONTRACK, ""),
+            ("第一期-樓板鋼樑 120支", "shipped", "120", "0", Status.ONTRACK, "到場待吊裝"),
+            ("第二期-樓梯鋼構", "surfacing", "36", "12", Status.ATRISK, "等鍍鋅回廠"),
         ]:
             TrackingUnit.objects.update_or_create(
                 project=guyue, name=name,
                 defaults={
                     "unit_type": UnitType.BATCH, "template": steel_tpl,
-                    "current_stage": steel_tpl.stages.get(code=stage),
+                    "current_stage": stage(st),
                     "qty_total": Decimal(qty_total), "qty_done": Decimal(qty_done),
                     "unit_of_measure": "支", "status": status_, "note": note,
                     "stage_entered_at": timezone.now() - timedelta(days=12),
                 },
             )
-        for name, stage, pct, status_ in [
-            ("B區基礎工程", "done", "100", Status.ONTRACK),
-            ("B區結構體", "build", "65", Status.ONTRACK),
-        ]:
-            TrackingUnit.objects.update_or_create(
-                project=guyue, name=name,
-                defaults={
-                    "unit_type": UnitType.WORK_ITEM, "template": civil_tpl,
-                    "current_stage": civil_tpl.stages.get(code=stage),
-                    "progress_pct": Decimal(pct), "status": status_,
-                    "subcontractor": Vendor.objects.get(code="V005"),
-                },
-            )
+        flow_service.sync_batch_rollup(guyue)
 
-        # ── 彰化食品廠房：剛開工 ──
-        changhua, _ = Project.objects.update_or_create(
-            name="彰化食品廠房擴建",
-            defaults={
-                "project_type": ProjectType.STEEL,
-                "customer": Customer.objects.get(code="C002"),
-                "contract_amount": Decimal("32000000"),
-                "owner": owner,
-                "start_date": date(2026, 2, 15), "due_date": date(2026, 10, 20),
-                "main_template": main_tpl,
-                "main_stage": main_tpl.stages.get(code="build"),
-                "status": Status.ATRISK, "note": "鋼柱待料，需追料",
-            },
-        )
-        for seq, label, pct, state, expected in [
-            (1, "第一期（簽約）", "30", MilestoneState.RECEIVED, None),
-            (2, "第二期（出貨）", "40", MilestoneState.PENDING, today + timedelta(days=30)),
-            (3, "第三期（驗收）", "30", MilestoneState.PENDING, today + timedelta(days=90)),
+        for seq, label, condition, pct, state, trigger, expected in [
+            (1, "第一期（簽約）", "合約簽訂後 30 日內", "15", MilestoneState.RECEIVED, None, None),
+            (2, "第二期（進料）", "主要鋼材進廠並經監造查驗", "25", MilestoneState.INVOICED,
+             gu_units["3.4"], None),
+            (3, "第三期（出貨安裝）", "構件運抵工地並完成吊裝", "40", MilestoneState.CLAIMABLE,
+             gu_units["4.3"], None),
+            (4, "第四期（驗收）", "全案完工並經業主驗收合格", "20", MilestoneState.PENDING,
+             gu_units["5.2"], today + timedelta(days=75)),
         ]:
-            m, created = BillingMilestone.objects.update_or_create(
-                project=changhua, seq=seq,
-                defaults={
-                    "label": label, "percentage": Decimal(pct),
-                    "state": state, "expected_date": expected,
-                },
-            )
-            m.recalc_amount() if state == MilestoneState.PENDING \
-                else self._force_amount(m, changhua, pct)
-            if created:
-                self._backfill_dates(m, today, finance)
-        TrackingUnit.objects.update_or_create(
-            project=changhua, name="第一期-H型鋼柱",
-            defaults={
-                "unit_type": UnitType.BATCH, "template": steel_tpl,
-                "current_stage": steel_tpl.stages.get(code="wait"),
-                "qty_total": Decimal("32"), "qty_done": Decimal("0"),
-                "unit_of_measure": "支", "status": Status.ATRISK, "note": "等鋼材到料",
-                "stage_entered_at": timezone.now() - timedelta(days=20),
-            },
-        )
+            self._milestone(guyue, seq, label, condition, pct, state, trigger, expected,
+                            today, finance)
 
-        # ── 南投國道橋樑：收尾中 ──
-        nantou, _ = Project.objects.update_or_create(
-            name="南投國道橋樑鋼構",
-            defaults={
-                "project_type": ProjectType.STEEL,
-                "customer": Customer.objects.get(code="C003"),
-                "contract_amount": Decimal("54000000"),
-                "owner": owner,
-                "start_date": date(2025, 9, 1), "due_date": date(2026, 9, 15),
-                "main_template": main_tpl,
-                "main_stage": main_tpl.stages.get(code="verify"),
-                "status": Status.ONTRACK,
-            },
-        )
-        for seq, label, pct, state, expected in [
-            (1, "第一期（開工）", "20", MilestoneState.RECEIVED, None),
-            (2, "第二期（吊裝完成）", "50", MilestoneState.RECEIVED, None),
-            (3, "尾款（驗收）", "30", MilestoneState.CLAIMABLE, None),
-        ]:
-            m, created = BillingMilestone.objects.update_or_create(
-                project=nantou, seq=seq,
-                defaults={
-                    "label": label, "percentage": Decimal(pct),
-                    "state": state, "expected_date": expected,
-                },
-            )
-            self._force_amount(m, nantou, pct)
-            if created:
-                self._backfill_dates(m, today, finance)
-        TrackingUnit.objects.update_or_create(
-            project=nantou, name="主橋段鋼箱樑",
-            defaults={
-                "unit_type": UnitType.BATCH, "template": steel_tpl,
-                "current_stage": steel_tpl.stages.get(code="done"),
-                "qty_total": Decimal("18"), "qty_done": Decimal("18"),
-                "unit_of_measure": "組", "status": Status.ONTRACK,
-            },
-        )
+        self.stdout.write("    1 個專案（固越）、4 筆應收款、3 張批次、19 張流程單元")
 
-        self.stdout.write("    3 個專案、10 筆應收款、7 個追蹤單元")
+    def _milestone(self, project, seq, label, condition, pct, state, trigger, expected,
+                   today, actor):
+        m, created = BillingMilestone.objects.update_or_create(
+            project=project, seq=seq,
+            defaults={
+                "label": label, "condition": condition,
+                "percentage": Decimal(pct), "state": state,
+                "trigger_unit": trigger, "expected_date": expected,
+            },
+        )
+        if state in (MilestoneState.PENDING, MilestoneState.CLAIMABLE):
+            m.recalc_amount()
+        else:
+            self._force_amount(m, project, pct)
+        if created:
+            self._backfill_dates(m, today, actor)
 
     @staticmethod
     def _force_amount(milestone, project, pct):
         """已請款／已收款的列不能走 recalc（它會拒絕改），直接寫入正確金額"""
-        amount = (project.effective_amount * Decimal(pct) / Decimal("100")).quantize(Decimal("1"))
+        amount = (project.amount_base * Decimal(pct) / Decimal("100")).quantize(Decimal("1"))
         if milestone.amount != amount:
             milestone.amount = amount
             milestone.save(update_fields=["amount", "updated_at"])
@@ -299,19 +282,19 @@ class Command(BaseCommand):
 
     # ── 應付 ───────────────────────────────────────────────────────
     def _seed_payables(self):
-        """讓現金流預測一開始就有東西可看。
+        """讓現金流預測一開始就有東西可看，且每筆錢掛回它花在哪個流程。
 
-        金額與日期刻意排成「近月會缺錢」——現金流畫面的重點是那一格，
-        示範資料裡沒有缺口的話，看的人不會知道它長什麼樣、要做什麼。
+        金額與日期刻意排成「近月會缺錢」——現金流畫面的重點是那一格。
         """
         from main.apps.payables.models import Payable, PayableLog, Subcontract
         from main.utils.choices import PayableState, PaymentMethod
 
         self.stdout.write("\n▸ 分包合約與應付款項")
         today = timezone.localdate()
-        owner = User.objects.get(username="owner")
+        owner = User.objects.get(username="manager")
 
         guyue = Project.objects.get(name="固越企業總部新建工程")
+        flow = {u.flow_item.code: u for u in guyue.flow_units.select_related("flow_item")}
 
         specs = [
             ("V001", "第一期鋼材採購", SubcontractCategory.MATERIAL, "18000000",
@@ -338,26 +321,30 @@ class Command(BaseCommand):
             )
             contracts[vendor_code] = contract
 
-        # (合約, 項目, 未稅金額, 計價日距今幾天, 狀態, 付款方式, 票期距今幾天)
+        # (合約, 項目, 未稅金額, 計價日距今幾天, 狀態, 付款方式, 票期距今幾天, 掛哪個流程)
         rows = [
-            ("V001", "1月份鋼材", "6500000", -50, PayableState.PAID, PaymentMethod.TRANSFER, None),
+            ("V001", "1月份鋼材", "6500000", -50, PayableState.PAID,
+             PaymentMethod.TRANSFER, None, "3.4"),
             # ★ 支票：開票日跟兌現日差 75 天。現金流要落在兌現那一週，不是開票那一週
-            ("V001", "2月份鋼材", "5800000", -20, PayableState.APPROVED, PaymentMethod.CHECK, 55),
+            ("V001", "2月份鋼材", "5800000", -20, PayableState.APPROVED,
+             PaymentMethod.CHECK, 55, "3.4"),
             ("V002", "第一批噴砂鍍鋅", "1250000", -15, PayableState.APPROVED,
-             PaymentMethod.TRANSFER, None),
+             PaymentMethod.TRANSFER, None, "4.2"),
             ("V005", "B區土建第二期計價", "4200000", -10, PayableState.APPROVED,
-             PaymentMethod.TRANSFER, None),
+             PaymentMethod.TRANSFER, None, None),
             ("V005", "B區土建第三期計價", "3800000", -2, PayableState.PENDING,
-             PaymentMethod.TRANSFER, None),
-            ("V003", "8月運費", "180000", -3, PayableState.PENDING, PaymentMethod.TRANSFER, None),
+             PaymentMethod.TRANSFER, None, None),
+            ("V003", "8月運費", "180000", -3, PayableState.PENDING,
+             PaymentMethod.TRANSFER, None, "4.3"),
         ]
-        for vendor_code, title, amount, offset, state, method, check_offset in rows:
+        for vendor_code, title, amount, offset, state, method, check_offset, flow_code in rows:
             contract = contracts[vendor_code]
             billing_date = today + timedelta(days=offset)
             payable, created = Payable.objects.update_or_create(
                 subcontract=contract, title=title,
                 defaults={
                     "project": contract.project, "vendor": contract.vendor,
+                    "flow_unit": flow.get(flow_code) if flow_code else None,
                     "category": contract.category, "amount": Decimal(amount),
                     "tax_amount": (Decimal(amount) * Decimal("0.05")).quantize(Decimal("1")),
                     "retention_amount": (
@@ -389,9 +376,11 @@ class Command(BaseCommand):
     def _print_guide(self):
         self.stdout.write("""
 ────────────────────────────────────────────
-示範資料導覽
-  · 專案分頁：固越案已施工中，展開可看到應收款四種狀態各一列
-  · 金流分頁：應收（等收）、應付（等付，含一張支票）、現金流預測
-  · 總覽：需要關注清單有「可請款放 10 天沒開單」與「等料卡住」
-帳號：owner（經營者）、finance（會計）、admin（超級使用者）
+示範資料導覽（只有固越一案，看懂一案就看懂全部）
+  · 專案分頁：點開固越案——五大階段排程表、批次自動彙總、應收四期
+  · 追蹤看板：流程看板（卡在哪一步）、構件批次（七站）、日曆甘特
+  · 我的任務：worker01（工廠員工1）登入看 4.5 現場吊裝（進行中）
+  · 金流分頁：應收（第三期可請款放 10 天）、應付（掛流程、含一張支票）、現金流
+帳號：manager（經理）、accountant（會計師）、drafter／clerk／worker01–10（員工）、admin
+各帳號密碼見 docs/帳號密碼.md
 ────────────────────────────────────────────""")

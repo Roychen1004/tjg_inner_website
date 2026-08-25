@@ -1,14 +1,19 @@
 """
 功能權限與可見導航
 
-三種角色：
-  經營者  什麼都能做
-  會計    輸入與金流都能做；「核可付款」與「刪專案」這類拍板的事除外
-  檢視    看得到案子與進度，看不到任何金額（含金額類附件）
+四種角色（2026-08-18 D40 權限矩陣，依老闆指示重訂）：
+  經理    什麼頁面都看得到、什麼都能改（系統管理員＝superuser，權限相同）
+  會計師  什麼頁面都看得到，但只能改金流（應收、應付、付款）與自己的任務
+  員工    繪圖師、行政人員、工廠員工——除了金流每一頁都看得到，
+          但全部唯讀；唯一能動的是「我的任務」裡指派給自己的單元
+  檢視    保留備用：同「員工」的唯讀範圍，但不會被指派任務
 
 分兩層：
   · 這裡（permissions）：能不能【用這個功能】
-  · scoping.py：能不能【看到金額】
+  · scoping.py：能不能【看到金額】——員工與檢視在任何頁面都拿不到金額欄位
+
+⚠️ 員工對「自己的單元」的操作權不在這張表——那是資料層的關係
+（unit.assignee == user），檢查在 flow_service.can_operate。
 
 ⚠️ 前端拿到的 permissions 只是 UI 提示，用來決定按鈕顯不顯示。
 真正的攔截一律在後端——DRF permission class 與 get_queryset()。
@@ -20,27 +25,33 @@ from main.apps.core.models import Role
 # ── 功能權限 → 允許的角色 ─────────────────────────────────────────
 # superuser 一律通過，不必逐項列出
 PERMISSION_ROLES = {
+    # 總覽與專案清單：所有角色都看得到（金額另由 view_money 擋）
+    "view_overview": [Role.OWNER, Role.FINANCE, Role.STAFF, Role.VIEWER],
+    # 我的任務：有可能被指派任務的人
+    "view_mywork": [Role.OWNER, Role.FINANCE, Role.STAFF],
+
     # 金流（應收、應付、現金流、損益）：整個分頁只有這兩種角色看得到
     "view_money": [Role.OWNER, Role.FINANCE],
 
-    # 專案與進度：辦公室的兩個人就是全部的輸入來源，兩人都能維護
-    "edit_project": [Role.OWNER, Role.FINANCE],
-    "edit_tracking": [Role.OWNER, Role.FINANCE],
+    # 專案與進度：只有經理（與系統管理員）能改——
+    # 會計師的編輯範圍限金流，員工全部唯讀（D40）
+    "edit_project": [Role.OWNER],
+    "edit_tracking": [Role.OWNER],
     "delete_project": [Role.OWNER],
-    "approve_change_order": [Role.OWNER],   # 牽涉合約金額，老闆拍板
+    "approve_change_order": [Role.OWNER],   # 牽涉合約金額，經理拍板
 
-    # 應收
+    # 應收（金流頁）：會計師的日常
     "edit_milestone": [Role.OWNER, Role.FINANCE],
     "transition_milestone": [Role.OWNER, Role.FINANCE],
 
-    # 應付
+    # 應付（金流頁）
     "edit_subcontract": [Role.OWNER, Role.FINANCE],
     "edit_payable": [Role.OWNER, Role.FINANCE],
     # ★ 核可與付款分開：同一個人不該既決定要付多少、又執行付款
     "approve_payable": [Role.OWNER],
     "pay_payable": [Role.OWNER, Role.FINANCE],
 
-    # 主檔（客戶、廠商、員工、階段模板）
+    # 主檔（客戶、廠商、員工）：頁面大家都看得到，改只有經理能改
     "manage_masters": [Role.OWNER],
 }
 
@@ -55,11 +66,14 @@ PERMISSION_ALIASES = {
 
 # ── 導航分頁 → 需要的權限（None＝所有登入者）──────────────────────
 NAV_ROLES = {
-    "dashboard": None,
-    "projects": None,
+    "dashboard": ["view_overview"],
+    "projects": ["view_overview"],
     "tracking": None,   # 追蹤看板：跨案看「東西卡在哪一站」，不含金額
+    "mywork": ["view_mywork"],
     "finance": ["view_money"],
-    "settings": ["manage_masters"],
+    # 設定：頁面所有人都看得到（查同事分機、客戶聯絡人），
+    # 新增／修改的按鈕跟著 manage_masters 走（D40）
+    "settings": None,
 }
 
 

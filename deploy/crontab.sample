@@ -8,5 +8,8 @@ TJG=/opt/tjg-inner
 # ── 每日 01:00 備份（資料庫 + 附件，本機保留 14 天）─────────────────
 0 1 * * * $TJG/deploy/backup.sh >> $TJG/logs/backup.log 2>&1
 
+# ── 每日 08:00 掃描逾期流程並發站內通知（負責人＋經營者）─────────────
+0 8 * * * docker compose -f $TJG/docker-compose.yml exec -T api python manage.py scan_alerts >> $TJG/logs/scan_alerts.log 2>&1
+
 # ── 每小時記錄資源用量（目標常駐 < 1.5GB，超了要知道）───────────────
 0 * * * * docker stats --no-stream --format "{{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}" >> $TJG/logs/resources.log

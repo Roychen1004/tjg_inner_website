@@ -17,8 +17,11 @@ import type {
   Activity,
   CashflowForecast,
   BillingSummary,
-  BoardData,
   DashboardOverview,
+  FlowCatalogStage,
+  FlowTask,
+  FlowTaskAssignment,
+  FlowUnit,
   Milestone,
   MoveStageResult,
   Notification,
@@ -31,6 +34,7 @@ import type {
   ProjectRow,
   ProjectSummary,
   ReportProgressResult,
+  StaffWorkload,
   Subcontract,
   TrackingCard,
   TrackingDetail,
@@ -99,19 +103,171 @@ export function useProjectSummary(id: number | null) {
   });
 }
 
-export function useAdvanceProject(id: number) {
+// 主線不再手動推進——2026-08-15 起由流程進度自動判定（見 Projects 的 MainStageControl）
+
+// ── 流程目錄與流程單元（2026-08 流程制）─────────────────────────────
+/** 五大階段＋19 工作項的目錄。順序固定，只有 Admin 能改內容 */
+export function useFlowCatalog(enabled = true) {
+  return useQuery({
+    queryKey: key("flow-catalog"),
+    queryFn: () => api.get<FlowCatalogStage[]>("/flow-catalog"),
+    enabled,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+export function useFlowUnits(params: Params = {}, enabled = true) {
+  return useQuery({
+    queryKey: key("flow-units", params),
+    queryFn: () => api.get<Paginated<FlowUnit>>("/flow-units", params),
+    enabled,
+  });
+}
+
+export function useFlowUnit(id: number | null) {
+  return useQuery({
+    queryKey: key("flow-unit", id),
+    queryFn: () => api.get<FlowUnit>(`/flow-units/${id}`),
+    enabled: id !== null,
+    // 卡片開著的時候每 10 秒抓一次——員工回報分配進度，經理不用重整就看得到（D44）
+    refetchInterval: 10_000,
+  });
+}
+
+/** 流程單元動了，排程表、看板、我的任務、儀表板、金流全部跟著變 */
+function invalidateFlows(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: key("flow-units") });
+  qc.invalidateQueries({ queryKey: key("flow-unit") });
+  qc.invalidateQueries({ queryKey: key("project") });
+  qc.invalidateQueries({ queryKey: key("projects") });
+  qc.invalidateQueries({ queryKey: key("dashboard") });
+  // 完成可能觸發「自動可請款」（金流軌）
+  qc.invalidateQueries({ queryKey: key("billing") });
+  qc.invalidateQueries({ queryKey: key("cashflow") });
+  qc.invalidateQueries({ queryKey: key("notifications") });
+}
+
+/** 排程表逐列改：負責人、詳細內容、預計起訖、數量 */
+export function useSaveFlowUnit() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { direction: "forward" | "backward"; note?: string; confirmed?: boolean }) =>
-      api.post<{ project: ProjectDetail; warnings: string[] }>(
-        `/projects/${id}/advance-stage`,
-        body,
-      ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: key("project", id) });
-      qc.invalidateQueries({ queryKey: key("projects") });
-      qc.invalidateQueries({ queryKey: key("dashboard") });
-    },
+    mutationFn: ({ id, ...body }: { id: number } & Record<string, unknown>) =>
+      api.patch<FlowUnit>(`/flow-units/${id}`, body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+/** 開始／完成／重啟／標不適用 */
+export function useFlowTransition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; to_state: string; note?: string }) =>
+      api.post<FlowUnit>(`/flow-units/${id}/transition`, body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+export function useFlowReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: number;
+      delta?: string;
+      qty_done?: string;
+      progress_pct?: string;
+      note?: string;
+    }) => api.post<FlowUnit>(`/flow-units/${id}/report-progress`, body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+/** 調整專案勾了哪些流程（建案後編輯） */
+export function useSetFlows(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (flowItemIds: number[]) =>
+      api.post<{
+        project: ProjectDetail;
+        added: string[];
+        removed: string[];
+        marked_na: string[];
+        restored: string[];
+      }>(`/projects/${projectId}/set-flows`, { flow_items: flowItemIds }),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+// ── 工作項目（流程單元的內容物清單）─────────────────────────────────
+export function useAddFlowTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { unit: number; name: string; qty?: string | null; unit_of_measure?: string; status?: string }) =>
+      api.post<FlowTask>("/flow-tasks", body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+export function useSaveFlowTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; name?: string; qty?: string | null; unit_of_measure?: string; status?: string; statuses?: string[] }) =>
+      api.patch<FlowTask>(`/flow-tasks/${id}`, body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+export function useDeleteFlowTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/flow-tasks/${id}`),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+// ── 工作分配（D41：工作項目 × 工段 × 員工）──────────────────────────
+export function useTaskAssignments(params: Params = {}, enabled = true) {
+  return useQuery({
+    queryKey: key("flow-units", "assignments", params),
+    queryFn: () => api.get<Paginated<FlowTaskAssignment>>("/task-assignments", params),
+    enabled,
+  });
+}
+
+export function useAddTaskAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { task: number; status: string; assignee: number; qty_assigned: string }) =>
+      api.post<FlowTaskAssignment>("/task-assignments", body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+/** 員工回報自己的分配（只送 qty_done）；經理也能改派 */
+export function useSaveTaskAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number } & Record<string, unknown>) =>
+      api.patch<FlowTaskAssignment>(`/task-assignments/${id}`, body),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+export function useDeleteTaskAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/task-assignments/${id}`),
+    onSuccess: () => invalidateFlows(qc),
+  });
+}
+
+/** 員工視圖（D46）：每個員工手上有什麼、該月完成什麼。掛在 flow-units 鍵下，操作後自動刷新 */
+export function useStaffWorkload(month: string) {
+  return useQuery({
+    queryKey: key("flow-units", "staff-workload", month),
+    queryFn: () => api.get<StaffWorkload>("/staff-workload", { month }),
   });
 }
 
@@ -120,14 +276,6 @@ export function useTrackingUnits(params: Params = {}, enabled = true) {
   return useQuery({
     queryKey: key("tracking-units", params),
     queryFn: () => api.get<Paginated<TrackingCard>>("/tracking-units", params),
-    enabled,
-  });
-}
-
-export function useBoard(params: Params, enabled = true) {
-  return useQuery({
-    queryKey: key("board", params),
-    queryFn: () => api.get<BoardData>("/tracking-units/board", params),
     enabled,
   });
 }
@@ -168,7 +316,6 @@ export function useStageLogs(id: number | null) {
 function invalidateTracking(qc: ReturnType<typeof useQueryClient>, id: number) {
   qc.invalidateQueries({ queryKey: key("tracking-unit", id) });
   qc.invalidateQueries({ queryKey: key("tracking-units") });
-  qc.invalidateQueries({ queryKey: key("board") });
   qc.invalidateQueries({ queryKey: key("dashboard") });
 }
 
@@ -206,10 +353,11 @@ export function useReportProgress() {
 }
 
 // ── 應收款 ─────────────────────────────────────────────────────────
-export function useMilestones(params: Params = {}) {
+export function useMilestones(params: Params = {}, enabled = true) {
   return useQuery({
     queryKey: key("billing", "milestones", params),
     queryFn: () => api.get<Paginated<Milestone>>("/billing-milestones", params),
+    enabled,
   });
 }
 

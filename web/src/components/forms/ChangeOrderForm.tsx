@@ -215,7 +215,7 @@ function Row({
           </>
         )}
         {order.status === "submitted" && !canApprove && (
-          <span className="text-[11px] text-ink-3">等待經營者核准</span>
+          <span className="text-[11px] text-ink-3">等待經理核准</span>
         )}
       </div>
     </Card>

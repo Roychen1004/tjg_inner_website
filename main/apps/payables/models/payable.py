@@ -51,6 +51,12 @@ class Payable(TimeStampedModel):
         "projects.Project", verbose_name="專案",
         on_delete=models.PROTECT, related_name="payables",
     )
+    flow_unit = models.ForeignKey(
+        "tracking.FlowUnit", verbose_name="所屬流程",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="payables",
+        help_text="這筆錢是為了哪件事花的——訂料款掛「訂料與採購」、"
+                  "表處委外款掛「表面處理」。追蹤單元的花錢內容由此對回來",
+    )
     vendor = models.ForeignKey(
         "masters.Vendor", verbose_name="廠商",
         on_delete=models.PROTECT, related_name="payables",
@@ -142,6 +148,8 @@ class Payable(TimeStampedModel):
     def clean(self):
         if self.subcontract_id and self.project_id and self.subcontract.project_id != self.project_id:
             raise ValidationError({"subcontract": "分包合約不屬於這個專案"})
+        if self.flow_unit_id and self.project_id and self.flow_unit.project_id != self.project_id:
+            raise ValidationError({"flow_unit": "流程單元不屬於這個專案"})
         if self.retention_amount and self.retention_amount > self.amount:
             raise ValidationError({"retention_amount": "保留款不能超過本次計價金額"})
         if self.payment_method == PaymentMethod.CHECK and self.check_due_date and self.due_date:
@@ -166,13 +174,13 @@ class Payable(TimeStampedModel):
         )
 
     def recalc_amounts(self):
-        """稅額與實付金額由未稅金額推導，不讓使用者自己算。
+        """實付金額＝金額－保留款。
 
-        `tax_amount` 已經被明確填過（含填 0）就尊重它——
-        免稅、零稅率、國外廠商都是真實存在的情況。
+        D48（老闆確認）：**所有金額一律填稅後**，系統不再自動加 5%——
+        `tax_amount` 沒填就當 0。舊資料填過稅額的照舊尊重，數字不動。
         """
         if self.tax_amount is None:
-            self.tax_amount = (self.amount * TAX_RATE).quantize(Decimal("1"))
+            self.tax_amount = Decimal("0")
         self.payable_amount = self.amount + self.tax_amount - (self.retention_amount or Decimal("0"))
         return self.payable_amount
 

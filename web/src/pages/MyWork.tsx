@@ -1,0 +1,322 @@
+/**
+ * 我的任務
+ *
+ * 回答的問題：**今天輪到我做什麼**。
+ *
+ * 員工登入的首頁。兩種東西（D41 起）：
+ *   工作分配　被分到的工段分量（如「鐵材 切割中 50 噸」）——直接填完成量回報
+ *   流程單元　被指派當主要負責人的流程，逾期排最前面
+ * 完成不需要主管再確認（老闆定的）——按了完成就是完成。
+ */
+import { CheckCircle2, ChevronRight, Play } from "lucide-react";
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+
+import { Link } from "react-router-dom";
+
+import { ApiError } from "@/api/client";
+import { useFlowTransition, useFlowUnits, useMilestones, useSaveTaskAssignment, useTaskAssignments } from "@/api/hooks";
+import { useCurrentUser } from "@/api/hooks/useAuth";
+import type { FlowTaskAssignment, FlowUnit, Milestone } from "@/api/types";
+import FlowStateBadge from "@/components/tracking/FlowStateBadge";
+import FlowUnitModal from "@/components/tracking/FlowUnitModal";
+import { Button, Card, EmptyState, ErrorState, SectionTitle, Spinner } from "@/components/ui";
+import { useToast } from "@/components/ui/Toast";
+
+export default function MyWork() {
+  const { data: user } = useCurrentUser();
+  const { data, isLoading, error, refetch } = useFlowUnits({
+    assignee: "me",
+    page_size: 200,
+  });
+  const assignments = useTaskAssignments({ assignee: "me", open: "true", page_size: 100 });
+  // 指定給我收款的期別（D45）——只有看得到金流的人才抓
+  const collectibles = useMilestones(
+    { accountant: "me", state: "claimable,invoiced", page_size: 50 },
+    Boolean(user?.permissions.view_money),
+  );
+  const [openUnit, setOpenUnit] = useState<number | null>(null);
+
+  // 通知的連結帶 ?unit=，點過來直接打開那一張任務
+  const [searchParams] = useSearchParams();
+  const deepLink = searchParams.get("unit");
+  const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
+  if (deepLink && openedDeepLink !== deepLink) {
+    setOpenedDeepLink(deepLink);
+    setOpenUnit(Number(deepLink));
+  }
+
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
+
+  const units = (data?.results ?? []).filter((u) => u.state !== "na");
+  const myAssignments = assignments.data?.results ?? [];
+  const myCollectibles = collectibles.data?.results ?? [];
+  const overdue = units.filter((u) => u.is_overdue);
+  const doing = units.filter((u) => u.state === "doing" && !u.is_overdue);
+  const todo = units.filter((u) => u.state === "todo" && !u.is_overdue);
+  const done = units
+    .filter((u) => u.state === "done")
+    .sort((a, b) => (b.actual_end ?? "").localeCompare(a.actual_end ?? ""))
+    .slice(0, 10);
+
+  if (units.length === 0 && myAssignments.length === 0 && myCollectibles.length === 0) {
+    return (
+      <EmptyState
+        title="目前沒有指派給你的任務"
+        hint="管理者把流程或工作分配給你之後，會出現在這裡，同時你也會收到通知（右上角鈴鐺）"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {myCollectibles.length > 0 && (
+        <section>
+          <SectionTitle>
+            輪到我收款
+            <span className="ml-1.5 text-xs font-normal text-ink-3">{myCollectibles.length} 期</span>
+          </SectionTitle>
+          <ul className="space-y-2">
+            {myCollectibles.map((m) => (
+              <CollectCard key={m.id} milestone={m} />
+            ))}
+          </ul>
+        </section>
+      )}
+      {myAssignments.length > 0 && (
+        <section>
+          <SectionTitle>
+            分給我的工作
+            <span className="ml-1.5 text-xs font-normal text-ink-3">{myAssignments.length} 份</span>
+          </SectionTitle>
+          <ul className="space-y-2">
+            {myAssignments.map((a) => (
+              <AssignmentCard key={a.id} assignment={a} onOpen={() => setOpenUnit(a.unit)} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {overdue.length > 0 && (
+        <Group title="逾期——先處理這些" units={overdue} onOpen={setOpenUnit} urgent />
+      )}
+      {doing.length > 0 && <Group title="進行中" units={doing} onOpen={setOpenUnit} />}
+      {todo.length > 0 && <Group title="待開始" units={todo} onOpen={setOpenUnit} />}
+      {done.length > 0 && <Group title="最近完成" units={done} onOpen={setOpenUnit} muted />}
+
+      <FlowUnitModal unitId={openUnit} onClose={() => setOpenUnit(null)} />
+    </div>
+  );
+}
+
+/** 指定給我收款的期別（D45）：點過去金流分頁開單／登收款 */
+function CollectCard({ milestone: m }: { milestone: Milestone }) {
+  return (
+    <Card as="li" className="p-0">
+      <Link
+        to={`/finance?milestone=${m.id}`}
+        className="flex items-center gap-2 p-3 transition-base hover:bg-page"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-bold text-ink">{m.label}</span>
+            <span className="rounded-full bg-page px-2 py-0.5 text-[11px] font-semibold text-ink-2">
+              {m.state_label}
+            </span>
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+            {m.project_name}
+            {m.trigger_unit_name && `·由「${m.trigger_unit_name}」完成觸發`}
+          </span>
+        </span>
+        <span className="shrink-0 text-sm font-bold tabular-nums text-ink">
+          {Number(m.amount).toLocaleString("zh-TW")} 元
+        </span>
+        <ChevronRight size={15} className="shrink-0 text-ink-3" />
+      </Link>
+    </Card>
+  );
+}
+
+/** 一份分到我頭上的工段分量：直接填完成量回報，做完通知主要負責人 */
+function AssignmentCard({
+  assignment: a,
+  onOpen,
+}: {
+  assignment: FlowTaskAssignment;
+  onOpen: () => void;
+}) {
+  const save = useSaveTaskAssignment();
+  const toast = useToast();
+  const [value, setValue] = useState(String(Number(a.qty_done)));
+
+  const assignedNum = Number(a.qty_assigned);
+  const pct = assignedNum ? Math.round((Number(a.qty_done) / assignedNum) * 100) : 0;
+
+  function commit() {
+    if (value === "" || Number(value) === Number(a.qty_done)) {
+      setValue(String(Number(a.qty_done)));
+      return;
+    }
+    save.mutate(
+      { id: a.id, qty_done: value },
+      {
+        onSuccess: (saved) => {
+          setValue(String(Number(saved.qty_done)));
+          toast.success(
+            `${saved.task_name}·${saved.status} ${Number(saved.qty_done)}/${Number(saved.qty_assigned)}`,
+            saved.is_done ? ["這份做完了，主要負責人會收到通知"] : [],
+          );
+        },
+        onError: (e) => {
+          setValue(String(Number(a.qty_done)));
+          toast.error(e instanceof ApiError ? e.body.detail ?? "回報失敗" : "回報失敗");
+        },
+      },
+    );
+  }
+
+  return (
+    <Card as="li" className="flex items-center gap-2 p-3">
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-ink">
+            {a.task_name} {a.status}
+            <span className="ml-1.5 font-normal tabular-nums text-ink-2">
+              {Number(a.qty_assigned)}
+              {a.unit_of_measure && ` ${a.unit_of_measure}`}
+            </span>
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+            {a.project_name}·{a.flow_name}
+          </span>
+          <span className="mt-1 block h-1 rounded-full bg-line">
+            <span
+              className="block h-full rounded-full"
+              style={{ width: `${pct}%`, background: "var(--color-stage-2)" }}
+            />
+          </span>
+        </span>
+        <ChevronRight size={15} className="shrink-0 text-ink-3" />
+      </button>
+      <div className="flex shrink-0 items-center gap-1 text-xs">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={assignedNum}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          aria-label={`${a.task_name} ${a.status} 的完成量`}
+          className="w-16 rounded-lg border border-line bg-page px-2 py-1.5 text-right tabular-nums text-ink"
+        />
+        <span className="tabular-nums text-ink-3">/{assignedNum}</span>
+      </div>
+    </Card>
+  );
+}
+
+function Group({
+  title,
+  units,
+  onOpen,
+  urgent = false,
+  muted = false,
+}: {
+  title: string;
+  units: FlowUnit[];
+  onOpen: (id: number) => void;
+  urgent?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <section>
+      <SectionTitle>
+        <span style={urgent ? { color: "var(--color-delayed)" } : undefined}>
+          {title}
+          <span className="ml-1.5 text-xs font-normal text-ink-3">{units.length} 項</span>
+        </span>
+      </SectionTitle>
+      <ul className="space-y-2">
+        {units.map((unit) => (
+          <TaskCard key={unit.id} unit={unit} onOpen={() => onOpen(unit.id)} muted={muted} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function TaskCard({
+  unit,
+  onOpen,
+  muted,
+}: {
+  unit: FlowUnit;
+  onOpen: () => void;
+  muted: boolean;
+}) {
+  const transition = useFlowTransition();
+  const toast = useToast();
+
+  function move(toState: string) {
+    transition.mutate(
+      { id: unit.id, to_state: toState },
+      {
+        onSuccess: (saved) => toast.success(`${saved.flow_name} → ${saved.state_label}`),
+        onError: (err) =>
+          toast.error(err instanceof ApiError ? err.body.detail ?? "操作失敗" : "操作失敗"),
+      },
+    );
+  }
+
+  return (
+    <Card as="li" className={`flex items-center gap-1.5 p-3 ${muted ? "opacity-70" : ""}`}>
+      {/* 主區塊開明細；動作按鈕在外面，不做巢狀按鈕 */}
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-bold text-ink">
+              {unit.flow_code} {unit.flow_name}
+            </span>
+            <FlowStateBadge state={unit.state} overdue={unit.is_overdue} />
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+            {unit.project_name}
+            {unit.plan_end && (
+              <span
+                className="ml-2"
+                style={unit.is_overdue ? { color: "var(--color-delayed)", fontWeight: 600 } : undefined}
+              >
+                預計 {unit.plan_end} 完成
+              </span>
+            )}
+          </span>
+          {unit.description && (
+            <span className="mt-1 line-clamp-2 block text-xs leading-snug text-ink-2">
+              {unit.description}
+            </span>
+          )}
+        </span>
+        <ChevronRight size={15} className="shrink-0 text-ink-3" />
+      </button>
+
+      {unit.state === "todo" && (
+        <Button variant="primary" onClick={() => move("doing")} loading={transition.isPending}>
+          <Play size={13} />
+          開始
+        </Button>
+      )}
+      {unit.state === "doing" && !unit.is_batch_driven && (
+        <Button variant="primary" onClick={() => move("done")} loading={transition.isPending}>
+          <CheckCircle2 size={13} />
+          完成
+        </Button>
+      )}
+    </Card>
+  );
+}

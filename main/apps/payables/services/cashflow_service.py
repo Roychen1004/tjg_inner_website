@@ -33,7 +33,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from main.apps.billing.models import BillingMilestone
-from main.apps.payables.models import TAX_RATE, Payable, Subcontract
+from main.apps.payables.models import Payable, Subcontract
 from main.apps.payables.services import terms_service
 from main.utils.choices import (
     Certainty,
@@ -47,12 +47,7 @@ DISCLAIMER = (
     "公司整體現金部位請再扣掉每月固定成本。"
 )
 
-#: 未稅 → 含稅。實際進出帳戶的錢是含稅的
-WITH_TAX = Decimal("1") + TAX_RATE
-
-
-def _tax(amount):
-    return (Decimal(amount or 0) * WITH_TAX).quantize(Decimal("1"))
+# D48（老闆確認）：所有金額一律是稅後——現金流直接用存的數字，不再 ×1.05
 
 
 # ── 分桶 ───────────────────────────────────────────────────────────
@@ -113,7 +108,7 @@ def collect_inflows(buckets, projects, today):
     milestones = (
         BillingMilestone.objects.filter(project__in=projects)
         .exclude(state=MilestoneState.RECEIVED)
-        .select_related("project__customer")
+        .select_related("project__customer", "trigger_unit")
     )
     for m in milestones:
         customer = m.project.customer
@@ -134,15 +129,18 @@ def collect_inflows(buckets, projects, today):
             note = "可請款，尚未開單"
         else:
             # 未到期：日期是人填的，所以是「預估」。
-            # 沒填日期的完全不列——不知道什麼時候的錢，放在任何一格都是編的
-            if not m.expected_date or m.expected_date > window_end:
+            # 沒填預計請款日就用觸發流程的預計完成日（甘特排程餵金流預測）；
+            # 兩個都沒有的完全不列——不知道什麼時候的錢，放在任何一格都是編的
+            base = m.forecast_date
+            if not base or base > window_end:
                 continue
-            when = terms_service.due_date(m.expected_date, term_type, term_days)
+            when = terms_service.due_date(base, term_type, term_days)
             certainty = Certainty.ESTIMATED
-            note = f"預計 {m.expected_date} 可請款"
+            source = "" if m.expected_date else "（取自觸發流程的排程）"
+            note = f"預計 {base} 可請款{source}"
 
         rows.append({
-            "date": when, "amount": _tax(m.amount), "certainty": certainty,
+            "date": when, "amount": m.amount, "certainty": certainty,
             "party": customer.name, "project": m.project.name,
             "title": m.label, "note": note,
             "kind": "milestone", "id": m.pk,
@@ -189,7 +187,7 @@ def collect_outflows(buckets, projects, today):
             continue
         for when, amount in _spread(contract, remaining, today, window_end):
             rows.append({
-                "date": when, "amount": _tax(amount), "certainty": Certainty.ESTIMATED,
+                "date": when, "amount": amount, "certainty": Certainty.ESTIMATED,
                 "party": contract.vendor.name, "project": contract.project.name,
                 "title": f"{contract.title}（未計價餘額均攤）",
                 "note": f"合約剩 {remaining:,.0f} 元未計價",
@@ -309,7 +307,7 @@ def forecast(projects, periods=12, granularity="week", certainties=None, today=N
             {"value": v, "label": label} for v, label in Certainty.choices
         ],
         "disclaimer": DISCLAIMER,
-        "tax_note": f"金額均為含稅（營業稅 {TAX_RATE * 100:.0f}%）——實際進出帳戶的是含稅金額",
+        "tax_note": "金額即實際收付金額（稅後）——系統不另外加稅",
     }
 
 

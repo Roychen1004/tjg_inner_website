@@ -47,8 +47,14 @@ TARGETS = {
         "write_permission": "edit_project",
     },
     "tracking-unit": {
-        "label": "追蹤單元",
+        "label": "構件批次",
         "model": ("tracking", "trackingunit"),
+        "scope": "main.utils.scoping.scope_tracking_units",
+        "write_permission": "edit_tracking",
+    },
+    "flow-unit": {
+        "label": "流程單元",
+        "model": ("tracking", "flowunit"),
         "scope": "main.utils.scoping.scope_tracking_units",
         "write_permission": "edit_tracking",
     },
@@ -123,7 +129,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
         ]
 
     def get_can_delete(self, obj) -> bool:
-        """刪除限**上傳者本人或經營者**。
+        """刪除限**上傳者本人或經理**。
 
         合約與簽收單是爭議時的依據。讓任何有編輯權的人都能刪掉別人上傳的合約，
         等於把公司的證據交給運氣。
@@ -182,7 +188,7 @@ class AttachmentListView(APIView):
 
         return Response({
             "results": AttachmentSerializer(rows, many=True, context={"request": request}).data,
-            "can_upload": self._can_upload(request.user, target),
+            "can_upload": self._can_upload(request.user, target, obj),
             "categories": [
                 {"value": v, "label": label} for v, label in AttachmentCategory.choices
             ],
@@ -199,7 +205,7 @@ class AttachmentListView(APIView):
             raise BusinessRuleError("必須指定 target、id 與 file")
 
         obj, content_type, spec = resolve_target(target, object_id, request.user)
-        if not self._can_upload(request.user, target):
+        if not self._can_upload(request.user, target, obj):
             return Response(
                 {"type": "permission_denied", "detail": f"你沒有上傳{spec['label']}附件的權限"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -236,9 +242,16 @@ class AttachmentListView(APIView):
         )
 
     @staticmethod
-    def _can_upload(user, target):
+    def _can_upload(user, target, obj=None):
         spec = TARGETS.get(target)
-        return bool(spec) and has_permission(user, spec["write_permission"])
+        if not spec:
+            return False
+        if has_permission(user, spec["write_permission"]):
+            return True
+        # 員工能給**自己被指派的**流程單元傳產出物——上傳權跟著任務走
+        if target == "flow-unit" and obj is not None:
+            return getattr(obj, "assignee_id", None) == user.pk
+        return False
 
 
 def _project_of(obj):
@@ -297,7 +310,7 @@ class AttachmentDetailView(APIView):
             return Response(
                 {
                     "type": "permission_denied",
-                    "detail": "只有上傳者本人或經營者能刪除附件。"
+                    "detail": "只有上傳者本人或經理能刪除附件。"
                               "合約與簽收單是爭議時的依據，不讓任何有編輯權的人都刪得掉",
                 },
                 status=status.HTTP_403_FORBIDDEN,

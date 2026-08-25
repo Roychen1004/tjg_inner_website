@@ -20,17 +20,7 @@ import {
 } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { ProjectDetail, Subcontract } from "@/api/types";
-import {
-  Button,
-  Card,
-  Field,
-  FormErrors,
-  Money,
-  Modal,
-  ProgressBar,
-  SectionTitle,
-  inputClass,
-} from "@/components/ui";
+import { Button, Card, DateInput, Field, FormErrors, inputClass, Modal, Money, ProgressBar, SectionTitle } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import PayableForm from "@/components/forms/PayableForm";
 import { useVendors } from "@/api/hooks/useVendors";
@@ -376,10 +366,10 @@ function FormModal({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="開始日">
-          <input type="date" value={form.start_date} onChange={set("start_date")} className={inputClass} />
+          <DateInput value={form.start_date} onChange={(v) => set("start_date")({ target: { value: v } })} />
         </Field>
         <Field label="預計完成" error={error?.fieldError("end_date")} hint="未計價餘額會攤到這天之前">
-          <input type="date" value={form.end_date} onChange={set("end_date")} className={inputClass} />
+          <DateInput value={form.end_date} onChange={(v) => set("end_date")({ target: { value: v } })} />
         </Field>
       </div>
 

@@ -13,7 +13,7 @@ import { useState } from "react";
 import { ApiError, api } from "@/api/client";
 import { useOptions } from "@/api/hooks";
 import type { StageTemplate, TrackingDetail } from "@/api/types";
-import { Button, Field, FormErrors, inputClass, Modal, Select } from "@/components/ui";
+import { Button, DateInput, Field, FormErrors, inputClass, Modal, Select } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -74,6 +74,12 @@ export default function UnitForm({
     enabled: open,
     staleTime: 10 * 60 * 1000,
   });
+
+  // 只剩鋼構模板時自動帶入預設，不用多問一題
+  if (open && !unit && !form.template && templates.data?.length) {
+    const def = templates.data.find((t) => t.is_default) ?? templates.data[0];
+    setForm((f) => ({ ...f, template: String(def.id) }));
+  }
 
   const key = unit ? `edit-${unit.id}` : `new-${defaultProject ?? ""}`;
   if (open && loadedKey !== key) {
@@ -175,7 +181,7 @@ export default function UnitForm({
     (!isBatch || form.qty_total);
 
   return (
-    <Modal open={open} onClose={close} title={unit ? `修改 ${unit.name}` : "新增追蹤單元"}>
+    <Modal open={open} onClose={close} title={unit ? `修改 ${unit.name}` : "新增構件批次"}>
       {!unit && (
         <>
           <Field label="專案" required error={error?.fieldError("project")}>
@@ -188,34 +194,42 @@ export default function UnitForm({
             />
           </Field>
 
-          <Field
-            label="階段流程"
-            required
-            hint={
-              selected
-                ? `共 ${selected.stages.length} 站：${selected.stages.map((s) => s.name).join(" → ")}`
-                : "流程是設定出來的，不是寫死的。要新增流程請至 /admin/masters/stagetemplate/"
-            }
-            error={error?.fieldError("template")}
-          >
-            <select
-              value={form.template}
-              onChange={(e) => set("template")(e.target.value)}
-              className={inputClass}
+          {/* 只有一條批次流程時自動帶入，不多問。多條才給選 */}
+          {(templates.data?.length ?? 0) > 1 && (
+            <Field
+              label="階段流程"
+              required
+              hint={
+                selected
+                  ? `共 ${selected.stages.length} 站：${selected.stages.map((s) => s.name).join(" → ")}`
+                  : "流程是設定出來的，不是寫死的。要新增流程請至 /admin/masters/stagetemplate/"
+              }
+              error={error?.fieldError("template")}
             >
-              <option value="">請選擇</option>
-              {grouped.map(([label, items]) => (
-                <optgroup key={label} label={label}>
-                  {items.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}（{t.stages.length} 站）
-                      {t.is_default ? " · 預設" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
+              <select
+                value={form.template}
+                onChange={(e) => set("template")(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">請選擇</option>
+                {grouped.map(([label, items]) => (
+                  <optgroup key={label} label={label}>
+                    {items.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}（{t.stages.length} 站）
+                        {t.is_default ? " · 預設" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+          )}
+          {selected && (templates.data?.length ?? 0) <= 1 && (
+            <p className="-mt-1 mb-3 text-[11px] leading-relaxed text-ink-3">
+              廠內七站：{selected.stages.map((s) => s.name).join(" → ")}
+            </p>
+          )}
         </>
       )}
 
@@ -294,12 +308,7 @@ export default function UnitForm({
       )}
 
       <Field label="預計完成">
-        <input
-          type="date"
-          value={form.plan_end}
-          onChange={(e) => set("plan_end")(e.target.value)}
-          className={inputClass}
-        />
+        <DateInput value={form.plan_end} onChange={set("plan_end")} />
       </Field>
 
       <Field label="備註">

@@ -29,6 +29,28 @@ class ProjectType(models.TextChoices):
     MIXED = "mixed", "混合"
 
 
+class ProjectLifecycle(models.TextChoices):
+    """專案生命週期（2026-08-14 流程制改版）。
+
+    與 Status（健康燈號）正交：一個案子可以「進行中」且「延誤」。
+    「未成交」保留最小欄位——報價沒成的案子不該在系統裡當死案。
+    """
+
+    ACTIVE = "active", "進行中"
+    LOST = "lost", "未成交"
+    PAUSED = "paused", "暫停"
+    CLOSED = "closed", "已結案"
+
+
+class FlowState(models.TextChoices):
+    """流程單元狀態。負責人回報完成即完成，不做二次覆核（2026-08-14 確認）。"""
+
+    TODO = "todo", "未開始"
+    DOING = "doing", "進行中"
+    DONE = "done", "已完成"
+    NA = "na", "不適用"
+
+
 class UnitType(models.TextChoices):
     """追蹤單元類型。同一張表靠這個欄位分流。"""
 
