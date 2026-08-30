@@ -81,7 +81,7 @@ class PayableViewSet(BaseModelViewSet):
 
     queryset = Payable.objects.select_related(
         "project", "vendor", "subcontract", "flow_unit__flow_item"
-    )
+    ).prefetch_related("lines__item")   # D52 明細
     serializer_class = PayableSerializer
     write_serializer_class = PayableWriteSerializer
     scope_function = staticmethod(scope_payables)
@@ -277,9 +277,9 @@ PAYABLE_OPTIONS = {
 }
 
 
-from .cashflow import CashflowForecastView, ProjectPnlView  # noqa: E402
+from .cashflow import CashBalanceView, CashflowForecastView, ProjectPnlView  # noqa: E402
 
 __all__ = [
-    "CashflowForecastView", "PAYABLE_OPTIONS", "PayableViewSet",
+    "CashBalanceView", "CashflowForecastView", "PAYABLE_OPTIONS", "PayableViewSet",
     "ProjectPnlView", "SubcontractViewSet",
 ]

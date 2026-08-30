@@ -36,7 +36,9 @@ class FlowUnit(TimeStampedModel):
       · 構件批次回答「階段 4 的每批貨走到哪一站」
       批次走站時自動彙總進 batch_stage_seq 有值的流程單元（4.1／4.2／4.3／4.5）。
 
-    順序不存在這張表——順序永遠取 flow_item.seq（目錄定死，不可重排）。
+    D49（2026-08-29）：順序改存在**這張表**（seq），每個案子可以自己拖移重排、
+    也可以新增目錄上沒有的自訂流程（flow_item 為空、名稱存在 name）。
+    生成時 seq 從目錄抄（×10 留插入空隙），stage 也直接記在單元上。
     """
 
     project = models.ForeignKey(
@@ -46,6 +48,26 @@ class FlowUnit(TimeStampedModel):
     flow_item = models.ForeignKey(
         "masters.FlowItem", verbose_name="流程工作項",
         on_delete=models.PROTECT, related_name="units",
+        null=True, blank=True, help_text="自訂流程（D49）沒有目錄來源，此欄為空",
+    )
+    # ── 順序與身分（D49：每案自己的，不再跟著目錄）───────────────────
+    seq = models.IntegerField(
+        "案內順序", null=True, blank=True,
+        help_text="生成時從目錄抄（seq×10），之後可拖移重排；小的排前面",
+    )
+    name = models.CharField(
+        "自訂名稱", max_length=50, blank=True,
+        help_text="自訂流程的名稱；目錄流程留空、顯示目錄名",
+    )
+    code = models.CharField(
+        "顯示編號", max_length=10, blank=True,
+        help_text="依案內順序編（D51）：3.4 拖到 3.3 前面就變 3.3。"
+                  "由 flow_service.renumber_codes 維護，不手填",
+    )
+    stage = models.ForeignKey(
+        "masters.FlowStage", verbose_name="大階段",
+        on_delete=models.PROTECT, related_name="flow_units", null=True, blank=True,
+        help_text="生成時從目錄抄；自訂流程由使用者選",
     )
 
     assignee = models.ForeignKey(
@@ -106,7 +128,7 @@ class FlowUnit(TimeStampedModel):
     class Meta:
         db_table = "tracking_flowunit"
         verbose_name = verbose_name_plural = "流程單元"
-        ordering = ["project", "flow_item__seq"]
+        ordering = ["project", "seq", "id"]
         constraints = [
             models.UniqueConstraint(fields=["project", "flow_item"], name="uniq_flowunit_project_item"),
             models.CheckConstraint(condition=models.Q(qty_done__gte=0), name="ck_flowunit_qty_nonneg"),
@@ -127,20 +149,55 @@ class FlowUnit(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.project.name}·{self.flow_item.name}"
+        return f"{self.project.name}·{self.flow_display_name}"
+
+    # ── 顯示用（D49：自訂流程沒有 flow_item，一律走這三個入口）────────
+    @property
+    def flow_display_name(self):
+        return self.name or (self.flow_item.name if self.flow_item else "（未命名流程）")
+
+    @property
+    def flow_display_code(self):
+        """顯示編號：位置制（D51）優先；還沒重編過的舊資料退回目錄代號。"""
+        if self.code:
+            return self.code
+        return self.flow_item.code if self.flow_item else "自訂"
+
+    @property
+    def display_stage(self):
+        """單元的大階段：D49 起存在單元上；舊資料回頭看目錄。"""
+        return self.stage or (self.flow_item.stage if self.flow_item else None)
 
     @classmethod
     def create_for(cls, project, flow_item):
-        """生成單元的唯一入口——把目錄的內容抄進來當這個案子的預設值。
+        """由目錄生成單元的唯一入口——把目錄的內容抄進來當這個案子的預設值。
 
         主要負責人預設＝新增專案的人（D41）：每件事一開始都有人扛，
         經理之後在排程表逐列改派即可（改派才會發通知，這裡不發）。
+        seq 抄目錄順序 ×10——之後拖移插隊有空隙可用（D49）。
         """
         return cls.objects.create(
             project=project, flow_item=flow_item,
+            seq=flow_item.seq * 10, stage=flow_item.stage,
             description=flow_item.description,
             deliverables=flow_item.deliverables,
             done_criteria=flow_item.done_criteria,
+            assignee_id=project.created_by_id or project.owner_id,
+        )
+
+    @classmethod
+    def create_custom(cls, project, name, stage, seq=None):
+        """新增目錄上沒有的自訂流程（D49）。預設排在該階段的最後。"""
+        if seq is None:
+            last = (
+                cls.objects.filter(project=project, stage=stage)
+                .exclude(seq=None).order_by("-seq").values_list("seq", flat=True).first()
+            )
+            # 目錄單元的 seq 落在 s*100+10 ~ s*100+90（目錄 seq×10）——
+            # 自訂預設接在該階段最後一條後面，仍排在下一階段（(s+1)*100+10）前
+            seq = (last or stage.seq * 100 + 90) + 1
+        return cls.objects.create(
+            project=project, flow_item=None, name=name, stage=stage, seq=seq,
             assignee_id=project.created_by_id or project.owner_id,
         )
 
@@ -158,7 +215,7 @@ class FlowUnit(TimeStampedModel):
         """
         if self.state == FlowState.DONE:
             return 100.0
-        if self.flow_item.batch_stage_seq and self.qty_total:
+        if self.flow_item and self.flow_item.batch_stage_seq and self.qty_total:
             return round(float(self.qty_done / self.qty_total * 100), 1)
         tasks = list(self.tasks.all())
         if tasks:
@@ -184,7 +241,7 @@ class FlowUnit(TimeStampedModel):
         列表要用 viewset 的 `_has_batches` annotation（Exists 子查詢），
         不然這裡的 exists() 會一列打一次 DB。
         """
-        if not self.flow_item.batch_stage_seq:
+        if not (self.flow_item and self.flow_item.batch_stage_seq):
             return False
         cached = getattr(self, "_has_batches", None)
         if cached is not None:

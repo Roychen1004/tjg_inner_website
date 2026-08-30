@@ -55,7 +55,7 @@ export default function SubcontractSection({ project }: { project: ProjectDetail
       </SectionTitle>
 
       {rows.length === 0 ? (
-        <p className="rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+        <p className="rounded-lg bg-page px-3 py-2 text-xs leading-relaxed text-ink-2">
           跟包商、材料商、外包廠簽的合約放這裡。
           <strong>有了它，這個案子的成本與現金流才算得出來</strong>——
           否則系統只知道錢什麼時候進來，不知道什麼時候出去。
@@ -118,7 +118,7 @@ function Row({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-ink">{row.title}</p>
-          <p className="mt-0.5 text-[11px] text-ink-3">
+          <p className="mt-0.5 text-xs text-ink-3">
             {row.code} · {row.vendor_name} · {row.category_label}
           </p>
         </div>
@@ -160,12 +160,12 @@ function Row({
           compact
         />
       </div>
-      <dl className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+      <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
         <Stat label="合約額" value={row.contract_amount} />
         <Stat label="已計價" value={row.billed_amount} />
         <Stat label="已付款" value={row.paid_amount} />
       </dl>
-      <p className="mt-2 text-[11px] text-ink-3">
+      <p className="mt-2 text-xs text-ink-3">
         {row.payment_terms_display}
         {Number(row.retention_pct) > 0 && ` · 保留款 ${row.retention_pct}%`}
       </p>
@@ -340,7 +340,7 @@ function FormModal({
 
       {/* 月結最容易算錯，所以直接在旁邊寫出來算法 */}
       {form.payment_term_type === "month_end" && (
-        <p className="-mt-1 mb-3 flex gap-1.5 rounded-lg bg-page px-2.5 py-2 text-[11px] leading-relaxed text-ink-2">
+        <p className="-mt-1 mb-3 flex gap-1.5 rounded-lg bg-page px-2.5 py-2 text-xs leading-relaxed text-ink-2">
           <AlertTriangle size={13} className="mt-0.5 shrink-0" />
           <span>
             月結是從<strong>計價當月的月底</strong>開始算。

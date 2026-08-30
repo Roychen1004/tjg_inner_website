@@ -226,7 +226,7 @@ export default function UnitForm({
             </Field>
           )}
           {selected && (templates.data?.length ?? 0) <= 1 && (
-            <p className="-mt-1 mb-3 text-[11px] leading-relaxed text-ink-3">
+            <p className="-mt-1 mb-3 text-xs leading-relaxed text-ink-3">
               廠內七站：{selected.stages.map((s) => s.name).join(" → ")}
             </p>
           )}
@@ -263,7 +263,7 @@ export default function UnitForm({
               />
             </Field>
           </div>
-          <p className="-mt-1 mb-3 text-[11px] leading-relaxed text-ink-3">
+          <p className="-mt-1 mb-3 text-xs leading-relaxed text-ink-3">
             這是<strong>整批的總量</strong>。完成度算的是「目前這一站做了幾支」，
             換站會歸零重新算。
           </p>

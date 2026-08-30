@@ -119,7 +119,7 @@ export default function MilestoneForm({
       <FormErrors error={error} handled={["label", "percentage", "seq", "project"]} />
 
       {locked && (
-        <p className="mb-3 rounded-lg bg-page px-3 py-2 text-[11px] text-ink-2">
+        <p className="mb-3 rounded-lg bg-page px-3 py-2 text-xs text-ink-2">
           這一期已經請款，比例與金額不會重算——送出去的數字不能被系統改掉。
         </p>
       )}

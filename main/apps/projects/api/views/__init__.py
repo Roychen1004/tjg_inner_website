@@ -28,9 +28,10 @@ class ProjectViewSet(BaseModelViewSet):
     回答的問題：「這個案子進行到哪、還剩多少沒收」。
     """
 
+    # D49：卡片迷你甘特看 unit.stage（單元自己的大階段），不再經過 flow_item
     queryset = Project.objects.select_related(
         "customer", "owner"
-    ).prefetch_related("flow_units__flow_item__stage")
+    ).prefetch_related("flow_units__stage")
     serializer_class = ProjectListSerializer
     detail_serializer_class = ProjectDetailSerializer
     write_serializer_class = ProjectWriteSerializer
@@ -161,12 +162,120 @@ class ProjectViewSet(BaseModelViewSet):
         result = project_service.set_flows(
             project, request.data.get("flow_items", []), request.user
         )
-        project.refresh_from_db()
+        # 迷你甘特要吃 flow_units__stage 的 prefetch，重抓而不是 refresh
+        project = (
+            Project.objects.select_related("customer", "owner")
+            .prefetch_related("flow_units__stage")
+            .get(pk=project.pk)
+        )
         return Response({
             "project": ProjectDetailSerializer(
                 project, context=self.get_serializer_context()
             ).data,
             **result,
+        })
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"], url_path="add-flow")
+    def add_flow(self, request, pk=None):
+        """新增自訂流程（D49）。body：{"name": "…", "stage": 大階段 seq 或 id}
+
+        目錄上沒有、但這個案子需要的一步（如「拆除舊棚架」）。
+        預設排在該階段的最後，之後可拖移調整。
+        """
+        from main.apps.masters.models import FlowStage
+        from main.apps.tracking.models import FlowUnit
+        from main.apps.tracking.serializers import FlowUnitSerializer
+        from main.utils.permissions import has_permission
+
+        if not has_permission(request.user, "edit_project"):
+            return Response(
+                {"type": "permission_denied", "detail": "你沒有編輯專案流程的權限"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        name = str(request.data.get("name", "")).strip()
+        if not name:
+            return Response(
+                {"type": "validation_error", "detail": "請填寫流程名稱"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        stage = FlowStage.objects.filter(pk=request.data.get("stage")).first()
+        if stage is None:
+            return Response(
+                {"type": "validation_error", "detail": "請選擇大階段"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # 不走 get_object()——類別層的 select_related(customer/owner) 這裡用不到
+        project = scope_projects(Project.objects.all(), request.user).filter(pk=pk).first()
+        if project is None:
+            return Response(
+                {"type": "not_found", "detail": "找不到這個專案"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        unit = FlowUnit.create_custom(project, name, stage)
+        from main.apps.tracking.services.flow_service import renumber_codes
+
+        renumber_codes(project)
+        unit.refresh_from_db(fields=["code"])
+
+        from main.apps.core.models import ActivityLog
+        from main.utils.choices import ActivityCategory
+
+        ActivityLog.record(
+            f"{project.name} 新增自訂流程「{name}」（第{stage.seq}階段）",
+            ActivityCategory.PROJECT, actor=request.user, project=project, obj=project,
+        )
+        return Response(
+            FlowUnitSerializer(unit, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT)
+    @action(detail=True, methods=["post"], url_path="reorder-flows")
+    def reorder_flows(self, request, pk=None):
+        """拖移重排這個案子的流程順序（D49）。body：{"unit_ids": [依新順序]}
+
+        沒列到的單元保持原 seq；列出的依順序重編（10、20、30…）。
+        D37 的「順序全域定死」由老闆翻案——現在順序是每個案子自己的。
+        """
+        from main.utils.permissions import has_permission
+
+        if not has_permission(request.user, "edit_project"):
+            return Response(
+                {"type": "permission_denied", "detail": "你沒有編輯專案流程的權限"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        ids = request.data.get("unit_ids", [])
+        if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+            return Response(
+                {"type": "validation_error", "detail": "unit_ids 必須是單元 id 清單"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        project = self.get_object()
+        units = {u.pk: u for u in project.flow_units.all()}
+        if unknown := [i for i in ids if i not in units]:
+            return Response(
+                {"type": "validation_error", "detail": f"單元不屬於此專案：{unknown}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for pos, unit_id in enumerate(ids, start=1):
+            unit = units[unit_id]
+            unit.seq = pos * 10
+            unit.save(update_fields=["seq", "updated_at"])
+        # 顯示編號跟著新位置重編（D51）：3.4 拖到 3.3 前面就變 3.3
+        from main.apps.tracking.services.flow_service import renumber_codes
+
+        renumber_codes(project)
+        # 迷你甘特要吃 flow_units__stage 的 prefetch，重抓而不是 refresh
+        project = (
+            Project.objects.select_related("customer", "owner")
+            .prefetch_related("flow_units__stage")
+            .get(pk=project.pk)
+        )
+        return Response({
+            "project": ProjectDetailSerializer(
+                project, context=self.get_serializer_context()
+            ).data,
         })
 
     @extend_schema(responses=OpenApiTypes.BINARY)

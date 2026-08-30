@@ -217,11 +217,15 @@ def _spread(contract, remaining, today, window_end):
 
 
 # ── 組裝 ───────────────────────────────────────────────────────────
-def forecast(projects, periods=12, granularity="week", certainties=None, today=None):
+def forecast(projects, periods=12, granularity="week", certainties=None, today=None,
+             opening_balance=None):
     """回傳整張表。
 
     `certainties` 是要納入計算的等級（預設全部）。
     只勾「確定」時看到的就是最壞情況——那是這個功能真正有用的模式。
+
+    `opening_balance`（D49）：公司現有現金。有給的話「累計」列從這個數字
+    起算（缺口＝現金真的見底，不是專案收支軋不平）；沒給（None）照舊從 0。
     """
     today = today or timezone.localdate()
     allowed = set(certainties or Certainty.values)
@@ -253,7 +257,7 @@ def forecast(projects, periods=12, granularity="week", certainties=None, today=N
             cell["inflow" if direction == "in" else "outflow"][row["certainty"]] += row["amount"]
             cell["details"].append({**row, "direction": direction})
 
-    running = Decimal("0")
+    running = opening_balance if opening_balance is not None else Decimal("0")
     out_cells = []
     shortfall = None
     for cell in cells:
@@ -292,6 +296,8 @@ def forecast(projects, periods=12, granularity="week", certainties=None, today=N
         "generated_at": str(today),
         "cells": out_cells,
         "shortfall": shortfall,
+        # D49：null＝這個人看不到（或看單一專案）；有值＝累計已含這筆期初現金
+        "opening_balance": str(opening_balance) if opening_balance is not None else None,
         "totals": {
             "income": str(sum(Decimal(c["income"]) for c in out_cells)),
             "expense": str(sum(Decimal(c["expense"]) for c in out_cells)),

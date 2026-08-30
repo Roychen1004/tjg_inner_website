@@ -7,12 +7,13 @@
  * 物品主檔、位置階層、階段流程留在 Django Admin——欄位多、動得少，
  * Admin 的表單處理得比自己刻的好（決策 D26）。
  */
-import { Building2, KeyRound, Pencil, Plus, Truck, Users } from "lucide-react";
+import { Building2, KeyRound, ListChecks, Pencil, Plus, Truck, Users } from "lucide-react";
 import { useState } from "react";
 
 import { ApiError, api } from "@/api/client";
 import { useOptions } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
+import FlowTemplateBoard from "@/components/forms/FlowTemplateBoard";
 import {
   Button,
   Card,
@@ -23,6 +24,7 @@ import {
   inputClass,
   Modal,
   SearchInput,
+  Segmented,
   SectionTitle,
   Select,
   Spinner,
@@ -30,7 +32,7 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-type Tab = "customers" | "vendors" | "employees";
+type Tab = "customers" | "vendors" | "employees" | "flows";
 
 interface Customer {
   id: number;
@@ -81,6 +83,8 @@ const TABS: Array<{ key: Tab; label: string; icon: typeof Building2 }> = [
   { key: "customers", label: "客戶", icon: Building2 },
   { key: "vendors", label: "廠商", icon: Truck },
   { key: "employees", label: "員工", icon: Users },
+  // 流程模板（D49）只給經理與系統管理員——列表渲染時再過濾
+  { key: "flows", label: "流程模板", icon: ListChecks },
 ];
 
 export default function Settings() {
@@ -99,6 +103,7 @@ export default function Settings() {
         q: q || undefined,
         page_size: 100,
       }),
+    enabled: tab !== "flows", // 流程模板分頁有自己的資料流
   });
 
   const close = () => {
@@ -109,35 +114,39 @@ export default function Settings() {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg bg-page p-0.5">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => {
-                setTab(t.key);
-                setQ("");
-              }}
-              className={[
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-base",
-                tab === t.key ? "bg-card text-ink shadow-sm" : "text-ink-2",
-              ].join(" ")}
-            >
-              <t.icon size={13} />
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <SearchInput value={q} onChange={setQ} placeholder="搜尋名稱或代號…" />
-        {canEdit && (
-          <Button variant="primary" onClick={() => setCreating(true)}>
-            <Plus size={15} />
-            新增
-          </Button>
+        {/* 邊界標示的頂排選項（D50） */}
+        <Segmented
+          value={tab}
+          onChange={(v) => {
+            setTab(v as Tab);
+            setQ("");
+          }}
+          options={TABS.filter((t) => t.key !== "flows" || canEdit).map((t) => ({
+            value: t.key,
+            label: (
+              <>
+                <t.icon size={14} />
+                {t.label}
+              </>
+            ),
+          }))}
+        />
+        {tab !== "flows" && (
+          <>
+            <SearchInput value={q} onChange={setQ} placeholder="搜尋名稱或代號…" />
+            {canEdit && (
+              <Button variant="primary" onClick={() => setCreating(true)}>
+                <Plus size={15} />
+                新增
+              </Button>
+            )}
+          </>
         )}
       </div>
 
-      {list.isLoading ? (
+      {tab === "flows" ? (
+        <FlowTemplateBoard />
+      ) : list.isLoading ? (
         <Spinner />
       ) : list.error ? (
         <ErrorState error={list.error} onRetry={list.refetch} />
@@ -164,7 +173,7 @@ export default function Settings() {
       )}
 
       {canEdit && (
-      <p className="mt-4 rounded-xl bg-card px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 ring-1 ring-line">
+      <p className="mt-4 rounded-xl bg-card px-3 py-2.5 text-xs leading-relaxed text-ink-2 ring-1 ring-line">
         <strong>這裡沒有的東西在哪裡改：</strong>
         物品主檔（規格、材質、尺寸）在 <code className="font-mono">/admin/masters/item/</code>；
         位置階層（倉庫、儲位、工地）在 <code className="font-mono">/admin/inventory/location/</code>；
@@ -218,13 +227,13 @@ function RowCard({
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-ink">
             {title}
-            {inactive && <span className="ml-1.5 text-[11px] font-normal text-ink-3">已停用</span>}
+            {inactive && <span className="ml-1.5 text-xs font-normal text-ink-3">已停用</span>}
           </p>
-          <p className="truncate text-[11px] text-ink-3">{subtitle}</p>
+          <p className="truncate text-xs text-ink-3">{subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {badge && (
-            <span className="rounded bg-page px-1.5 py-0.5 text-[11px] font-semibold text-ink-2">
+            <span className="rounded bg-page px-1.5 py-0.5 text-xs font-semibold text-ink-2">
               {badge}
             </span>
           )}
@@ -241,7 +250,7 @@ function RowCard({
         </div>
       </div>
       {lines.filter(Boolean).map((l, i) => (
-        <p key={i} className="mt-1 text-[11px] text-ink-2">
+        <p key={i} className="mt-1 text-xs text-ink-2">
           {l}
         </p>
       ))}
@@ -660,7 +669,7 @@ function EmployeeForm({
 
       {employee && (
         <div className="mb-3 rounded-lg bg-page px-3 py-2.5">
-          <p className="text-[11px] text-ink-2">
+          <p className="text-xs text-ink-2">
             密碼不在這張表單裡改。忘記密碼時用下面的按鈕重設成預設值，
             對方下次登入必須自行修改。
           </p>
@@ -709,7 +718,7 @@ function ActiveToggle({
         />
         <span className="text-xs font-semibold text-ink-2">啟用中</span>
       </label>
-      <p className="mt-1 text-[11px] text-ink-3">{hint}</p>
+      <p className="mt-1 text-xs text-ink-3">{hint}</p>
     </div>
   );
 }

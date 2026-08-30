@@ -19,7 +19,7 @@ const DAY = 86400000;
 export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
   const rows = bars.filter((b) => b.total > 0);
   if (!rows.length) {
-    return <p className="text-[11px] text-ink-3">尚未勾選流程</p>;
+    return <p className="text-xs text-ink-3">尚未勾選流程</p>;
   }
 
   const dated = rows.filter((b) => b.start && b.end);
@@ -29,7 +29,7 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
       <ol className="space-y-1">
         {rows.map((bar) => (
           <li key={bar.seq} className="flex items-center gap-1.5">
-            <span className="w-[4.6rem] shrink-0 truncate text-[10px] text-ink-2">{bar.name}</span>
+            <span className="w-[4.6rem] shrink-0 truncate text-[11px] text-ink-2">{bar.name}</span>
             <div className="h-2 flex-1 rounded-full bg-line">
               <div
                 className="h-full rounded-full"
@@ -39,12 +39,12 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
                 }}
               />
             </div>
-            <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-ink-3">
+            <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-ink-3">
               {bar.done}/{bar.total}
             </span>
           </li>
         ))}
-        <p className="text-[10px] text-ink-3">流程還沒排預計起訖，畫不出時間軸</p>
+        <p className="text-[11px] text-ink-3">流程還沒排預計起訖，畫不出時間軸</p>
       </ol>
     );
   }
@@ -60,7 +60,7 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
   const x = (ts: number) => ((ts - min) / span) * 100;
 
   const dateLabel =
-    "absolute top-3 whitespace-nowrap rounded-sm bg-card/90 px-px text-[9px] font-bold tabular-nums text-ink";
+    "absolute top-3 whitespace-nowrap rounded-sm bg-card/90 px-px text-[10px] font-bold tabular-nums text-ink";
 
   return (
     <div className="flex gap-1.5">
@@ -68,7 +68,7 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
       <div className="shrink-0">
         {rows.map((bar) => (
           <div key={bar.seq} className="flex h-6 w-[4.6rem] items-center">
-            <span className="truncate text-[10px] leading-tight text-ink-2">{bar.name}</span>
+            <span className="truncate text-[11px] leading-tight text-ink-2">{bar.name}</span>
           </div>
         ))}
       </div>
@@ -155,7 +155,7 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
           {ticks.map((t) => (
             <span
               key={t.ts}
-              className="absolute top-0.5 -translate-x-1/2 whitespace-nowrap text-[9px] text-ink-3"
+              className="absolute top-0.5 -translate-x-1/2 whitespace-nowrap text-[10px] text-ink-3"
               style={{ left: `${x(t.ts)}%` }}
             >
               {t.label}
@@ -163,7 +163,7 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
           ))}
           {todayPct !== null && (
             <span
-              className="absolute top-0.5 z-10 -translate-x-1/2 rounded-sm bg-card/90 px-px text-[9px] font-semibold text-ink"
+              className="absolute top-0.5 z-10 -translate-x-1/2 rounded-sm bg-card/90 px-px text-[10px] font-semibold text-ink"
               style={{ left: `${todayPct}%` }}
             >
               今天
@@ -176,7 +176,7 @@ export default function MiniGantt({ bars }: { bars: GanttBar[] }) {
       <div className="shrink-0">
         {rows.map((bar) => (
           <div key={bar.seq} className="flex h-6 items-center gap-1">
-            <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-ink-3">
+            <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-ink-3">
               {bar.done}/{bar.total}
             </span>
             {bar.overdue ? (

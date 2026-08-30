@@ -22,6 +22,7 @@ const Projects = lazy(() => import("@/pages/Projects"));
 const TrackingBoard = lazy(() => import("@/pages/TrackingBoard"));
 const MyWork = lazy(() => import("@/pages/MyWork"));
 const Finance = lazy(() => import("@/pages/Finance"));
+const Stats = lazy(() => import("@/pages/Stats"));
 const Settings = lazy(() => import("@/pages/Settings"));
 
 const SCREENS: Record<string, React.ComponentType> = {
@@ -30,6 +31,7 @@ const SCREENS: Record<string, React.ComponentType> = {
   tracking: TrackingBoard,
   mywork: MyWork,
   finance: Finance,
+  stats: Stats,
   settings: Settings,
 };
 

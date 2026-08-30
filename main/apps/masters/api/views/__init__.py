@@ -26,8 +26,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from main.apps.core.models import Department, Role, User
-from main.apps.masters.models import Customer, FlowStage, Vendor
-from main.apps.masters.serializers import CustomerSerializer, FlowStageSerializer, VendorSerializer
+from main.apps.masters.models import (
+    Customer, FlowItem, FlowStage, FlowTemplate, MaterialItem, Vendor, WorkType,
+)
+from main.apps.masters.serializers import (
+    CustomerSerializer,
+    FlowItemWriteSerializer,
+    FlowStageSerializer,
+    FlowTemplateSerializer,
+    MaterialItemSerializer,
+    VendorSerializer,
+    WorkTypeSerializer,
+)
 from main.utils.choices import VendorType
 from main.utils.exceptions import BusinessRuleError
 from main.utils.viewsets import BaseModelViewSet
@@ -37,18 +47,207 @@ DEFAULT_PASSWORD = "28494320"
 
 # ── 流程目錄 ───────────────────────────────────────────────────────
 class FlowCatalogView(APIView):
-    """GET /flow-catalog —— 五大階段＋各階段工作項，建案勾選清單一次取完。
+    """GET /flow-catalog?template=<id> —— 五大階段＋該模板的工作項。
 
-    唯讀。目錄的內容與順序在 Django Admin 維護（改流程不改程式），
-    但**順序對使用者永遠是唯讀的**——這是「訂料一定排在放樣後面」的保證。
+    不帶 template 就用預設模板（跟建案表單預選的一致）。
+    D49 起模板內容由經理／系統管理員在「設定 → 流程模板」維護，
+    不再需要進 Django Admin。
     """
 
     permission_classes = [IsAuthenticated]
 
     @extend_schema(responses=FlowStageSerializer(many=True))
     def get(self, request):
-        stages = FlowStage.objects.filter(is_active=True).prefetch_related("items").order_by("seq")
+        from django.db.models import Count, Prefetch
+
+        template = None
+        if tid := request.query_params.get("template"):
+            template = FlowTemplate.objects.filter(pk=tid).first()
+        if template is None:
+            template = FlowTemplate.default()
+
+        items = FlowItem.objects.filter(is_active=True).annotate(unit_count=Count("units"))
+        # 資料遷移前的舊列 template 為空——一律視為預設模板的內容
+        if template is not None:
+            cond = Q(template=template)
+            if template.is_default:
+                cond |= Q(template__isnull=True)
+            items = items.filter(cond)
+        stages = (
+            FlowStage.objects.filter(is_active=True)
+            .prefetch_related(Prefetch("items", queryset=items))
+            .order_by("seq")
+        )
         return Response(FlowStageSerializer(stages, many=True).data)
+
+
+def _renumber_template_codes(template):
+    """模板工作項的代號依位置重編（D51）——跟專案內的顯示編號同一套邏輯。
+
+    只編啟用中的；停用的保留原代號（反正不顯示）。
+    兩段式改代號，避開 (template, code) 唯一約束在中途撞號。
+    """
+    if template is None:
+        return
+    cond = Q(template=template)
+    if template.is_default:
+        cond |= Q(template__isnull=True)
+    items = list(
+        FlowItem.objects.filter(cond, is_active=True)
+        .select_related("stage").order_by("seq")
+    )
+    counters = {}
+    targets = []
+    for item in items:
+        s = item.stage.seq
+        counters[s] = counters.get(s, 0) + 1
+        targets.append((item, f"{s}.{counters[s]}"))
+    changed = [(i, c) for i, c in targets if i.code != c]
+    if not changed:
+        return
+    with transaction.atomic():
+        # 停用的項目讓出代號（改成 ~pk）——不然遞補會撞 (template, code) 唯一約束
+        for stale in FlowItem.objects.filter(cond, is_active=False).exclude(
+            code__startswith="~"
+        ):
+            FlowItem.objects.filter(pk=stale.pk).update(code=f"~{stale.pk}")
+        for item, _code in changed:
+            FlowItem.objects.filter(pk=item.pk).update(code=f"~{item.pk}")
+        for item, code in changed:
+            FlowItem.objects.filter(pk=item.pk).update(code=code)
+
+
+class FlowTemplateViewSet(BaseModelViewSet):
+    """流程模板（D49）。讀給全體（建案下拉），寫給經理與系統管理員。"""
+
+    queryset = FlowTemplate.objects.all()
+    serializer_class = FlowTemplateSerializer
+    read_permission = None
+    write_permission = "manage_masters"
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset().annotate(item_count=Count("items", filter=Q(items__is_active=True)))
+        if self.request.query_params.get("active") != "false":
+            qs = qs.filter(is_active=True)
+        return qs.order_by("-is_default", "id")
+
+    def perform_destroy(self, instance):
+        if instance.is_default:
+            raise BusinessRuleError("預設模板不能刪除。要換預設，先把別套設為預設")
+        # 有案子用過任何一項的模板不能刪（FlowUnit PROTECT），給人話
+        from main.apps.tracking.models import FlowUnit
+
+        if FlowUnit.objects.filter(flow_item__template=instance).exists():
+            raise BusinessRuleError(
+                f"「{instance.name}」已有案子使用，不可刪除。不再用的話請改為「停用」"
+            )
+        instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def duplicate(self, request, pk=None):
+        """複製一套模板（含全部工作項）——新模板通常從既有的改起。"""
+        from main.utils.permissions import has_permission
+
+        if not has_permission(request.user, "manage_masters"):
+            return Response(
+                {"type": "permission_denied", "detail": "你沒有維護流程模板的權限"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        source = self.get_object()
+        name = str(request.data.get("name", "")).strip() or f"{source.name}（複製）"
+        if FlowTemplate.objects.filter(name=name).exists():
+            raise BusinessRuleError(f"「{name}」已存在，換個名字")
+        with transaction.atomic():
+            clone = FlowTemplate.objects.create(name=name, is_default=False, is_active=True)
+            cond = Q(template=source)
+            if source.is_default:
+                cond |= Q(template__isnull=True)
+            for item in FlowItem.objects.filter(cond, is_active=True).select_related("stage").order_by("seq"):
+                FlowItem.objects.create(
+                    template=clone, stage=item.stage, seq=item.seq, code=item.code,
+                    name=item.name, description=item.description,
+                    deliverables=item.deliverables, done_criteria=item.done_criteria,
+                    is_gate=item.is_gate, batch_stage_seq=item.batch_stage_seq,
+                )
+        return Response(FlowTemplateSerializer(clone).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def reorder(self, request, pk=None):
+        """重排模板內工作項的預設順序。body：{"item_ids": [依新順序]}"""
+        from main.utils.permissions import has_permission
+
+        if not has_permission(request.user, "manage_masters"):
+            return Response(
+                {"type": "permission_denied", "detail": "你沒有維護流程模板的權限"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        template = self.get_object()
+        ids = request.data.get("item_ids", [])
+        cond = Q(template=template)
+        if template.is_default:
+            cond |= Q(template__isnull=True)
+        active = {i.pk for i in FlowItem.objects.filter(cond, is_active=True)}
+        inactive = [i.pk for i in FlowItem.objects.filter(cond, is_active=False).order_by("seq")]
+        if not isinstance(ids, list) or set(ids) != active:
+            return Response(
+                {"type": "validation_error",
+                 "detail": "item_ids 必須是這套模板**全部啟用中**工作項的 id、依新順序排列"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ordered = list(ids) + inactive  # 停用的排最後，不佔前面的號
+        with transaction.atomic():
+            # 兩段式重編，避開 (template, seq) 唯一約束在中途撞號
+            # （seq 是 SmallInteger，暫存區間取 30000 起，別超過 32767）
+            for offset, item_id in enumerate(ordered):
+                FlowItem.objects.filter(pk=item_id).update(seq=30000 + offset)
+            for pos, item_id in enumerate(ordered, start=1):
+                FlowItem.objects.filter(pk=item_id).update(seq=pos)
+        # 代號跟著新位置重編（D51）：3.4 移到前面就變 3.3
+        _renumber_template_codes(template)
+        return Response({"message": "順序已更新（只影響之後新建的案子）"})
+
+
+class FlowItemViewSet(BaseModelViewSet):
+    """模板裡的工作項（D49）。維護走這裡；清單看 flow-catalog。"""
+
+    queryset = FlowItem.objects.all()
+    serializer_class = FlowItemWriteSerializer
+    write_serializer_class = FlowItemWriteSerializer
+    read_permission = None
+    write_permission = "manage_masters"
+    http_method_names = ["post", "patch", "delete", "head", "options"]
+
+    def perform_create(self, serializer):
+        item = serializer.save()
+        _renumber_template_codes(item.template)
+
+    def perform_destroy(self, instance):
+        if instance.units.exists():
+            raise BusinessRuleError(
+                f"「{instance.name}」已有 {instance.units.count()} 個案子用過，不可刪除。"
+                "改為「停用」的話，之後的新案不會再出現這一項，舊案不受影響"
+            )
+        template = instance.template
+        instance.delete()
+        # 少一項，後面的代號往前遞補（D51）
+        _renumber_template_codes(template)
+
+    @action(detail=True, methods=["post"])
+    def deactivate(self, request, pk=None):
+        """停用（用過的項目刪不掉，走這裡）。"""
+        from main.utils.permissions import has_permission
+
+        if not has_permission(request.user, "manage_masters"):
+            return Response(
+                {"type": "permission_denied", "detail": "你沒有維護流程模板的權限"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        item = self.get_object()
+        item.is_active = False
+        item.save(update_fields=["is_active"])
+        _renumber_template_codes(item.template)
+        return Response({"message": f"「{item.name}」已停用，之後的新案不會再出現這一項"})
 
 
 # ── 客戶 ───────────────────────────────────────────────────────────
@@ -413,3 +612,66 @@ class OptionsView(APIView):
         for statuses in FlowTask.objects.exclude(statuses=[]).values_list("statuses", flat=True):
             counter.update(s for s in statuses if isinstance(s, str))
         return [name for name, _ in counter.most_common(20)]
+
+
+# ── 產能與成本的主檔（D52）────────────────────────────────────────
+class WorkTypeViewSet(BaseModelViewSet):
+    """工作類型標籤。讀給全體（分配表單的下拉），寫給能分配工作的人。"""
+
+    queryset = WorkType.objects.all()
+    serializer_class = WorkTypeSerializer
+    pagination_class = None   # 下拉選單用的小主檔，整包給
+    read_permission = None
+    write_permission = "edit_tracking"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("active") != "false":
+            qs = qs.filter(is_active=True)
+        return qs.order_by("id")
+
+    def perform_destroy(self, instance):
+        # 統計掛在類型上，用過就不能刪——刪了歷史工數會變孤兒
+        if instance.assignments.exists():
+            raise BusinessRuleError("這個類型已有工作分配使用，不能刪除；可改為停用")
+        instance.delete()
+
+    @action(detail=False, methods=["get"])
+    def suggest(self, request):
+        """?status=切割中 → 上次同工段用的類型（分配表單的預帶，D52 必選但幫填）。"""
+        from main.apps.tracking.models import FlowTaskAssignment
+
+        status_ = (request.query_params.get("status") or "").strip()
+        work_type_id = None
+        if status_:
+            work_type_id = (
+                FlowTaskAssignment.objects.filter(status=status_, work_type__isnull=False)
+                .order_by("-id")
+                .values_list("work_type_id", flat=True)
+                .first()
+            )
+        return Response({"work_type": work_type_id})
+
+
+class MaterialItemViewSet(BaseModelViewSet):
+    """品項。讀給登入者，寫給能登應付款的人（會計登帳時要能即時新增）。"""
+
+    queryset = MaterialItem.objects.all()
+    serializer_class = MaterialItemSerializer
+    pagination_class = None   # 同上——品項數十筆的量級
+    read_permission = None
+    write_permission = "edit_payable"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if q := params.get("q"):
+            qs = qs.filter(name__icontains=q)
+        if params.get("active") != "false":
+            qs = qs.filter(is_active=True)
+        return qs.order_by("name")
+
+    def perform_destroy(self, instance):
+        if instance.payable_lines.exists():
+            raise BusinessRuleError("這個品項已有應付明細使用，不能刪除；可改為停用")
+        instance.delete()

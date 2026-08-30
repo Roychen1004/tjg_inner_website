@@ -65,10 +65,10 @@ def build_xlsx(project, variant: str = "progress") -> bytes:
     first_data = header_row + 1
 
     units = list(
-        project.flow_units.select_related("flow_item__stage", "assignee")
+        project.flow_units.select_related("flow_item", "stage", "assignee")
         .prefetch_related("tasks__assignments")  # 進度由工作分配算（D44）
         .exclude(state=FlowState.NA)
-        .order_by("flow_item__seq")
+        .order_by("seq", "id")
     )
     today = timezone.localdate()
 
@@ -206,10 +206,10 @@ def _build_grid_columns(ws, span_start, span_end, today, grid_first, month_row, 
 
 # ── 一列＝一張流程單元 ─────────────────────────────────────────────
 def _write_unit_row(ws, row, unit, columns, today, plan):
-    item = unit.flow_item
-    ws.cell(row=row, column=1, value=f"{item.stage.seq} {item.stage.name}")
-    ws.cell(row=row, column=2, value=item.code)
-    ws.cell(row=row, column=3, value=item.name)
+    stage = unit.display_stage
+    ws.cell(row=row, column=1, value=f"{stage.seq} {stage.name}" if stage else "")
+    ws.cell(row=row, column=2, value=unit.flow_display_code)
+    ws.cell(row=row, column=3, value=unit.flow_display_name)
 
     if plan:
         date_cols = (4, 5)

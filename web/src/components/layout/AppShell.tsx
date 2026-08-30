@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bell,
   Boxes,
   Building2,
@@ -15,6 +16,8 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useMarkNotificationsRead, useNotifications } from "@/api/hooks";
 import { type CurrentUser, useLogout } from "@/api/hooks/useAuth";
+import { FlowUnitSidePanel } from "@/components/tracking/FlowUnitModal";
+import { UnitPanelProvider } from "@/components/tracking/UnitPanelContext";
 import { Modal } from "@/components/ui";
 
 /**
@@ -32,6 +35,8 @@ const NAV_ITEMS: Array<{
   { key: "tracking", label: "追蹤看板", icon: Boxes },
   { key: "mywork", label: "我的任務", icon: ClipboardCheck },
   { key: "finance", label: "金流", icon: Wallet },
+  // D52：產能與成本統計——經理／系統管理員看全部，會計只看金額區塊
+  { key: "stats", label: "統計", icon: BarChart3 },
   { key: "settings", label: "設定", icon: SlidersHorizontal },
 ];
 
@@ -45,6 +50,7 @@ export default function AppShell({ user }: { user: CurrentUser }) {
   const unread = notifications?.unread_count ?? 0;
 
   return (
+    <UnitPanelProvider>
     <div className="min-h-dvh bg-page">
       <header
         style={{
@@ -52,7 +58,8 @@ export default function AppShell({ user }: { user: CurrentUser }) {
           borderBottom: "3px solid var(--color-brand-accent)",
         }}
       >
-        <div className="mx-auto max-w-6xl px-4 py-3">
+        {/* D50：滿版——拿掉 max-w 置中，寬螢幕不再留大片空白 */}
+        <div className="px-4 py-3 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <Building2 size={20} className="shrink-0 text-brand-accent" />
@@ -75,7 +82,7 @@ export default function AppShell({ user }: { user: CurrentUser }) {
                 {unread > 0 && (
                   <span
                     className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center
-                               rounded-full px-1 text-[10px] font-bold text-white"
+                               rounded-full px-1 text-[11px] font-bold text-white"
                     style={{ background: "var(--color-delayed)" }}
                   >
                     {unread > 9 ? "9+" : unread}
@@ -120,11 +127,21 @@ export default function AppShell({ user }: { user: CurrentUser }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-4">
-        {/* 頁面不再放大標小標（D40）——導航分頁已經說了你在哪，
-            內容直接開始，省一截垂直空間 */}
-        <Outlet />
-      </main>
+      {/* D49：流程卡片側欄是版面的一欄（不是浮層）——開卡片時主內容被往左擠，
+          兩邊同一個平面、都能點選捲動。手機上側欄改全螢幕蓋板。
+          main 設成 container，滿版元素（甘特圖）用 cqw 對它算寬，
+          不用 vw——側欄開著時 vw 會把甘特圖畫到側欄底下 */}
+      <div className="flex items-start">
+        <main className="min-w-0 flex-1 [container-type:inline-size]">
+          {/* D50：滿版（原本 max-w-6xl 置中）。甘特的滿版 calc 對這層的 padding 算 */}
+          <div className="px-4 py-4 sm:px-6">
+            {/* 頁面不再放大標小標（D40）——導航分頁已經說了你在哪，
+                內容直接開始，省一截垂直空間 */}
+            <Outlet />
+          </div>
+        </main>
+        <FlowUnitSidePanel />
+      </div>
 
       <Modal
         open={showNotifications}
@@ -172,7 +189,7 @@ export default function AppShell({ user }: { user: CurrentUser }) {
                       {item.body}
                     </p>
                   )}
-                  <p className="mt-1 text-[11px] text-ink-3">
+                  <p className="mt-1 text-xs text-ink-3">
                     {item.category_label} · {new Date(item.created_at).toLocaleString("zh-TW")}
                   </p>
                 </Link>
@@ -182,5 +199,6 @@ export default function AppShell({ user }: { user: CurrentUser }) {
         )}
       </Modal>
     </div>
+    </UnitPanelProvider>
   );
 }

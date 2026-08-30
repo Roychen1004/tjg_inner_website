@@ -78,7 +78,7 @@ def transition(unit_id, to_state, actor, note=""):
     label = dict(FlowState.choices)[to_state]
     suffix = f"（{note}）" if note else ""
     ActivityLog.record(
-        f"{unit.project.name}·{unit.flow_item.name} → {label}{suffix}",
+        f"{unit.project.name}·{unit.flow_display_name} → {label}{suffix}",
         ActivityCategory.TRACKING, actor=actor, project=unit.project, obj=unit,
     )
     logger.info("流程單元 %s：%s → %s", unit.pk, from_state, to_state)
@@ -90,7 +90,32 @@ def transition(unit_id, to_state, actor, note=""):
         from main.apps.billing.services import trigger_service
 
         trigger_service.on_trigger_reopened(unit, actor)
+    # 標不適用／還原會讓一條流程進出排程表——顯示編號跟著位置重編（D51）
+    if FlowState.NA in (from_state, to_state):
+        renumber_codes(unit.project)
     return unit
+
+
+def renumber_codes(project):
+    """把專案內流程的顯示編號依目前順序重編（D51，老闆要求）。
+
+    3.4 拖到 3.3 前面，顯示就變 3.3——編號是**位置**，不是身分。
+    一個階段一組、從 1 起算；「不適用」的不佔號。
+    用 queryset.update：顯示編號不是業務事實，不進歷史紀錄。
+    """
+    units = list(
+        project.flow_units.exclude(state=FlowState.NA)
+        .select_related("flow_item__stage", "stage")
+        .order_by("seq", "id")
+    )
+    counters = {}
+    for unit in units:
+        stage = unit.display_stage
+        seq = stage.seq if stage else 0
+        counters[seq] = counters.get(seq, 0) + 1
+        code = f"{seq}.{counters[seq]}"
+        if unit.code != code:
+            FlowUnit.objects.filter(pk=unit.pk).update(code=code)
 
 
 def _on_completed(unit, actor):
@@ -148,7 +173,7 @@ def report_progress(unit_id, actor, qty_done=None, delta=None, progress_pct=None
     unit.save()
 
     ActivityLog.record(
-        f"{unit.project.name}·{unit.flow_item.name} 進度 {unit.completion_ratio:g}%"
+        f"{unit.project.name}·{unit.flow_display_name} 進度 {unit.completion_ratio:g}%"
         + (f"（{note}）" if note else ""),
         ActivityCategory.TRACKING, actor=actor, project=unit.project, obj=unit,
     )
@@ -175,7 +200,9 @@ def gantt_rows(project):
     for unit in project.flow_units.all():
         if unit.state == FlowState.NA:
             continue
-        stage = unit.flow_item.stage
+        stage = unit.display_stage
+        if stage is None:
+            continue
         g = groups.setdefault(stage.seq, {
             "seq": stage.seq, "name": stage.name,
             "start": None, "end": None,

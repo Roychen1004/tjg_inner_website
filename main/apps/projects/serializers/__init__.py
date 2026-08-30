@@ -113,8 +113,8 @@ class ProjectDetailSerializer(ProjectListSerializer):
         from main.apps.tracking.serializers import FlowUnitSerializer
 
         units = obj.flow_units.select_related(
-            "flow_item__stage", "assignee", "subcontractor", "project"
-        ).prefetch_related("tasks__assignments__assignee").order_by("flow_item__seq")
+            "flow_item", "stage", "assignee", "subcontractor", "project"
+        ).prefetch_related("tasks__assignments__assignee").order_by("seq", "id")
         return FlowUnitSerializer(units, many=True, context=self.context).data
 
     def get_estimate_amount(self, obj) -> str | None:
@@ -220,10 +220,14 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
             validated_data["created_by"] = request.user
         project = super().create(validated_data)
 
-        # 勾了哪些流程就生哪些單元。存的順序無所謂——讀取永遠照目錄 seq 排
+        # 勾了哪些流程就生哪些單元；生完依位置編顯示編號（D51）
         unit_by_item = {}
         for item in sorted(flow_items, key=lambda i: i.seq):
             unit_by_item[item.pk] = FlowUnit.create_for(project, item)
+        if unit_by_item:
+            from main.apps.tracking.services.flow_service import renumber_codes
+
+            renumber_codes(project)
 
         from main.apps.billing.models import BillingMilestone
 

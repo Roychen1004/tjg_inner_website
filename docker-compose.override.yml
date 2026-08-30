@@ -11,6 +11,16 @@
 # 否則會把宿主機的原始碼掛進正式環境。
 
 services:
+  web:
+    volumes:
+      # ★ 前端 hot deploy（2026-08-30）：nginx 改吃宿主機的 web/dist，
+      #   本機 npm run build 完直接生效，不用再 docker compose build web。
+      #   （compose 會把這串跟 base 的 nginx.conf/media/static 掛載合併）
+      - ./web/dist:/usr/share/nginx/html:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - media:/app/media:ro
+      - static:/app/staticfiles:ro
+
   api:
     volumes:
       - .:/app                        # 原始碼即時反映

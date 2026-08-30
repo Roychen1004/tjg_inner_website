@@ -11,7 +11,13 @@
 import { useMemo, useState } from "react";
 
 import { ApiError } from "@/api/client";
-import { useFlowUnits, useOptions, useSavePayable } from "@/api/hooks";
+import {
+  useFlowUnits,
+  useMaterialItems,
+  useOptions,
+  useSaveMaterialItem,
+  useSavePayable,
+} from "@/api/hooks";
 import { useVendors } from "@/api/hooks/useVendors";
 import type { Payable, Subcontract } from "@/api/types";
 import { Button, DateInput, Field, FormErrors, inputClass, Modal, Money } from "@/components/ui";
@@ -57,6 +63,45 @@ export default function PayableForm({
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // ── 明細（D52）：一張單拆多列品項×數量×單價，金額自動加總 ──
+  const { data: items } = useMaterialItems();
+  const saveItem = useSaveMaterialItem();
+  const [lines, setLines] = useState<Array<{ item: string; qty: string; unit_price: string }>>(
+    (payable?.lines ?? []).map((l) => ({
+      item: String(l.item),
+      qty: String(Number(l.qty)),
+      unit_price: String(Number(l.unit_price)),
+    })),
+  );
+  const validLines = lines.filter(
+    (l) => l.item && Number(l.qty) > 0 && l.unit_price !== "" && Number(l.unit_price) >= 0,
+  );
+  const linesSum = validLines.reduce(
+    (sum, l) => sum + Number(l.qty) * Number(l.unit_price), 0,
+  );
+  const useLines = lines.length > 0;
+
+  const setLine = (i: number, k: "item" | "qty" | "unit_price") =>
+    (e: { target: { value: string } }) =>
+      setLines((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: e.target.value } : l)));
+
+  function addItemMaster(lineIndex: number) {
+    const name = window.prompt("新增品項（如：鋼材、螺栓、混凝土）：")?.trim();
+    if (!name) return;
+    const uom = window.prompt("計量單位（如：噸、支、才）：")?.trim() ?? "";
+    saveItem.mutate(
+      { name, unit_of_measure: uom },
+      {
+        onSuccess: (createdItem) =>
+          setLines((ls) =>
+            ls.map((l, j) => (j === lineIndex ? { ...l, item: String(createdItem.id) } : l)),
+          ),
+        onError: (e) =>
+          toast.error(e instanceof ApiError ? e.body.detail ?? "新增品項失敗" : "新增品項失敗"),
+      },
+    );
+  }
+
   // 這筆錢屬於哪個案子——有合約跟合約走，否則用呼叫端給的專案
   const flowProject = subcontract?.project ?? payable?.project ?? project;
   const { data: flowUnits } = useFlowUnits(
@@ -66,7 +111,8 @@ export default function PayableForm({
 
   // 系統會怎麼算——在按下儲存之前就讓人看到
   const preview = useMemo(() => {
-    const amount = Number(form.amount) || 0;
+    // D52：有明細＝明細合計；否則看手填金額
+    const amount = useLines ? linesSum : Number(form.amount) || 0;
     // D48：金額一律稅後，稅額固定 0（舊資料填過的由後端保留）
     const tax = 0;
     const retentionPct = Number(subcontract?.retention_pct ?? 0);
@@ -75,7 +121,7 @@ export default function PayableForm({
         ? Math.round((amount * retentionPct) / 100)
         : Number(form.retention_amount);
     return { amount, tax, retention, payable: amount + tax - retention };
-  }, [form.amount, form.tax_amount, form.retention_amount, subcontract]);
+  }, [form.amount, form.tax_amount, form.retention_amount, subcontract, useLines, linesSum]);
 
   function submit() {
     setError(null);
@@ -88,7 +134,15 @@ export default function PayableForm({
         flow_unit: form.flow_unit ? Number(form.flow_unit) : null,
         category: form.category,
         title: form.title,
-        amount: form.amount,
+        // D52：有明細時金額由後端加總；清空明細（編輯時）送空陣列
+        amount: useLines ? undefined : form.amount,
+        lines: useLines
+          ? validLines.map((l) => ({
+              item: Number(l.item), qty: l.qty, unit_price: l.unit_price,
+            }))
+          : payable?.lines?.length
+            ? []
+            : undefined,
         // 空字串代表「沒填，讓系統算」；填了 0 代表「真的是 0」。
         tax_amount: form.tax_amount === "" ? null : form.tax_amount,
         retention_amount: form.retention_amount === "" ? undefined : form.retention_amount,
@@ -121,7 +175,7 @@ export default function PayableForm({
 
   const HANDLED = [
     "vendor", "title", "amount", "retention_amount", "check_due_date", "category", "project",
-    "flow_unit",
+    "flow_unit", "lines",
   ];
   const isCheck = form.payment_method === "check";
 
@@ -139,7 +193,11 @@ export default function PayableForm({
             variant="primary"
             className="flex-1"
             loading={save.isPending}
-            disabled={!form.title || !form.amount || (!subcontract && !form.vendor)}
+            disabled={
+              !form.title ||
+              (useLines ? validLines.length === 0 : !form.amount) ||
+              (!subcontract && !form.vendor)
+            }
             onClick={submit}
           >
             儲存
@@ -150,7 +208,7 @@ export default function PayableForm({
       <FormErrors error={error} handled={HANDLED} />
 
       {subcontract ? (
-        <p className="mb-3 rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+        <p className="mb-3 rounded-lg bg-page px-3 py-2 text-xs leading-relaxed text-ink-2">
           屬於合約 <strong>{subcontract.code} {subcontract.title}</strong>（{subcontract.vendor_name}）。
           專案、廠商、付款條件
           {Number(subcontract.retention_pct) > 0 && `與保留款 ${subcontract.retention_pct}%`}
@@ -201,19 +259,102 @@ export default function PayableForm({
         </Field>
       )}
 
-      <Field label="金額（稅後實際金額）" required error={error?.fieldError("amount")}>
-        <input
-          type="number"
-          inputMode="numeric"
-          value={form.amount}
-          onChange={set("amount")}
-          className={inputClass}
-        />
-      </Field>
+      {useLines ? (
+        /* D52：明細列——品項×數量×單價，金額自動加總（單價統計靠這裡累積） */
+        <Field label="明細（金額＝各列合計）" required error={error?.fieldError("lines")}>
+          <div className="space-y-1.5">
+            {lines.map((l, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <select
+                  value={l.item}
+                  onChange={setLine(i, "item")}
+                  aria-label={`第 ${i + 1} 列品項`}
+                  className={`${inputClass} min-w-0 flex-1`}
+                >
+                  <option value="">品項</option>
+                  {(items ?? []).map((it) => (
+                    <option key={it.id} value={it.id}>
+                      {it.name}{it.unit_of_measure && `（${it.unit_of_measure}）`}
+                    </option>
+                  ))}
+                </select>
+                {!l.item && (
+                  <button
+                    type="button"
+                    onClick={() => addItemMaster(i)}
+                    className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+                  >
+                    ＋新品項
+                  </button>
+                )}
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={l.qty}
+                  onChange={setLine(i, "qty")}
+                  placeholder="數量"
+                  aria-label={`第 ${i + 1} 列數量`}
+                  className={`${inputClass} w-20 shrink-0 text-right`}
+                />
+                <span className="shrink-0 text-xs text-ink-3">×</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={l.unit_price}
+                  onChange={setLine(i, "unit_price")}
+                  placeholder="單價"
+                  aria-label={`第 ${i + 1} 列單價`}
+                  className={`${inputClass} w-24 shrink-0 text-right`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                  aria-label={`刪除第 ${i + 1} 列`}
+                  className="shrink-0 rounded p-1 text-ink-3 transition-base hover:text-[var(--color-delayed)]"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setLines((ls) => [...ls, { item: "", qty: "", unit_price: "" }])}
+                className="rounded-md px-1.5 py-1 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+              >
+                ＋加一列
+              </button>
+              <span className="text-xs tabular-nums text-ink">
+                合計 <Money value={linesSum} /> 元
+              </span>
+            </div>
+          </div>
+        </Field>
+      ) : (
+        <Field label="金額（稅後實際金額）" required error={error?.fieldError("amount")}>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={form.amount}
+              onChange={set("amount")}
+              className={`${inputClass} min-w-0 flex-1`}
+            />
+            <button
+              type="button"
+              onClick={() => setLines([{ item: "", qty: "", unit_price: "" }])}
+              title="拆成品項×數量×單價——材料單價統計靠這裡累積"
+              className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+            >
+              拆明細
+            </button>
+          </div>
+        </Field>
+      )}
 
       {/* ★ 算給人看。存檔後才發現少扣保留款，就要走退狀態、填原因那一整套 */}
       {preview.amount > 0 && (
-        <dl className="mb-3 space-y-1 rounded-lg bg-page px-3 py-2 text-[11px]">
+        <dl className="mb-3 space-y-1 rounded-lg bg-page px-3 py-2 text-xs">
           <Line label="金額" value={preview.amount} />
           {preview.retention > 0 && <Line label="扣保留款" value={-preview.retention} />}
           <div className="flex justify-between border-t border-line pt-1 font-bold text-ink">
@@ -268,7 +409,7 @@ export default function PayableForm({
       {/* 支票是現金流最容易算錯的地方，所以只有選了支票才問，而且講清楚為什麼要問 */}
       {isCheck && (
         <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: "var(--color-atrisk-bg)" }}>
-          <p className="mb-2 text-[11px] font-semibold leading-relaxed" style={{ color: "var(--color-atrisk)" }}>
+          <p className="mb-2 text-xs font-semibold leading-relaxed" style={{ color: "var(--color-atrisk)" }}>
             開票日不等於兌現日。沒填票期的話，現金流會把這筆錢算成提早兩三個月流出。
           </p>
           <div className="grid grid-cols-2 gap-3">

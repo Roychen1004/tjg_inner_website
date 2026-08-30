@@ -13,7 +13,7 @@ import { useState } from "react";
 
 import { useProjectPnl } from "@/api/hooks";
 import type { ProjectDetail } from "@/api/types";
-import { Card, Money, ProgressBar, SectionTitle } from "@/components/ui";
+import { Card, Money, ProgressBar, SectionTitle, Segmented } from "@/components/ui";
 
 export default function ProjectPnl({ project }: { project: ProjectDetail }) {
   const { data, isError } = useProjectPnl(project.id);
@@ -31,24 +31,14 @@ export default function ProjectPnl({ project }: { project: ProjectDetail }) {
     <div className="mt-4">
       <SectionTitle
         action={
-          <div className="flex gap-1 rounded-lg bg-page p-0.5 text-[11px]">
-            {[
-              { key: "committed", label: "已簽約" },
-              { key: "billed", label: "已計價" },
-            ].map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setBasis(t.key as typeof basis)}
-                className={[
-                  "rounded px-2 py-1 font-semibold transition-base",
-                  basis === t.key ? "bg-card text-ink shadow-sm" : "text-ink-3",
-                ].join(" ")}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            value={basis}
+            onChange={(v) => setBasis(v as typeof basis)}
+            options={[
+              { value: "committed", label: "已簽約" },
+              { value: "billed", label: "已計價" },
+            ]}
+          />
         }
       >
         專案損益
@@ -93,7 +83,7 @@ export default function ProjectPnl({ project }: { project: ProjectDetail }) {
           </div>
         )}
 
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+        <p className="mt-2 text-xs leading-relaxed text-ink-3">
           {data.note}
           {basis === "billed" && "。只算包商已送單的，案子前期會偏樂觀"}
         </p>

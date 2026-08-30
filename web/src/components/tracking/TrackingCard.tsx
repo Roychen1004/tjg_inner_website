@@ -31,7 +31,7 @@ export default function TrackingCardView({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           {showProject && (
-            <p className="truncate text-[11px] text-ink-3">{unit.project_name}</p>
+            <p className="truncate text-xs text-ink-3">{unit.project_name}</p>
           )}
           <p className="truncate text-sm font-semibold text-ink">{unit.name}</p>
         </div>
@@ -46,7 +46,7 @@ export default function TrackingCardView({
         />
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="font-semibold tabular-nums text-ink-2">
           {unit.unit_type === "batch"
             ? `${fmt(unit.qty_done)} / ${fmt(unit.qty_total)} ${unit.unit_of_measure}`

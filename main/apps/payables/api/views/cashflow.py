@@ -65,14 +65,88 @@ class CashflowForecastView(APIView):
         if project_id := params.get("project"):
             projects = projects.filter(pk=project_id)
 
+        # D49：經理（與系統管理員）看得到公司現有現金，累計從這個數字起算。
+        # 只看單一專案時不加——公司底牌跟單一案子的現金流是兩回事
+        opening = None
+        if not params.get("project") and has_permission(request.user, "view_cash_balance"):
+            from main.apps.payables.models import CashBalance
+
+            opening = CashBalance.get().amount
+
         data = cashflow_service.forecast(
             list(projects.values_list("pk", flat=True)),
             periods=periods,
             granularity=granularity,
             certainties=certainties,
+            opening_balance=opening,
         )
         data["project_count"] = projects.count()
         return Response(data)
+
+
+class CashBalanceView(APIView):
+    """公司現有現金（D49）。GET 讀、PUT 改——**只有經理與系統管理員**。
+
+    填進來的數字會直接成為現金流預測「累計」列的起點。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _check(self, request):
+        if not has_permission(request.user, "view_cash_balance"):
+            return Response(
+                {"type": "permission_denied",
+                 "detail": "公司現有現金只開放給經理與系統管理員"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        if denied := self._check(request):
+            return denied
+        from main.apps.payables.models import CashBalance
+
+        return Response(self._payload(CashBalance.get()))
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
+    def put(self, request):
+        if denied := self._check(request):
+            return denied
+        from decimal import Decimal, InvalidOperation
+
+        from main.apps.payables.models import CashBalance
+
+        try:
+            amount = Decimal(str(request.data.get("amount", "")).replace(",", ""))
+        except InvalidOperation:
+            return Response(
+                {"type": "validation_error", "detail": "金額必須是數字"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        balance = CashBalance.get()
+        balance.amount = amount
+        balance.note = str(request.data.get("note", ""))[:200]
+        balance.updated_by = request.user
+        balance.save()
+
+        from main.apps.core.models import ActivityLog
+        from main.utils.choices import ActivityCategory
+
+        ActivityLog.record(
+            f"公司現有現金更新為 {amount:,.0f} 元",
+            ActivityCategory.SYSTEM, actor=request.user, obj=balance,
+        )
+        return Response(self._payload(balance))
+
+    @staticmethod
+    def _payload(balance):
+        return {
+            "amount": str(balance.amount),
+            "note": balance.note,
+            "updated_at": balance.updated_at,
+            "updated_by_name": balance.updated_by.name if balance.updated_by else "",
+        }
 
 
 class ProjectPnlView(APIView):

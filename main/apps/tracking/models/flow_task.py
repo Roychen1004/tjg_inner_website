@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 
-from main.apps.core.models import TimeStampedModel
+from main.apps.core.models import ImmutableLogModel, TimeStampedModel
 
 # 狀態選項的頭尾——不是工段，不能分配工作、不算進度分母
 TERMINAL_STATUSES = ("未開始", "已完成")
@@ -103,6 +103,29 @@ class FlowTaskAssignment(TimeStampedModel):
     )
     qty_assigned = models.DecimalField("分配數量", max_digits=12, decimal_places=2)
     qty_done = models.DecimalField("已完成數量", max_digits=12, decimal_places=2, default=Decimal("0"))
+    note = models.CharField(
+        "注意事項", max_length=500, blank=True,
+        help_text="經理分配時的叮嚀（D49）——被分到的人在「我的任務」會特別看到這段話",
+    )
+
+    # ── 產能（D52）────────────────────────────────────────────────
+    work_type = models.ForeignKey(
+        "masters.WorkType", verbose_name="工作類型",
+        on_delete=models.PROTECT, null=True, blank=True, related_name="assignments",
+        help_text="產能統計的分類。新分配必選；D52 之前的舊資料為空＝未分類",
+    )
+    started_at = models.DateField(
+        "實際開始日", null=True, blank=True,
+        help_text="員工在「我的任務」按「開始」的那天；回報過就自動視為已開始",
+    )
+    completed_at = models.DateField(
+        "完成日", null=True, blank=True, help_text="完成量報滿分配量的那天，系統自動記",
+    )
+    man_days_override = models.DecimalField(
+        "工數（補登修正）", max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text="空＝系統依回報自動計（一人一天＝1 工，記在當天有回報的分配上、"
+                  "多件均分）；經理覺得不準可在此直接填總工數蓋過",
+    )
 
     class Meta:
         db_table = "tracking_flowtaskassignment"
@@ -128,3 +151,39 @@ class FlowTaskAssignment(TimeStampedModel):
     @property
     def is_done(self):
         return self.qty_done >= self.qty_assigned
+
+
+class AssignmentReport(ImmutableLogModel):
+    """回報紀錄（D52）——工作分配的每日完成量流水帳，寫入後不可改
+
+    產能統計的原始資料：一列＝某人某天在某份分配上回報了多少量。
+    計工規則（老闆 2026-08-30 定）：一人一天＝1 工，
+    記在**當天有回報的分配**上；同日多件有回報就均分；沒回報的天不計。
+    """
+
+    assignment = models.ForeignKey(
+        FlowTaskAssignment, verbose_name="工作分配",
+        on_delete=models.CASCADE, related_name="reports",
+    )
+    date = models.DateField("回報日", help_text="預設當天；補登時可回填")
+    qty_delta = models.DecimalField(
+        "本次回報量", max_digits=12, decimal_places=2,
+        help_text="這次回報「新增」的完成量（更正時可為負）",
+    )
+    reported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="回報者",
+        on_delete=models.SET_NULL, null=True, related_name="assignment_reports",
+    )
+    created_at = models.DateTimeField("寫入時間", auto_now_add=True)
+
+    class Meta:
+        db_table = "tracking_assignmentreport"
+        verbose_name = verbose_name_plural = "回報紀錄"
+        ordering = ["date", "id"]
+        indexes = [
+            models.Index(fields=["assignment", "date"]),
+            models.Index(fields=["date"]),
+        ]
+
+    def __str__(self):
+        return f"{self.assignment_id}·{self.date}·{self.qty_delta:+g}"

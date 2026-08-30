@@ -10,7 +10,7 @@
  * 同樣的「變更狀態」按鈕。會計看得懂一邊就看得懂另一邊。
  */
 import { AlertTriangle, Banknote, ExternalLink, Pencil, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -74,6 +74,26 @@ export default function Receivables() {
 
   const rows = data?.results ?? [];
   const canEdit = Boolean(user?.permissions.edit_milestone);
+
+  // D51：從現金流時間軸／小日曆／我的任務跳過來的那一筆——
+  // 先清掉會把它濾掉的舊篩選，載入後框出並捲到眼前
+  const highlightId = searchParams.get("milestone");
+  useEffect(() => {
+    if (!highlightId) return;
+    const next = new URLSearchParams(window.location.search);
+    if (next.get("project") || next.get("state")) {
+      next.delete("project");
+      next.delete("state");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightId]);
+  useEffect(() => {
+    if (!highlightId || isLoading) return;
+    document
+      .getElementById(`milestone-${highlightId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightId, isLoading, rows.length]);
 
   return (
     <div className="space-y-4">
@@ -144,6 +164,7 @@ export default function Receivables() {
             <Row
               key={row.id}
               row={row}
+              highlighted={highlightId === String(row.id)}
               onTransition={() => setTransitioning(row)}
               onEdit={canEdit ? () => setEditing(row) : undefined}
             />
@@ -169,10 +190,13 @@ export default function Receivables() {
 
 function Row({
   row,
+  highlighted = false,
   onTransition,
   onEdit,
 }: {
   row: Milestone;
+  /** D51：從別處跳過來的那一筆——藍框標示 */
+  highlighted?: boolean;
   onTransition: () => void;
   onEdit?: () => void;
 }) {
@@ -182,27 +206,29 @@ function Row({
     // 整列可點（D47）：點哪裡都開明細編輯；右側按鈕區自己攔截點擊
     <Card
       as="li"
+      id={`milestone-${row.id}`}
       className={`p-3 ${onEdit ? "cursor-pointer transition-base hover:ring-stage-2" : ""}`}
+      style={highlighted ? { boxShadow: "0 0 0 3px var(--color-stage-2)" } : undefined}
       onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span
-              className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              className="rounded-full px-2 py-0.5 text-xs font-semibold"
               style={{ color: style.color, background: style.bg }}
             >
               {row.state_label}
             </span>
             <p className="truncate text-sm font-semibold text-ink">{row.label}</p>
-            <span className="text-[11px] text-ink-3">{row.percentage}%</span>
+            <span className="text-xs text-ink-3">{row.percentage}%</span>
           </div>
-          <p className="mt-0.5 text-[11px] text-ink-3">
+          <p className="mt-0.5 text-xs text-ink-3">
             {row.project_name}
             {row.condition && ` · ${row.condition}`}
           </p>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2">
             {row.state === "pending" && row.trigger_unit_name && (
               <span style={{ color: "var(--color-stage-2)" }}>
                 完成「{row.trigger_unit_name}」→ 自動可請款

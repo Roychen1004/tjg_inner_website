@@ -24,24 +24,34 @@ class FlowTaskAssignmentSerializer(serializers.ModelSerializer):
 
     assignee_name = serializers.CharField(source="assignee.name", read_only=True, default="")
     is_done = serializers.BooleanField(read_only=True)
+    work_type_name = serializers.CharField(source="work_type.name", read_only=True, default="")
     unit = serializers.IntegerField(source="task.unit_id", read_only=True)
     task_name = serializers.CharField(source="task.name", read_only=True)
     task_qty = serializers.DecimalField(
         source="task.qty", max_digits=12, decimal_places=2, read_only=True,
     )
     unit_of_measure = serializers.CharField(source="task.unit_of_measure", read_only=True)
-    flow_name = serializers.CharField(source="task.unit.flow_item.name", read_only=True)
+    flow_name = serializers.CharField(source="task.unit.flow_display_name", read_only=True)
     project_name = serializers.CharField(source="task.unit.project.name", read_only=True)
 
     class Meta:
         model = FlowTaskAssignment
         fields = [
             "id", "task", "status", "assignee", "assignee_name",
-            "qty_assigned", "qty_done", "is_done",
+            "qty_assigned", "qty_done", "is_done", "note",
+            "work_type", "work_type_name", "started_at", "completed_at",
+            "man_days_override",
             "unit", "task_name", "task_qty", "unit_of_measure",
             "flow_name", "project_name",
         ]
-        extra_kwargs = {"assignee": {"required": True, "allow_null": False}}
+        extra_kwargs = {
+            "assignee": {"required": True, "allow_null": False},
+            # D52：新分配必選工作類型（產能統計的分類）；系統會依工段預帶
+            "work_type": {"required": True, "allow_null": False},
+            # 開始／完成日由「開始」與回報動作蓋章，不開放直接改
+            "started_at": {"read_only": True},
+            "completed_at": {"read_only": True},
+        }
 
     def validate(self, attrs):
         task = attrs.get("task") or (self.instance.task if self.instance else None)
@@ -152,13 +162,15 @@ class FlowUnitSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source="project.name", read_only=True)
     project_code = serializers.CharField(source="project.code", read_only=True)
 
-    seq = serializers.IntegerField(source="flow_item.seq", read_only=True)
-    flow_code = serializers.CharField(source="flow_item.code", read_only=True)
-    flow_name = serializers.CharField(source="flow_item.name", read_only=True)
-    stage_seq = serializers.IntegerField(source="flow_item.stage.seq", read_only=True)
-    stage_name = serializers.CharField(source="flow_item.stage.name", read_only=True)
+    # D49：順序、名稱與大階段都在單元自己身上（自訂流程沒有 flow_item）
+    seq = serializers.IntegerField(read_only=True)
+    flow_code = serializers.CharField(source="flow_display_code", read_only=True)
+    flow_name = serializers.CharField(source="flow_display_name", read_only=True)
+    stage_seq = serializers.SerializerMethodField()
+    stage_name = serializers.SerializerMethodField()
+    is_custom = serializers.SerializerMethodField()
     # 工作內容／產出物／完成條件是單元自己的欄位（生成時從目錄抄預設，之後每案可改）
-    is_gate = serializers.BooleanField(source="flow_item.is_gate", read_only=True)
+    is_gate = serializers.SerializerMethodField()
 
     state_label = serializers.CharField(source="get_state_display", read_only=True)
     assignee_name = serializers.CharField(source="assignee.name", read_only=True, default="")
@@ -177,7 +189,7 @@ class FlowUnitSerializer(serializers.ModelSerializer):
         model = FlowUnit
         fields = [
             "id", "project", "project_name", "project_code",
-            "flow_item", "seq", "flow_code", "flow_name", "stage_seq", "stage_name",
+            "flow_item", "seq", "flow_code", "flow_name", "stage_seq", "stage_name", "is_custom",
             "description", "deliverables", "done_criteria", "is_gate",
             "state", "state_label", "assignee", "assignee_name", "detail",
             "plan_start", "plan_end", "actual_start", "actual_end",
@@ -193,6 +205,20 @@ class FlowUnitSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         return bool(user and user.is_authenticated and can_operate(user, obj))
 
+    def get_stage_seq(self, obj) -> int:
+        stage = obj.display_stage
+        return stage.seq if stage else 0
+
+    def get_stage_name(self, obj) -> str:
+        stage = obj.display_stage
+        return stage.name if stage else ""
+
+    def get_is_custom(self, obj) -> bool:
+        return obj.flow_item_id is None
+
+    def get_is_gate(self, obj) -> bool:
+        return bool(obj.flow_item and obj.flow_item.is_gate)
+
 
 class FlowUnitWriteSerializer(serializers.ModelSerializer):
     """排程表逐列填的欄位：負責人、詳細內容、預計起訖、數量、分包商。
@@ -206,8 +232,10 @@ class FlowUnitWriteSerializer(serializers.ModelSerializer):
         fields = [
             "assignee", "detail", "plan_start", "plan_end",
             "qty_total", "unit_of_measure", "subcontractor", "note",
-            "description", "deliverables", "done_criteria",
+            "description", "deliverables", "done_criteria", "name",
         ]
+        # name：D49 起可改顯示名稱（自訂流程改名、目錄流程取這個案子自己的叫法）
+        extra_kwargs = {"name": {"required": False, "allow_blank": True}}
 
     def validate(self, attrs):
         start = attrs.get("plan_start", getattr(self.instance, "plan_start", None))

@@ -172,7 +172,7 @@ export default function AttachmentSection({
               選檔上傳
             </Button>
           </div>
-          <p className="mt-1.5 text-[11px] text-ink-3">
+          <p className="mt-1.5 text-xs text-ink-3">
             可傳 {data.allowed_extensions.join("、")}，單檔上限 {data.max_size_mb}MB。
             照片會自動壓縮並移除拍攝位置資訊
           </p>
@@ -201,15 +201,15 @@ function AttachmentRow({
       <Icon size={17} className="mt-0.5 shrink-0 text-ink-3" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-ink">{row.original_name}</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-xs text-ink-3">
           {row.category_label} · {row.size_display} ·{" "}
           {new Date(row.uploaded_at).toLocaleDateString("zh-TW")}
           {row.uploaded_by_name && ` · ${row.uploaded_by_name}`}
         </p>
-        {row.note && <p className="mt-0.5 text-[11px] text-ink-2">{row.note}</p>}
+        {row.note && <p className="mt-0.5 text-xs text-ink-2">{row.note}</p>}
         {/* 不能預覽時把原因寫出來，而不是給一顆按了會失望的按鈕 */}
         {!row.is_previewable && (
-          <p className="mt-1 text-[11px] leading-snug text-ink-3">{row.no_preview_reason}</p>
+          <p className="mt-1 text-xs leading-snug text-ink-3">{row.no_preview_reason}</p>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
@@ -354,7 +354,7 @@ export function AttachmentBadge({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px]
+        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs
                    font-semibold text-ink-2 ring-1 ring-line hover:bg-page"
       >
         <Paperclip size={12} />

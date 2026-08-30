@@ -12,7 +12,7 @@ class BillingMilestoneSerializer(serializers.ModelSerializer):
     project_code = serializers.CharField(source="project.code", read_only=True)
     state_label = serializers.CharField(source="get_state_display", read_only=True)
     trigger_unit_name = serializers.CharField(
-        source="trigger_unit.flow_item.name", read_only=True, default=""
+        source="trigger_unit.flow_display_name", read_only=True, default=""
     )
     trigger_unit_state = serializers.CharField(
         source="trigger_unit.state", read_only=True, default=""

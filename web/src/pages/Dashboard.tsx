@@ -111,7 +111,7 @@ export default function Dashboard() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-ink">{project.name}</p>
-                    <p className="truncate text-[11px] text-ink-3">
+                    <p className="truncate text-xs text-ink-3">
                       {project.customer} · {project.code}
                     </p>
                   </div>
@@ -131,14 +131,14 @@ export default function Dashboard() {
                       compact
                       color="var(--color-ontrack)"
                     />
-                    <p className="mt-1 text-[11px] text-ink-3">
+                    <p className="mt-1 text-xs text-ink-3">
                       已收 <Money value={project.received_amount} compact /> / 合約{" "}
                       <Money value={project.contract_amount} compact />
                     </p>
                   </div>
                 )}
 
-                <div className="mt-2 flex items-center gap-3 text-[11px] text-ink-2">
+                <div className="mt-2 flex items-center gap-3 text-xs text-ink-2">
                   <span>{project.unit_count} 個流程未完成</span>
                   {project.attention > 0 && (
                     <span style={{ color: "var(--color-atrisk)" }}>
@@ -213,7 +213,7 @@ export default function Dashboard() {
       </section>
 
       {user && !user.permissions.view_amounts && (
-        <p className="text-center text-[11px] text-ink-3">
+        <p className="text-center text-xs text-ink-3">
           你的角色看不到金額欄位，顯示為 ──
         </p>
       )}

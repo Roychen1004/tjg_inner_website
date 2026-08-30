@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from main.apps.masters.models import Stage, StageTemplate
 from main.apps.masters.serializers import StageTemplateSerializer
 from main.apps.tracking.models import (
+    AssignmentReport,
     FlowTask,
     FlowTaskAssignment,
     FlowUnit,
@@ -49,7 +50,7 @@ class FlowUnitViewSet(BaseModelViewSet):
     """
 
     queryset = FlowUnit.objects.select_related(
-        "project", "flow_item__stage", "assignee", "subcontractor"
+        "project", "flow_item", "stage", "assignee", "subcontractor"
     ).prefetch_related("tasks__assignments__assignee").annotate(
         _has_batches=Exists(TrackingUnit.objects.filter(project=OuterRef("project_id")))
     )
@@ -72,7 +73,7 @@ class FlowUnitViewSet(BaseModelViewSet):
         if st := params.get("state"):
             qs = qs.filter(state__in=st.split(","))
         if stage := params.get("stage"):
-            qs = qs.filter(flow_item__stage__seq=stage)
+            qs = qs.filter(stage__seq=stage)
         if assignee := params.get("assignee"):
             qs = qs.filter(
                 assignee=self.request.user if assignee == "me" else assignee
@@ -88,9 +89,11 @@ class FlowUnitViewSet(BaseModelViewSet):
             qs = qs.exclude(state__in=[FlowState.DONE, FlowState.NA])
         if q := params.get("q"):
             qs = qs.filter(
-                Q(flow_item__name__icontains=q) | Q(project__name__icontains=q)
+                Q(flow_item__name__icontains=q) | Q(name__icontains=q)
+                | Q(project__name__icontains=q)
             )
-        return qs.order_by("project_id", "flow_item__seq")
+        # D49：順序看單元自己的 seq（每案可重排），不再跟目錄
+        return qs.order_by("project_id", "seq", "id")
 
     def create(self, request, *args, **kwargs):
         return Response(
@@ -131,7 +134,10 @@ class FlowUnitViewSet(BaseModelViewSet):
             raise BusinessRuleError("此流程已有附件，請先刪除附件或改標「不適用」")
         if instance.payables.exists():
             raise BusinessRuleError("此流程掛著應付款項，不能刪除。請改標「不適用」")
+        project = instance.project
         instance.delete()
+        # 少一條流程，後面的顯示編號往前遞補（D51）
+        flow_service.renumber_codes(project)
 
     # ── 操作 ───────────────────────────────────────────────────────
     @extend_schema(request=FlowTransitionSerializer, responses=FlowUnitSerializer)
@@ -235,7 +241,7 @@ class FlowTaskAssignmentViewSet(BaseModelViewSet):
     """
 
     queryset = FlowTaskAssignment.objects.select_related(
-        "task__unit__project", "task__unit__flow_item", "assignee"
+        "task__unit__project", "task__unit__flow_item", "assignee", "work_type"
     )
     serializer_class = FlowTaskAssignmentSerializer
     read_permission = None
@@ -280,14 +286,80 @@ class FlowTaskAssignmentViewSet(BaseModelViewSet):
             if extra := set(request.data) - {"qty_done"}:
                 return _denied(f"回報只能填完成數量（不可修改：{'、'.join(sorted(extra))}）")
         was_done = assignment.is_done
+        before_qty = assignment.qty_done
         response = super().update(request, *args, **kwargs)
         if response.status_code == 200:
             assignment.refresh_from_db()
-            if assignment.is_done and not was_done:
-                from main.apps.tracking.services import notify_service
+            # D52：直接改完成量也要進回報流水帳，並蓋開始／完成日
+            from main.apps.tracking.services import notify_service, productivity_service
 
+            productivity_service.stamp_after_change(assignment, request.user, before_qty)
+            if assignment.is_done and not was_done:
                 notify_service.task_progress(assignment, request.user)
+            response.data = self.get_serializer(assignment).data
         return response
+
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        """員工按「開始」（D52）——經理在人員看板看得到誰開始了、誰還沒。"""
+        from django.utils import timezone
+
+        assignment = self.get_object()
+        if assignment.assignee_id != request.user.pk and not self._can_operate(
+            assignment.task.unit
+        ):
+            return _denied("只有被分到的員工本人能按開始")
+        if assignment.started_at is None:
+            assignment.started_at = timezone.localdate()
+            assignment.save(update_fields=["started_at", "updated_at"])
+        return Response(self.get_serializer(assignment).data)
+
+    @action(detail=True, methods=["post"])
+    def report(self, request, pk=None):
+        """當日工作結束回報（D52）——寫入回報流水帳，工數由此自動計。
+
+        body：{qty_done 或 delta}，可另帶 date（YYYY-MM-DD）補登。
+        量會自動夾在 0 與分配量之間。
+        """
+        import datetime as dt
+        from decimal import InvalidOperation
+
+        assignment = self.get_object()
+        if assignment.assignee_id != request.user.pk and not self._can_operate(
+            assignment.task.unit
+        ):
+            return _denied("只有被分到的員工本人或有進度維護權限的人能回報")
+
+        qty_done, delta = request.data.get("qty_done"), request.data.get("delta")
+        if qty_done is None and delta is None:
+            return Response(
+                {"type": "validation_error", "detail": "請填 qty_done 或 delta"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        date = None
+        if raw := request.data.get("date"):
+            try:
+                date = dt.date.fromisoformat(str(raw))
+            except ValueError:
+                return Response(
+                    {"type": "validation_error", "detail": "date 格式須為 YYYY-MM-DD"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        try:
+            was_done = assignment.is_done
+            from main.apps.tracking.services import notify_service, productivity_service
+
+            assignment, _ = productivity_service.record_report(
+                assignment, request.user, qty_done=qty_done, delta=delta, date=date,
+            )
+        except (InvalidOperation, TypeError, ValueError):
+            return Response(
+                {"type": "validation_error", "detail": "數量必須是數字"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if assignment.is_done and not was_done:
+            notify_service.task_progress(assignment, request.user)
+        return Response(self.get_serializer(assignment).data)
 
     def destroy(self, request, *args, **kwargs):
         if not self._can_operate(self.get_object().task.unit):
@@ -517,7 +589,7 @@ class StaffWorkloadView(APIView):
             return {
                 "id": unit.pk,
                 "project_name": unit.project.name,
-                "flow_name": unit.flow_item.name,
+                "flow_name": unit.flow_display_name,
                 "state": unit.state,
                 "plan_end": unit.plan_end,
                 "actual_end": unit.actual_end,
@@ -528,24 +600,45 @@ class StaffWorkloadView(APIView):
                 "id": a.pk,
                 "unit": a.task.unit_id,
                 "project_name": a.task.unit.project.name,
-                "flow_name": a.task.unit.flow_item.name,
+                "flow_name": a.task.unit.flow_display_name,
                 "task_name": a.task.name,
                 "status": a.status,
                 "qty_done": a.qty_done,
                 "qty_assigned": a.qty_assigned,
                 "unit_of_measure": a.task.unit_of_measure,
                 "reported_at": timezone.localtime(a.updated_at).date(),
+                # D52：老闆要看「誰開始了、誰還沒」——三色狀態靠這幾欄
+                "work_type_name": a.work_type.name if a.work_type else "",
+                "started_at": a.started_at,
+                "completed_at": a.completed_at,
             }
 
         assign_qs = FlowTaskAssignment.objects.filter(assignee__in=people).select_related(
-            "task__unit__project", "task__unit__flow_item"
+            "task__unit__project", "task__unit__flow_item", "work_type"
         )
+        briefs = {}
         for a in assign_qs.filter(qty_done__lt=F("qty_assigned")):
-            rows[a.assignee_id]["open_assignments"].append(assignment_brief(a))
+            briefs[a.pk] = (assignment_brief(a), a)
+            rows[a.assignee_id]["open_assignments"].append(briefs[a.pk][0])
         for a in assign_qs.filter(
             qty_done__gte=F("qty_assigned"), updated_at__gte=start_dt, updated_at__lt=end_dt
         ):
-            rows[a.assignee_id]["done_assignments"].append(assignment_brief(a))
+            briefs[a.pk] = (assignment_brief(a), a)
+            rows[a.assignee_id]["done_assignments"].append(briefs[a.pk][0])
+
+        # D52：批次補工數與「今日已回報」（一筆一查會打爆 DB，一律批次）
+        from main.apps.tracking.services import productivity_service
+
+        today = timezone.localdate()
+        man_days = productivity_service.man_days_for([a for _, a in briefs.values()])
+        reported_today = set(
+            AssignmentReport.objects.filter(
+                assignment_id__in=briefs, date=today
+            ).values_list("assignment_id", flat=True)
+        )
+        for aid, (brief, _a) in briefs.items():
+            brief["man_days"] = man_days.get(aid, 0)
+            brief["reported_today"] = aid in reported_today
 
         unit_qs = FlowUnit.objects.filter(assignee__in=people).select_related(
             "project", "flow_item"

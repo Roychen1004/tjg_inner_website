@@ -125,7 +125,12 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
-        # 流程目錄
+        from main.apps.masters.models import FlowTemplate
+
+        # 流程目錄（D49：19 項掛在「標準流程」預設模板底下）
+        default_tpl, _ = FlowTemplate.objects.get_or_create(
+            name="標準流程", defaults={"is_default": True, "is_active": True},
+        )
         stage_by_seq = {}
         for seq, code, name, gate in FLOW_STAGES:
             stage, _ = FlowStage.objects.update_or_create(
@@ -134,7 +139,7 @@ class Command(BaseCommand):
             stage_by_seq[seq] = stage
         for seq, code, name, desc, deliver, done, is_gate, batch_seq in FLOW_ITEMS:
             FlowItem.objects.update_or_create(
-                code=code,
+                code=code, template=default_tpl,
                 defaults={
                     "stage": stage_by_seq[seq // 10], "seq": seq, "name": name,
                     "description": desc, "deliverables": deliver, "done_criteria": done,

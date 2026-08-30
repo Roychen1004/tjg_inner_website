@@ -15,29 +15,38 @@
 import { AlertTriangle, Info } from "lucide-react";
 import { useState } from "react";
 
-import { useCashflow, useOptions } from "@/api/hooks";
+import { ApiError } from "@/api/client";
+import { useCashBalance, useCashflow, useOptions, useSaveCashBalance } from "@/api/hooks";
+import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { CashflowCell, Certainty } from "@/api/types";
+import CashflowTimeline from "@/components/billing/CashflowTimeline";
 import {
+  Button,
   Card,
   EmptyState,
   ErrorState,
   Modal,
   Money,
+  Segmented,
   Select,
   Spinner,
 } from "@/components/ui";
+import { useToast } from "@/components/ui/Toast";
 import { useStickyParams } from "@/lib/stickyParams";
 
 const CERTAINTY_ORDER: Certainty[] = ["confirmed", "likely", "estimated"];
-const KEYS = ["granularity", "periods", "certainty", "project"];
+const KEYS = ["granularity", "periods", "certainty", "project", "cfview"];
 
 export default function Cashflow() {
   const { data: options } = useOptions();
+  const { data: user } = useCurrentUser();
   const [searchParams, setSearchParams] = useStickyParams("cashflow.filters", KEYS);
   const granularity = (searchParams.get("granularity") as "week" | "month") ?? "week";
   const periods = searchParams.get("periods") ?? (granularity === "week" ? "12" : "6");
   const certainty = searchParams.get("certainty") ?? "";
   const project = searchParams.get("project") ?? "";
+  // D49：表格｜時間軸 兩種看法
+  const view = searchParams.get("cfview") === "timeline" ? "timeline" : "table";
   const [drill, setDrill] = useState<CashflowCell | null>(null);
 
   const setParam = (name: string, value: string) => {
@@ -49,12 +58,27 @@ export default function Cashflow() {
     setSearchParams(next, { replace: true });
   };
 
-  const { data, isLoading, error, refetch } = useCashflow({
-    granularity,
-    periods,
-    certainty: certainty || undefined,
-    project: project || undefined,
-  });
+  const tableQuery = useCashflow(
+    {
+      granularity,
+      periods,
+      certainty: certainty || undefined,
+      project: project || undefined,
+    },
+    view === "table",
+  );
+  // 時間軸固定抓 24 個月（月粒度）——縮放平移在前端做，不用重打 API
+  const timelineQuery = useCashflow(
+    {
+      granularity: "month",
+      periods: "24",
+      certainty: certainty || undefined,
+      project: project || undefined,
+    },
+    view === "timeline",
+  );
+  const { data, isLoading, error, refetch } =
+    view === "timeline" ? timelineQuery : tableQuery;
 
   if (isLoading) return <Spinner label="計算現金流…" />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -62,6 +86,7 @@ export default function Cashflow() {
 
   const cells = data.cells;
   const hasMoney = cells.some((c) => Number(c.income) || Number(c.expense));
+  const canEditCash = Boolean(user?.permissions.view_cash_balance);
 
   return (
     <div className="space-y-4">
@@ -77,7 +102,9 @@ export default function Cashflow() {
               {data.shortfall.label}會缺 <Money value={data.shortfall.amount} compact /> 元
             </p>
             <p className="mt-1 text-xs leading-relaxed text-ink-2">
-              到那一格為止，收進來的錢不夠付出去的。
+              {data.opening_balance !== null
+                ? "累計已含公司現有現金——到那一格，帳上的錢是真的不夠付。"
+                : "到那一格為止，收進來的錢不夠付出去的。"}
               現在還來得及：把可請款的單開出去、或跟業主談提前撥款、或把可以延的付款往後排。
             </p>
           </div>
@@ -96,32 +123,48 @@ export default function Cashflow() {
         </Card>
       ) : null}
 
+      {/* 公司現有現金（D49）——只有經理與系統管理員看得到這一塊 */}
+      {canEditCash && <CashBalanceCard />}
+
       <section className="flex flex-wrap items-center gap-2">
-        <Select
-          value={granularity}
-          onChange={(v) => setParam("granularity", v)}
+        {/* 表格｜時間軸（D49），邊界標示（D50） */}
+        <Segmented
+          value={view}
+          onChange={(v) => setParam("cfview", v === "table" ? "" : v)}
           options={[
-            { value: "week", label: "以週看" },
-            { value: "month", label: "以月看" },
+            { value: "table", label: "表格" },
+            { value: "timeline", label: "時間軸" },
           ]}
         />
-        <Select
-          value={periods}
-          onChange={(v) => setParam("periods", v)}
-          options={
-            granularity === "week"
-              ? [
-                  { value: "8", label: "未來 8 週" },
-                  { value: "12", label: "未來 12 週" },
-                  { value: "26", label: "未來 26 週" },
-                ]
-              : [
-                  { value: "6", label: "未來 6 個月" },
-                  { value: "12", label: "未來 12 個月" },
-                  { value: "24", label: "未來 24 個月" },
-                ]
-          }
-        />
+        {view === "table" && (
+          <>
+            <Select
+              value={granularity}
+              onChange={(v) => setParam("granularity", v)}
+              options={[
+                { value: "week", label: "以週看" },
+                { value: "month", label: "以月看" },
+              ]}
+            />
+            <Select
+              value={periods}
+              onChange={(v) => setParam("periods", v)}
+              options={
+                granularity === "week"
+                  ? [
+                      { value: "8", label: "未來 8 週" },
+                      { value: "12", label: "未來 12 週" },
+                      { value: "26", label: "未來 26 週" },
+                    ]
+                  : [
+                      { value: "6", label: "未來 6 個月" },
+                      { value: "12", label: "未來 12 個月" },
+                      { value: "24", label: "未來 24 個月" },
+                    ]
+              }
+            />
+          </>
+        )}
         <Select
           value={certainty}
           onChange={(v) => setParam("certainty", v)}
@@ -144,8 +187,17 @@ export default function Cashflow() {
           title="這段期間沒有預計的收付"
           hint="收入來自請款事件與填了「預計可請款日」的里程碑；支出來自應付款項與分包合約。都沒有的話，這張表就是空的——不是系統壞了，是還沒有資料"
         />
+      ) : view === "timeline" ? (
+        <CashflowTimeline data={data} />
       ) : (
-        <Table cells={cells} onDrill={setDrill} />
+        <>
+          {data.opening_balance !== null && (
+            <p className="text-xs text-ink-2">
+              「累計」列從公司現有現金 <Money value={data.opening_balance} compact /> 元起算。
+            </p>
+          )}
+          <Table cells={cells} onDrill={setDrill} />
+        </>
       )}
 
       <section className="grid gap-2 sm:grid-cols-3">
@@ -156,7 +208,7 @@ export default function Cashflow() {
 
       {/* 落在窗外的錢。不講的話，會以為總額就是全部 */}
       {(Number(data.outside_window.income) > 0 || Number(data.outside_window.expense) > 0) && (
-        <p className="rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+        <p className="rounded-lg bg-page px-3 py-2 text-xs leading-relaxed text-ink-2">
           另有落在這段期間之外的：收入 <Money value={data.outside_window.income} compact /> 元、
           支出 <Money value={data.outside_window.expense} compact /> 元。
           把期間拉長才看得到它們。
@@ -165,7 +217,7 @@ export default function Cashflow() {
 
       {/* ⚠️ 固定顯示，不可收合 */}
       <div
-        className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
+        className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs leading-relaxed"
         style={{ background: "var(--color-atrisk-bg)", color: "var(--color-atrisk)" }}
       >
         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
@@ -181,6 +233,65 @@ export default function Cashflow() {
 
       {drill && <CellDetail cell={drill} onClose={() => setDrill(null)} />}
     </div>
+  );
+}
+
+/**
+ * 公司現有現金（D49）——**只有經理與系統管理員看得到**（會計師也看不到）。
+ * 填進來的數字直接成為「累計」列的起點：跌破零＝現金真的見底。
+ */
+function CashBalanceCard() {
+  const { data } = useCashBalance(true);
+  const save = useSaveCashBalance();
+  const toast = useToast();
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const value = draft ?? (data ? String(Number(data.amount)) : "");
+  const dirty = data !== undefined && draft !== null && Number(draft) !== Number(data.amount);
+
+  function submit() {
+    if (!dirty || draft === null || draft.trim() === "") return;
+    save.mutate(
+      { amount: draft.trim() },
+      {
+        onSuccess: () => {
+          setDraft(null);
+          toast.success("公司現有現金已更新", ["累計列會從這個數字起算"]);
+        },
+        onError: (e) =>
+          toast.error(e instanceof ApiError ? e.body.detail ?? "儲存失敗" : "儲存失敗"),
+      },
+    );
+  }
+
+  return (
+    <Card className="flex flex-wrap items-center gap-3 p-3">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-ink-2">公司現有現金（僅經理與系統管理員看得到）</p>
+        <p className="mt-0.5 text-xs text-ink-3">
+          {data?.updated_by_name
+            ? `上次更新：${new Date(data.updated_at).toLocaleString("zh-TW")}·${data.updated_by_name}`
+            : "填入目前帳上的現金，累計列會從這個數字起算"}
+        </p>
+      </div>
+      <div className="ml-auto flex items-center gap-1.5">
+        <input
+          type="number"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          aria-label="公司現有現金"
+          className="w-36 rounded-lg border border-line bg-page px-2 py-1.5 text-right text-sm font-bold tabular-nums text-ink"
+        />
+        <span className="text-xs text-ink-3">元</span>
+        <Button variant="primary" onClick={submit} loading={save.isPending} disabled={!dirty}>
+          儲存
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -265,7 +376,7 @@ function Table({
                   <button
                     type="button"
                     onClick={() => onDrill(cell)}
-                    className="text-[11px] font-semibold text-ink-2 underline underline-offset-2"
+                    className="text-xs font-semibold text-ink-2 underline underline-offset-2"
                   >
                     {cell.detail_count} 筆
                   </button>
@@ -337,11 +448,11 @@ function SubLine({
   if (values.every((v) => !v)) return null;
   return (
     <tr>
-      <th className="sticky left-0 bg-card py-1 pl-6 pr-3 text-left text-[11px] font-normal text-ink-3">
+      <th className="sticky left-0 bg-card py-1 pl-6 pr-3 text-left text-xs font-normal text-ink-3">
         {CERTAINTY_LABEL[level]}
       </th>
       {values.map((value, i) => (
-        <td key={cells[i].key} className="px-3 py-1 text-[11px] text-ink-3">
+        <td key={cells[i].key} className="px-3 py-1 text-xs text-ink-3">
           {value ? (
             <>
               {negative && "-"}
@@ -428,7 +539,7 @@ function Group({
                 <Money value={row.amount} compact />
               </p>
             </div>
-            <p className="mt-0.5 text-[11px] text-ink-3">
+            <p className="mt-0.5 text-xs text-ink-3">
               {row.project} · {row.date} · {CERTAINTY_LABEL[row.certainty]} · {row.note}
             </p>
           </li>

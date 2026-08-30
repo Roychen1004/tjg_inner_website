@@ -47,6 +47,9 @@ export interface StageTemplate {
 // ── 流程目錄與流程單元（2026-08 流程制）─────────────────────────────
 export interface FlowCatalogItem {
   id: number;
+  /** 所屬模板（D49）。資料遷移前的舊列可能是 null＝預設模板 */
+  template: number | null;
+  stage: number;
   seq: number;
   code: string;
   name: string;
@@ -56,6 +59,17 @@ export interface FlowCatalogItem {
   is_gate: boolean;
   /** 有值＝這一項的進度由構件批次自動彙總 */
   batch_stage_seq: number | null;
+  /** 有案子用過——刪不掉，只能停用 */
+  in_use: boolean;
+}
+
+/** 流程模板（D49）：一份「這種案子要走哪些流程」的目錄 */
+export interface FlowTemplate {
+  id: number;
+  name: string;
+  is_default: boolean;
+  is_active: boolean;
+  item_count: number;
 }
 
 export interface FlowCatalogStage {
@@ -73,12 +87,14 @@ export interface FlowUnit {
   project: number;
   project_name: string;
   project_code: string;
-  flow_item: number;
+  /** null＝自訂流程（D49，目錄上沒有的一步） */
+  flow_item: number | null;
   seq: number;
   flow_code: string;
   flow_name: string;
   stage_seq: number;
   stage_name: string;
+  is_custom: boolean;
   description: string;
   deliverables: string;
   done_criteria: string;
@@ -120,6 +136,17 @@ export interface FlowTaskAssignment {
   qty_assigned: string;
   qty_done: string;
   is_done: boolean;
+  /** 經理分配時的叮嚀（D49）——被分到的人要特別看到這段話 */
+  note: string;
+  /** 工作類型（D52）——產能統計的分類，新分配必選 */
+  work_type: number | null;
+  work_type_name: string;
+  /** 員工按「開始」的那天（D52）；回報過就自動視為已開始 */
+  started_at: string | null;
+  /** 完成量報滿的那天（D52） */
+  completed_at: string | null;
+  /** 工數補登修正（D52）——空＝系統依回報自動計 */
+  man_days_override: string | null;
   // 「我的任務」清單用的補充資訊
   unit: number;
   task_name: string;
@@ -166,6 +193,13 @@ export interface WorkloadAssignment {
   unit_of_measure: string;
   /** 最後回報日（做完的分配＝完成日） */
   reported_at: string;
+  // D52：老闆要看「誰開始了、誰還沒」
+  work_type_name: string;
+  started_at: string | null;
+  completed_at: string | null;
+  /** 系統計工（一人一天 1 工，記在有回報的那件；含補登修正） */
+  man_days: number;
+  reported_today: boolean;
 }
 
 export interface StaffWorkload {
@@ -562,6 +596,19 @@ export interface Payable {
   note: string;
   is_overdue: boolean;
   created_at: string;
+  /** 明細（D52）——選填；有明細時金額＝明細合計 */
+  lines: PayableLine[];
+}
+
+/** 應付明細一列（D52）：品項 × 數量 × 單價 */
+export interface PayableLine {
+  id: number;
+  item: number;
+  item_name: string;
+  unit_of_measure: string;
+  qty: string;
+  unit_price: string;
+  amount: string;
 }
 
 export interface PayableSummary {
@@ -613,6 +660,16 @@ export interface CashflowForecast {
   disclaimer: string;
   tax_note: string;
   project_count: number;
+  /** 公司現有現金（D49）。null＝這個人看不到（或看單一專案）；有值＝累計已含它 */
+  opening_balance: string | null;
+}
+
+/** 公司現有現金（D49）：只有經理與系統管理員看得到 */
+export interface CashBalance {
+  amount: string;
+  note: string;
+  updated_at: string;
+  updated_by_name: string;
 }
 
 export interface ProjectPnl {
@@ -624,4 +681,78 @@ export interface ProjectPnl {
   committed: { cost: string; gross: string; pct: number | null };
   paid_amount: string;
   note: string;
+}
+
+// ── 產能與成本（D52）────────────────────────────────────────────────
+/** 工作類型標籤——分配工作時必選，產能統計的分類基準 */
+export interface WorkType {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
+/** 品項主檔——應付明細指到這裡，單價按品項累積 */
+export interface MaterialItem {
+  id: number;
+  name: string;
+  unit_of_measure: string;
+  is_active: boolean;
+}
+
+export interface ProductivityRow {
+  work_type: string;
+  unit_of_measure: string;
+  qty: number;
+  man_days: number;
+  /** 每工產出＝量 ÷ 工；工為 0 時為 null */
+  per_man_day: number | null;
+}
+
+export interface ProductivityStats {
+  start: string;
+  end: string;
+  people: Array<{
+    id: number;
+    name: string;
+    title: string;
+    man_days: number;
+    rows: ProductivityRow[];
+  }>;
+  company: Array<
+    ProductivityRow & {
+      monthly: Array<{ month: string; qty: number; man_days: number }>;
+    }
+  >;
+}
+
+export interface UnitPricePoint {
+  date: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+  vendor: string;
+  payable: number;
+  title: string;
+}
+
+export interface UnitPriceStats {
+  items: Array<{
+    id: number;
+    name: string;
+    unit_of_measure: string;
+    count: number;
+    total_qty: number;
+    avg_price: number | null;
+    latest_price: number;
+    points: UnitPricePoint[];
+  }>;
+}
+
+export interface FlowCostStats {
+  rows: Array<{
+    flow_name: string;
+    unit_count: number;
+    total: number;
+    avg: number;
+  }>;
 }

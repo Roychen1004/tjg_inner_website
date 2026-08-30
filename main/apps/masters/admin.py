@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from simple_history.admin import SimpleHistoryAdmin
 
-from .models import Customer, FlowItem, FlowStage, Stage, StageTemplate, Vendor
+from .models import Customer, FlowItem, FlowStage, FlowTemplate, Stage, StageTemplate, Vendor
 
 
 @admin.register(Customer)
@@ -88,10 +88,19 @@ class FlowStageAdmin(admin.ModelAdmin):
 
 @admin.register(FlowItem)
 class FlowItemAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "stage", "seq", "is_gate", "batch_stage_seq", "is_active")
-    list_filter = ("stage", "is_active")
+    list_display = ("code", "name", "template", "stage", "seq", "is_gate", "batch_stage_seq", "is_active")
+    list_filter = ("template", "stage", "is_active")
     search_fields = ("code", "name")
-    ordering = ("seq",)
+    ordering = ("template", "seq")
+
+
+@admin.register(FlowTemplate)
+class FlowTemplateAdmin(admin.ModelAdmin):
+    """D49 起模板主要在前端「設定 → 流程模板」維護；這裡留備援。"""
+
+    list_display = ("name", "is_default", "is_active", "created_at")
+    list_filter = ("is_default", "is_active")
+    search_fields = ("name",)
 
 
 

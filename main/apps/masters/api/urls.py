@@ -6,8 +6,12 @@ from .views import (
     DepartmentViewSet,
     EmployeeViewSet,
     FlowCatalogView,
+    FlowItemViewSet,
+    FlowTemplateViewSet,
+    MaterialItemViewSet,
     OptionsView,
     VendorViewSet,
+    WorkTypeViewSet,
 )
 
 app_name = "masters"
@@ -19,6 +23,10 @@ router.register("customers", CustomerViewSet, basename="customer")
 router.register("vendors", VendorViewSet, basename="vendor")
 router.register("employees", EmployeeViewSet, basename="employee")
 router.register("departments", DepartmentViewSet, basename="department")
+router.register("flow-templates", FlowTemplateViewSet, basename="flow-template")
+router.register("flow-items", FlowItemViewSet, basename="flow-item")
+router.register("work-types", WorkTypeViewSet, basename="work-type")
+router.register("material-items", MaterialItemViewSet, basename="material-item")
 
 urlpatterns = [
     path("options", OptionsView.as_view(), name="options"),

@@ -14,10 +14,10 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError, api } from "@/api/client";
-import { useFlowCatalog, useOptions } from "@/api/hooks";
+import { useFlowCatalog, useFlowTemplates, useOptions } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
-import type { ProjectDetail } from "@/api/types";
-import FlowPicker from "@/components/forms/FlowPicker";
+import type { FlowUnit, ProjectDetail } from "@/api/types";
+import FlowArranger, { entriesFromCatalog, type FlowEntry } from "@/components/forms/FlowArranger";
 import { Button, DateInput, Field, FormErrors, inputClass, Modal, Select } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -77,12 +77,17 @@ export default function ProjectForm({
   project?: ProjectDetail | null;
 }) {
   const { data: options } = useOptions();
-  const { data: catalog } = useFlowCatalog(open);
+  const { data: templates } = useFlowTemplates();
+  // D49：先選流程模板，再依模板的目錄編排這個案子的流程
+  const [template, setTemplate] = useState<string>("");
+  const templateId = template ? Number(template) : null;
+  const { data: catalog } = useFlowCatalog(open, templateId);
   const toast = useToast();
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [milestones, setMilestones] = useState<MilestoneRow[]>([]);
-  const [flows, setFlows] = useState<Set<number> | null>(null);
+  const [entries, setEntries] = useState<FlowEntry[] | null>(null);
+  const [seededFor, setSeededFor] = useState<string>("");
   const [more, setMore] = useState(false);
   const [loadedId, setLoadedId] = useState<number | null>(null);
   // 建案時一起選好的檔案，存檔成功後自動上傳
@@ -112,13 +117,21 @@ export default function ProjectForm({
     setLoadedId(null);
     setForm(EMPTY);
     setMilestones([]);
-    setFlows(null);
+    setEntries(null);
+    setSeededFor("");
     setContractFiles([]);
     setDrawingFiles([]);
   }
-  // 新增時預設全勾（老闆確認過：預設全勾再取消）
-  if (open && !project && flows === null && catalog) {
-    setFlows(new Set(catalog.flatMap((s) => s.items.map((i) => i.id))));
+  // 模板下拉預設選「預設模板」
+  if (open && !project && !template && templates?.length) {
+    const def = templates.find((t) => t.is_default) ?? templates[0];
+    setTemplate(String(def.id));
+  }
+  // 目錄載入（或換模板）後重建編排清單：預設全勾（老闆確認過：預設全勾再取消）
+  const seedKey = `${template}|${catalog ? "y" : "n"}`;
+  if (open && !project && catalog && seededFor !== seedKey) {
+    setSeededFor(seedKey);
+    setEntries(entriesFromCatalog(catalog));
   }
 
   const customers = useQuery({
@@ -148,6 +161,56 @@ export default function ProjectForm({
         toast.success(`${saved.name} 已更新`);
         close();
         return;
+      }
+
+      // D49：自訂流程與拖移後的順序，在案子建立後補上
+      const included = (entries ?? []).filter((e) => e.included);
+      const customs = included.filter((e) => e.isCustom);
+      const catalogOrderChanged = (() => {
+        const seqOf = new Map(
+          (catalog ?? []).flatMap((s) => s.items).map((i) => [i.id, i.seq]),
+        );
+        const items = included.filter((e) => e.itemId !== null);
+        for (let i = 1; i < items.length; i++) {
+          const a = seqOf.get(items[i - 1].itemId as number) ?? 0;
+          const b = seqOf.get(items[i].itemId as number) ?? 0;
+          if (a > b) return true;
+        }
+        return false;
+      })();
+      if (customs.length || catalogOrderChanged) {
+        const stageIdBySeq = new Map((catalog ?? []).map((s) => [s.seq, s.id]));
+        const createdByKey = new Map<string, number>();
+        try {
+          for (const e of customs) {
+            const stageId = stageIdBySeq.get(e.stageSeq);
+            if (!stageId) continue;
+            const unit = await api.post<FlowUnit>(`/projects/${saved.id}/add-flow`, {
+              name: e.name,
+              stage: stageId,
+            });
+            createdByKey.set(e.key, unit.id);
+          }
+          const unitByItem = new Map(
+            saved.flow_units
+              .filter((u) => u.flow_item !== null)
+              .map((u) => [u.flow_item as number, u.id]),
+          );
+          const orderedIds = included
+            .map((e) =>
+              e.itemId !== null
+                ? unitByItem.get(e.itemId) ?? null
+                : createdByKey.get(e.key) ?? null,
+            )
+            .filter((id): id is number => id !== null);
+          await api.post(`/projects/${saved.id}/reorder-flows`, { unit_ids: orderedIds });
+          qc.invalidateQueries({ queryKey: ["flow-units"] });
+          qc.invalidateQueries({ queryKey: ["project"] });
+        } catch {
+          toast.error("案子已建立，但自訂流程或順序沒存成功", [
+            "到專案明細的「編輯流程」再調一次即可",
+          ]);
+        }
       }
 
       // 表單裡選好的合約與圖說，掛到剛建立的案子上
@@ -181,7 +244,9 @@ export default function ProjectForm({
       } else {
         toast.success(`已建立「${saved.name}」`, [
           `編號 ${saved.code}`,
-          flows?.size ? `${flows.size} 個流程單元已生成，到專案明細指派負責人與排期` : "",
+          included.length
+            ? `${included.length} 個流程單元已生成，到專案明細指派負責人與排期`
+            : "",
           milestones.length ? `${milestones.length} 期應收款` : "",
           files.length ? `${files.length} 個檔案已上傳` : "",
         ].filter(Boolean));
@@ -217,7 +282,9 @@ export default function ProjectForm({
       ...(project
         ? {}
         : {
-            flow_items: [...(flows ?? new Set<number>())],
+            flow_items: (entries ?? [])
+              .filter((e) => e.included && e.itemId !== null)
+              .map((e) => e.itemId as number),
             milestones: milestones
               .filter((m) => m.label.trim() && m.percentage)
               .map((m) => ({
@@ -235,11 +302,11 @@ export default function ProjectForm({
   const set = (key: keyof FormState) => (value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  // 分期可掛的觸發流程＝目前勾選中的流程（依目錄順序）
-  const triggerOptions = (catalog ?? [])
-    .flatMap((s) => s.items)
-    .filter((i) => flows?.has(i.id))
-    .map((i) => ({ value: String(i.id), label: `${i.code} ${i.name}` }));
+  // 分期可掛的觸發流程＝目前勾選中的目錄流程（自訂流程建案後在卡片上掛）。
+  // 編號是位置制（D51）會隨拖移變動，下拉只顯示名稱
+  const triggerOptions = (entries ?? [])
+    .filter((e) => e.included && e.itemId !== null)
+    .map((e) => ({ value: String(e.itemId), label: e.name }));
 
   return (
     <Modal open={open} onClose={close} title={project ? "修改專案" : "新增專案"}>
@@ -321,11 +388,25 @@ export default function ProjectForm({
       )}
 
       {!project && (
-        // 不用 Field 包——FlowPicker 內部有自己的 label，巢狀 label 會互相搶點擊
+        // 不用 Field 包——FlowArranger 內部有自己的 label，巢狀 label 會互相搶點擊
         <div className="mb-3">
-          <p className="mb-1 text-xs font-semibold text-ink-2">這個案子要走哪些流程</p>
-          {catalog && flows ? (
-            <FlowPicker stages={catalog} selected={flows} onChange={setFlows} />
+          <div className="mb-1 flex items-center gap-2">
+            <p className="text-xs font-semibold text-ink-2">這個案子要走哪些流程</p>
+            {/* 流程模板（D49）：不同型態的案子有不同的起手目錄。內容在 設定 → 流程模板 維護 */}
+            {(templates?.length ?? 0) > 1 && (
+              <Select
+                value={template}
+                onChange={setTemplate}
+                options={(templates ?? []).map((t) => ({
+                  value: t.id,
+                  label: t.is_default ? `${t.name}（預設）` : t.name,
+                }))}
+                className="ml-auto"
+              />
+            )}
+          </div>
+          {catalog && entries ? (
+            <FlowArranger stages={catalog} entries={entries} onChange={setEntries} />
           ) : (
             <p className="text-xs text-ink-3">載入流程目錄…</p>
           )}
@@ -384,7 +465,7 @@ export default function ProjectForm({
                         placeholder="期別名稱（如：第一期（簽約））"
                         className={`${inputClass} mb-0 min-w-0 flex-1`}
                       />
-                      <label className="flex shrink-0 items-center gap-1 text-[11px] text-ink-3">
+                      <label className="flex shrink-0 items-center gap-1 text-xs text-ink-3">
                         <input
                           type="number"
                           inputMode="decimal"
@@ -427,7 +508,7 @@ export default function ProjectForm({
                         </option>
                       ))}
                     </select>
-                    <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-3">
+                    <label className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-3">
                       <span className="shrink-0">預計請款日（現金流用，可留白）</span>
                       <DateInput
                         value={row.expected_date}
@@ -457,7 +538,7 @@ export default function ProjectForm({
                     加一期
                   </button>
                   <span
-                    className="text-[11px] font-semibold"
+                    className="text-xs font-semibold"
                     style={{ color: totalPct === 100 ? "var(--color-ontrack)" : "var(--color-atrisk)" }}
                   >
                     合計 {totalPct}%
@@ -614,7 +695,7 @@ function DeleteProjectZone({
           <p className="text-xs font-semibold" style={{ color: "var(--color-delayed)" }}>
             確定刪除「{project.name}」？
           </p>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-2">
             流程單元、構件批次、應收分期、變更單與附件會一起刪除，<strong>不能復原</strong>。
             只是不做了的案子，改「案件狀態」就好，不用刪。
           </p>
@@ -636,7 +717,7 @@ function DeleteProjectZone({
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-semibold text-ink-3
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-xs font-semibold text-ink-3
                      transition-base hover:text-[var(--color-delayed)]"
         >
           <Trash2 size={12} />
@@ -662,8 +743,8 @@ function FilePicker({
   return (
     <div className="rounded-lg bg-page px-3 py-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold text-ink-2">{label}</span>
-        <label className="cursor-pointer rounded-lg bg-card px-2.5 py-1 text-[11px] font-semibold
+        <span className="text-xs font-semibold text-ink-2">{label}</span>
+        <label className="cursor-pointer rounded-lg bg-card px-2.5 py-1 text-xs font-semibold
                           text-ink-2 ring-1 ring-line hover:ring-stage-2">
           選檔案
           <input
@@ -681,7 +762,7 @@ function FilePicker({
       {files.length > 0 && (
         <ul className="mt-1.5 space-y-1">
           {files.map((file, i) => (
-            <li key={`${file.name}-${i}`} className="flex items-center gap-2 text-[11px] text-ink-2">
+            <li key={`${file.name}-${i}`} className="flex items-center gap-2 text-xs text-ink-2">
               <span className="min-w-0 flex-1 truncate">{file.name}</span>
               <span className="shrink-0 text-ink-3">{(file.size / 1024).toFixed(0)} KB</span>
               <button

@@ -13,7 +13,7 @@
  */
 import { lazy, Suspense } from "react";
 
-import { Spinner } from "@/components/ui";
+import { Segmented, Spinner } from "@/components/ui";
 import { useStickyParams } from "@/lib/stickyParams";
 
 const Receivables = lazy(() => import("@/pages/Billing"));
@@ -40,21 +40,14 @@ export default function Finance() {
 
   return (
     <div>
-      <div className="mb-4 flex rounded-lg bg-page p-0.5">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={[
-              "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-base",
-              tab === t.key ? "bg-card text-ink shadow-sm" : "text-ink-3",
-            ].join(" ")}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* 邊界標示的頂排選項（D50） */}
+      <Segmented
+        className="mb-4"
+        grow
+        value={tab}
+        onChange={setTab}
+        options={TABS.map((t) => ({ value: t.key, label: t.label }))}
+      />
 
       <Suspense fallback={<Spinner />}>
         {tab === "out" ? <Payables /> : tab === "cashflow" ? <Cashflow /> : <Receivables />}

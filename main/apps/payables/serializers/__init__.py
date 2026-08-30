@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from main.apps.payables.models import Payable, PayableLog, Subcontract
+from main.apps.payables.models import Payable, PayableLine, PayableLog, Subcontract
 from main.apps.payables.services import terms_service
 from main.utils.choices import PayableState, PaymentMethod
 from main.utils.permissions import has_permission
@@ -86,6 +86,34 @@ class SubcontractWriteSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class PayableLineSerializer(serializers.ModelSerializer):
+    """應付明細（D52）——一列＝一個品項的數量×單價。"""
+
+    item_name = serializers.CharField(source="item.name", read_only=True)
+    unit_of_measure = serializers.CharField(source="item.unit_of_measure", read_only=True)
+
+    class Meta:
+        model = PayableLine
+        fields = ["id", "item", "item_name", "unit_of_measure", "qty", "unit_price", "amount"]
+        read_only_fields = ["amount"]
+
+
+class PayableLineWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayableLine
+        fields = ["item", "qty", "unit_price"]
+
+    def validate_qty(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("數量必須大於 0")
+        return value
+
+    def validate_unit_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("單價不可為負")
+        return value
+
+
 class PayableSerializer(serializers.ModelSerializer):
     """應付款項 —— 實際要付出去的一筆錢。
 
@@ -98,7 +126,7 @@ class PayableSerializer(serializers.ModelSerializer):
     subcontract_title = serializers.CharField(source="subcontract.title", read_only=True, default="")
     subcontract_code = serializers.CharField(source="subcontract.code", read_only=True, default="")
     flow_unit_name = serializers.CharField(
-        source="flow_unit.flow_item.name", read_only=True, default=""
+        source="flow_unit.flow_display_name", read_only=True, default=""
     )
     category_label = serializers.CharField(source="get_category_display", read_only=True)
     state_label = serializers.CharField(source="get_state_display", read_only=True)
@@ -107,6 +135,8 @@ class PayableSerializer(serializers.ModelSerializer):
     is_overdue = serializers.BooleanField(read_only=True)
     next_states = serializers.SerializerMethodField()
     cash_date_note = serializers.SerializerMethodField()
+    # D52：明細（要 prefetch_related("lines__item")，不然一筆一查）
+    lines = PayableLineSerializer(many=True, read_only=True)
 
     class Meta:
         model = Payable
@@ -119,7 +149,7 @@ class PayableSerializer(serializers.ModelSerializer):
             "state", "state_label", "next_states",
             "billing_date", "due_date", "paid_date", "cash_date", "cash_date_note",
             "payment_method", "method_label", "check_due_date", "check_no",
-            "invoice_no", "note", "is_overdue", "created_at",
+            "invoice_no", "note", "is_overdue", "created_at", "lines",
         ]
 
     def get_next_states(self, obj) -> list[dict]:
@@ -156,13 +186,17 @@ class PayableSerializer(serializers.ModelSerializer):
 
 
 class PayableWriteSerializer(serializers.ModelSerializer):
+    # D52：明細選填。有明細時金額自動＝明細合計（稅後，同 D48），
+    # 零星款照舊只填總額
+    lines = PayableLineWriteSerializer(many=True, required=False)
+
     class Meta:
         model = Payable
         fields = [
             "subcontract", "project", "vendor", "flow_unit", "category", "title",
             "amount", "tax_amount", "retention_amount",
             "billing_date", "due_date", "payment_method", "check_due_date",
-            "check_no", "invoice_no", "note",
+            "check_no", "invoice_no", "note", "lines",
         ]
         # 這三個在有綁分包合約時由合約決定（見 validate），沒綁時才要求填。
         # 宣告成必填會在 validate() 跑到之前就先擋下來
@@ -170,6 +204,8 @@ class PayableWriteSerializer(serializers.ModelSerializer):
             "project": {"required": False},
             "vendor": {"required": False},
             "category": {"required": False},
+            # 有明細時金額由系統加總，所以不能宣告必填
+            "amount": {"required": False},
         }
 
     def validate_amount(self, value):
@@ -178,6 +214,18 @@ class PayableWriteSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        # D52：有明細就用明細合計當金額——兩邊各填一個數字必然有一天對不上
+        if attrs.get("lines"):
+            attrs["amount"] = sum(
+                (ld["qty"] * ld["unit_price"] for ld in attrs["lines"]), Decimal("0")
+            ).quantize(Decimal("0.01"))
+            if attrs["amount"] <= 0:
+                raise serializers.ValidationError({"lines": "明細合計必須大於 0"})
+        elif attrs.get("amount") is None and (
+            self.instance is None or getattr(self.instance, "amount", None) is None
+        ):
+            raise serializers.ValidationError({"amount": "請填金額，或改用明細列"})
+
         subcontract = attrs.get("subcontract") or getattr(self.instance, "subcontract", None)
 
         # 掛在合約底下時，專案與廠商一律跟合約走——
@@ -235,6 +283,38 @@ class PayableWriteSerializer(serializers.ModelSerializer):
         if method == PaymentMethod.CHECK and check_due and due and check_due < due:
             raise serializers.ValidationError({"check_due_date": "支票到期日不會早於開票日"})
         return attrs
+
+    # ── D52 明細寫入：整批換掉（一張單幾列而已，不值得做差異比對）──
+    def _sync_lines(self, payable, lines_data):
+        payable.lines.all().delete()
+        PayableLine.objects.bulk_create(
+            PayableLine(
+                payable=payable,
+                amount=(ld["qty"] * ld["unit_price"]).quantize(Decimal("0.01")),
+                **ld,
+            )
+            for ld in lines_data
+        )
+
+    def create(self, validated_data):
+        from django.db import transaction
+
+        lines_data = validated_data.pop("lines", None)
+        with transaction.atomic():
+            payable = super().create(validated_data)
+            if lines_data:
+                self._sync_lines(payable, lines_data)
+        return payable
+
+    def update(self, instance, validated_data):
+        from django.db import transaction
+
+        lines_data = validated_data.pop("lines", None)
+        with transaction.atomic():
+            payable = super().update(instance, validated_data)
+            if lines_data is not None:   # 送空陣列＝清空明細
+                self._sync_lines(payable, lines_data)
+        return payable
 
 
 class PayableTransitionSerializer(serializers.Serializer):

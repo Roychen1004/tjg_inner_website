@@ -156,7 +156,7 @@ class DashboardOverviewView(APIView):
         today = timezone.localdate()
         rows = []
         qs = projects.select_related("customer").prefetch_related(
-            "flow_units__flow_item__stage"
+            "flow_units__stage"
         ).with_amounts()[:10]
         for project in qs:
             units = [
@@ -166,10 +166,12 @@ class DashboardOverviewView(APIView):
                 u for u in units if u.state in (FlowState.TODO, FlowState.DOING)
             ]
             # 目前大階段＝最前面還有事沒做完的那一段；全做完就是最後一段
-            if open_units:
-                current = min((u.flow_item.stage for u in open_units), key=lambda s: s.seq)
-            elif units:
-                current = max((u.flow_item.stage for u in units), key=lambda s: s.seq)
+            open_stages = [s for s in (u.display_stage for u in open_units) if s]
+            all_stages = [s for s in (u.display_stage for u in units) if s]
+            if open_stages:
+                current = min(open_stages, key=lambda s: s.seq)
+            elif all_stages:
+                current = max(all_stages, key=lambda s: s.seq)
             else:
                 current = None
             overdue_units = sum(
@@ -235,7 +237,7 @@ class DashboardAttentionView(APIView):
             items.append({
                 "type": "flow_overdue",
                 "severity": "bad",
-                "title": f"{u.project.name}·{u.flow_item.name}",
+                "title": f"{u.project.name}·{u.flow_display_name}",
                 "reason": f"預計 {u.plan_end} 完成，已逾期 {(today - u.plan_end).days} 天。負責人：{who}",
                 "action": "追進度",
                 "link": f"/projects?open={u.project_id}",
@@ -245,7 +247,7 @@ class DashboardAttentionView(APIView):
             items.append({
                 "type": "flow_unassigned",
                 "severity": "warn",
-                "title": f"{u.project.name}·{u.flow_item.name}",
+                "title": f"{u.project.name}·{u.flow_display_name}",
                 "reason": "進行中但沒有負責人——沒人負責的事不會自己完成",
                 "action": "指派負責人",
                 "link": f"/projects?open={u.project_id}",
@@ -259,7 +261,7 @@ class DashboardAttentionView(APIView):
             items.append({
                 "type": "flow_due_soon",
                 "severity": "info",
-                "title": f"{u.project.name}·{u.flow_item.name}",
+                "title": f"{u.project.name}·{u.flow_display_name}",
                 "reason": f"預計 {u.plan_end} 完成。負責人：{who}",
                 "action": "確認進度",
                 "link": f"/projects?open={u.project_id}",

@@ -152,16 +152,20 @@ def main():
             owner.delete(f"/tracking-units/{u['id']}")
         owner.delete(f"/projects/{p['id']}")
 
-    # ── A. 導航與角色（D40 權限矩陣）────────────────────────────────
-    print("\n▌A. 導航與角色（6 分頁、4 角色）")
+    # ── A. 導航與角色（D40 權限矩陣；D52 加「統計」）─────────────────
+    print("\n▌A. 導航與角色（7 分頁、4 角色）")
     me = owner.get("/auth/me")
-    check("經理導航是 6 個分頁",
-          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "settings"],
+    check("經理導航是 7 個分頁（含統計）",
+          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "stats", "settings"],
           me.get("visible_nav"))
     me_f = finance.get("/auth/me")
-    check("會計師看得到全部 6 個分頁（設定唯讀）",
-          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "settings"],
+    check("會計師看得到全部 7 個分頁（設定唯讀；統計只有金額區塊）",
+          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "stats", "settings"],
           me_f.get("visible_nav"))
+    check("產能統計限經理（D52）：經理有、會計沒有 view_productivity",
+          me.get("permissions", {}).get("view_productivity")
+          and not me_f.get("permissions", {}).get("view_productivity"),
+          me_f.get("permissions", {}).get("view_productivity"))
     check("會計師沒有專案／進度／主檔的編輯權",
           not me_f.get("permissions", {}).get("edit_project")
           and not me_f.get("permissions", {}).get("edit_tracking")
@@ -473,6 +477,60 @@ def main():
 
     owner.delete(f"/flow-tasks/{task['id']}")
     check("工作項目可刪除（分配一併刪除）", owner.status == 204, owner.status)
+
+    # ── G2. D49：流程模板、自訂流程與重排、注意事項、現金餘額 ────────
+    print("\n▌G2. D49（模板制／自訂流程／注意事項／現金餘額）")
+    tpls = owner.get("/flow-templates")
+    check("流程模板列表（有預設）", any(t.get("is_default") for t in tpls), tpls)
+    default_tpl = next(t for t in tpls if t["is_default"])
+    dup = owner.post(f"/flow-templates/{default_tpl['id']}/duplicate", {"name": "驗證用模板"})
+    check("複製模板", owner.status == 201, owner.status)
+    owner.delete(f"/flow-templates/{dup['id']}")
+    check("刪除沒用過的模板", owner.status == 204, owner.status)
+
+    stage2 = owner.get("/flow-catalog")[1]
+    cu = owner.post(f"/projects/{pid}/add-flow", {"name": "驗證自訂流程", "stage": stage2["id"]})
+    check("加自訂流程", owner.status == 201 and cu.get("is_custom") is True, owner.status)
+    d = owner.get(f"/projects/{pid}")
+    ids = [u["id"] for u in d["flow_units"]]
+    ids.insert(0, ids.pop(ids.index(cu["id"])))
+    r = owner.post(f"/projects/{pid}/reorder-flows", {"unit_ids": ids})
+    check("案內拖移重排", owner.status == 200
+          and r["project"]["flow_units"][0]["id"] == cu["id"], owner.status)
+    owner.delete(f"/flow-units/{cu['id']}")
+    check("刪自訂流程", owner.status == 204, owner.status)
+
+    owner.get("/cashflow/cash-balance")
+    check("經理看得到公司現有現金", owner.status == 200, owner.status)
+    finance.get("/cashflow/cash-balance")
+    check("會計師看不到公司現有現金", finance.status == 403, finance.status)
+
+    # ── G3. D52（工作類型／回報計工／品項明細／統計）────────────────
+    print("\n▌G3. D52（產能與成本統計）")
+    wt = owner.post("/work-types", {"name": f"驗證類型{stamp}"})
+    check("經理新增工作類型", owner.status == 201, owner.status)
+    staff.post("/work-types", {"name": "員工不可"})
+    check("員工不能新增工作類型", staff.status == 403, staff.status)
+    owner.post("/task-assignments", {})
+    check("分配缺工作類型會被擋（必選）", owner.status == 400, owner.status)
+    owner.delete(f"/work-types/{wt['id']}")
+    check("刪沒用過的工作類型", owner.status == 204, owner.status)
+
+    item = finance.post("/material-items", {"name": f"驗證品項{stamp}", "unit_of_measure": "噸"})
+    check("會計新增品項", finance.status == 201, finance.status)
+    finance.delete(f"/material-items/{item['id']}")
+    check("刪沒用過的品項", finance.status == 204, finance.status)
+
+    owner.get("/stats/productivity")
+    check("經理看產能統計", owner.status == 200, owner.status)
+    finance.get("/stats/productivity")
+    check("會計看不到產能統計", finance.status == 403, finance.status)
+    finance.get("/stats/unit-prices")
+    check("會計看得到單價統計", finance.status == 200, finance.status)
+    staff.get("/stats/unit-prices")
+    check("員工看不到單價統計", staff.status == 403, staff.status)
+    finance.get("/stats/flow-costs")
+    check("會計看得到流程花費統計", finance.status == 200, finance.status)
 
     # ── H. 儀表板 ──────────────────────────────────────────────────
     print("\n▌H. 儀表板")

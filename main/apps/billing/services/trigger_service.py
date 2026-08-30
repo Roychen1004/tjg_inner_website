@@ -35,12 +35,12 @@ def auto_claimable(unit, actor=None):
         milestone.save(update_fields=["state", "claimable_at", "updated_at"])
         MilestoneLog.objects.create(
             milestone=milestone, from_state=from_state, to_state=MilestoneState.CLAIMABLE,
-            reason=f"觸發流程「{unit.flow_item.name}」完成，系統自動轉可請款",
+            reason=f"觸發流程「{unit.flow_display_name}」完成，系統自動轉可請款",
             amount_snapshot=milestone.amount, changed_by=actor,
         )
         _notify(milestone, unit)
         count += 1
-        logger.info("期別 %s 自動轉可請款（觸發：%s）", milestone.pk, unit.flow_item.name)
+        logger.info("期別 %s 自動轉可請款（觸發：%s）", milestone.pk, unit.flow_display_name)
     return count
 
 
@@ -76,7 +76,7 @@ def on_trigger_reopened(unit, actor=None):
         if milestone.state == MilestoneState.CLAIMABLE:
             revert_claimable(
                 milestone, actor,
-                f"觸發流程「{unit.flow_item.name}」重啟，系統自動退回未到",
+                f"觸發流程「{unit.flow_display_name}」重啟，系統自動退回未到",
             )
             count += 1
         elif milestone.state in (MilestoneState.INVOICED, MilestoneState.RECEIVED):
@@ -118,7 +118,7 @@ def _notify_conflict(milestone, unit):
         recipients,
         f"⚠️ 觸發流程重啟，但「{milestone.label}」已請款",
         body=(
-            f"{milestone.project.name}：「{unit.flow_item.name}」被重啟，"
+            f"{milestone.project.name}：「{unit.flow_display_name}」被重啟，"
             f"但這期（{milestone.amount:,.0f} 元）已經請款。"
             "要不要撤單請到 金流 → 應收 人工處理——系統不會自動改已請款的錢。"
         ),
@@ -149,7 +149,7 @@ def _notify(milestone, unit):
         recipients,
         f"可以請款了：{milestone.project.name}·{milestone.label}",
         body=(
-            f"「{unit.flow_item.name}」已完成，本期 {milestone.amount:,.0f} 元轉為可請款。"
+            f"「{unit.flow_display_name}」已完成，本期 {milestone.amount:,.0f} 元轉為可請款。"
             f"{assigned}請到 金流 → 應收 開單。"
         ),
         link_url=f"/finance?milestone={milestone.pk}",

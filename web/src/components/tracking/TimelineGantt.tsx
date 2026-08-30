@@ -18,7 +18,7 @@ import { Select } from "@/components/ui";
 import { fmtMD } from "@/lib/format";
 import { projectColor, projectTint } from "@/lib/projectColors";
 
-const DAY = 86400000;
+export const DAY = 86400000;
 /** 左側「流程」欄寬（px），要跟 w-56 一致 */
 const LABEL_W = 224;
 /** 可見天數的上下限：一週 ~ 一年 */
@@ -238,7 +238,7 @@ export default function TimelineGantt({
               {months.map((m) => (
                 <span
                   key={m.ts}
-                  className="absolute top-0.5 whitespace-nowrap text-[10px] font-bold text-ink-2"
+                  className="absolute top-0.5 whitespace-nowrap text-[11px] font-bold text-ink-2"
                   style={{ left: `${x(m.labelTs)}%`, transform: "translateX(-50%)" }}
                 >
                   {m.label}
@@ -255,7 +255,7 @@ export default function TimelineGantt({
                   t.label && (
                     <span
                       key={t.ts}
-                      className="absolute top-0.5 whitespace-nowrap text-[9px] tabular-nums text-ink-3"
+                      className="absolute top-0.5 whitespace-nowrap text-[10px] tabular-nums text-ink-3"
                       style={{ left: `${x(t.labelTs)}%`, transform: "translateX(-50%)" }}
                     >
                       {t.label}
@@ -264,7 +264,7 @@ export default function TimelineGantt({
               )}
               {todayPct !== null && (
                 <span
-                  className="absolute top-0.5 z-10 -translate-x-1/2 rounded-sm bg-card/90 px-px text-[9px] font-semibold text-ink"
+                  className="absolute top-0.5 z-10 -translate-x-1/2 rounded-sm bg-card/90 px-px text-[10px] font-semibold text-ink"
                   style={{ left: `${todayPct}%` }}
                 >
                   今天
@@ -312,7 +312,7 @@ export default function TimelineGantt({
         )}
       </div>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+      <p className="mt-2 text-xs leading-relaxed text-ink-3">
         <b className="text-ink-2">滾輪＝放大縮小時間</b>、<b className="text-ink-2">按住拖曳＝上下左右移動</b>（左右移時間、上下捲畫面）。
         橫條＝流程單元的預計起訖（顏色跟著專案），字都在條裡：中間是這一步在做什麼、
         粗體＝起訖日期（條不夠寬時只留名稱，完整資訊看左欄與滑鼠停留）。
@@ -358,7 +358,7 @@ function GanttRow({
       <div className="relative min-h-7 min-w-0 flex-1 self-stretch">
         {backdrop}
         {!hasDates ? (
-          <span className="absolute left-2 top-1/2 z-[5] -translate-y-1/2 text-[10px] text-ink-3">
+          <span className="absolute left-2 top-1/2 z-[5] -translate-y-1/2 text-[11px] text-ink-3">
             未排日期
           </span>
         ) : inView ? (
@@ -370,7 +370,7 @@ function GanttRow({
             onClick={() => onOpen(unit.id)}
             title={`${unit.project_name}：${unit.flow_code} ${unit.flow_name}（${unit.plan_start} ~ ${unit.plan_end}）`}
             className={[
-              "absolute top-1/2 z-[5] -translate-y-1/2 whitespace-nowrap rounded-sm bg-card/90 px-1 py-0.5 text-[10px] font-semibold tabular-nums text-ink-3",
+              "absolute top-1/2 z-[5] -translate-y-1/2 whitespace-nowrap rounded-sm bg-card/90 px-1 py-0.5 text-[11px] font-semibold tabular-nums text-ink-3",
               e <= winStart ? "left-1" : "right-1",
             ].join(" ")}
           >
@@ -417,7 +417,8 @@ function InViewBar({
       onClick={() => onOpen(unit.id)}
       title={`${unit.project_name}：${unit.flow_code} ${unit.flow_name}（${unit.plan_start} ~ ${unit.plan_end}）`}
       className={[
-        "absolute top-1/2 z-[5] flex h-2.5 -translate-y-1/2 items-center gap-1 overflow-hidden px-1 text-left text-[9px] leading-none text-ink",
+        // D50 字級整批放大（條內 9→10px），條高 2.5→3 才裝得下
+        "absolute top-1/2 z-[5] flex h-3 -translate-y-1/2 items-center gap-1 overflow-hidden px-1 text-left text-[10px] leading-none text-ink",
         clipLeft ? "rounded-l-none" : "rounded-l",
         clipRight ? "rounded-r-none" : "rounded-r",
       ].join(" ")}
@@ -446,7 +447,7 @@ function InViewBar({
 }
 
 // ── 時間計算 ───────────────────────────────────────────────────────
-function startOfDay(d: Date) {
+export function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
@@ -454,12 +455,12 @@ function day(isoDate: string) {
   return startOfDay(new Date(isoDate));
 }
 
-function iso(ts: number) {
+export function iso(ts: number) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-interface Tick {
+export interface Tick {
   ts: number;
   /** 標籤畫的位置（日期格的中央——日曆的樣子） */
   labelTs: number;
@@ -468,7 +469,7 @@ interface Tick {
   strong: boolean;
 }
 
-interface MonthBand {
+export interface MonthBand {
   ts: number;
   labelTs: number;
   label: string;
@@ -482,7 +483,7 @@ interface MonthBand {
  *   再小      → 只畫月線
  * 月份另外畫一條「月份帶」（2026/8 這種），跨月時一眼就看得到。
  */
-function buildCalendar(
+export function buildCalendar(
   winStart: number,
   winEnd: number,
   pxPerDay: number,
@@ -544,7 +545,7 @@ function buildCalendar(
 }
 
 /** 週末底色（六日）。縮太小格子太密就不畫 */
-function buildWeekends(
+export function buildWeekends(
   winStart: number,
   winEnd: number,
   span: number,

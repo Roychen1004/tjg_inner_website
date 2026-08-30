@@ -7,19 +7,25 @@
 import { ChevronRight, FileSpreadsheet, ListChecks } from "lucide-react";
 import { useState } from "react";
 
-import { API_BASE } from "@/api/client";
-import { useFlowCatalog, useSetFlows } from "@/api/hooks";
+import { API_BASE, ApiError } from "@/api/client";
+import {
+  useAddCustomFlow,
+  useDeleteFlowUnit,
+  useFlowCatalog,
+  useReorderFlows,
+  useSetFlows,
+} from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { FlowUnit, ProjectDetail } from "@/api/types";
 import FlowStateBadge from "@/components/tracking/FlowStateBadge";
-import FlowUnitModal from "@/components/tracking/FlowUnitModal";
-import FlowPicker from "@/components/forms/FlowPicker";
+import { useUnitPanel } from "@/components/tracking/UnitPanelContext";
+import FlowArranger, { entriesFromProject, type FlowEntry } from "@/components/forms/FlowArranger";
 import { Button, EmptyState, Modal, SectionTitle } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 
 export default function FlowSection({ detail }: { detail: ProjectDetail }) {
   const { data: user } = useCurrentUser();
-  const [openUnit, setOpenUnit] = useState<number | null>(null);
+  const { open: openUnitPanel } = useUnitPanel();
   const [editingFlows, setEditingFlows] = useState(false);
 
   const units = detail.flow_units;
@@ -80,7 +86,7 @@ export default function FlowSection({ detail }: { detail: ProjectDetail }) {
                 <h3 className="text-xs font-bold text-ink">
                   第{group.seq}階段　{group.name}
                 </h3>
-                <span className="ml-auto text-[11px] tabular-nums text-ink-3">
+                <span className="ml-auto text-xs tabular-nums text-ink-3">
                   {group.units.filter((u) => u.state === "done").length}/{group.units.length}
                 </span>
               </header>
@@ -89,17 +95,17 @@ export default function FlowSection({ detail }: { detail: ProjectDetail }) {
                   <li key={unit.id}>
                     <button
                       type="button"
-                      onClick={() => setOpenUnit(unit.id)}
+                      onClick={() => openUnitPanel(unit.id)}
                       className="flex w-full items-center gap-2 px-3 py-2 text-left transition-base hover:bg-page"
                     >
-                      <span className="w-8 shrink-0 text-[11px] font-semibold tabular-nums text-ink-3">
+                      <span className="w-8 shrink-0 text-xs font-semibold tabular-nums text-ink-3">
                         {unit.flow_code}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-semibold text-ink">
                           {unit.flow_name}
                         </span>
-                        <span className="block truncate text-[11px] text-ink-3">
+                        <span className="block truncate text-xs text-ink-3">
                           {unit.assignee_name ? (
                             unit.assignee_name
                           ) : unit.state === "doing" ? (
@@ -118,11 +124,11 @@ export default function FlowSection({ detail }: { detail: ProjectDetail }) {
                         </span>
                       </span>
                       {unit.qty_total !== null && Number(unit.qty_total) > 0 ? (
-                        <span className="shrink-0 text-[11px] tabular-nums text-ink-2">
+                        <span className="shrink-0 text-xs tabular-nums text-ink-2">
                           {Number(unit.qty_done)}/{Number(unit.qty_total)} {unit.unit_of_measure}
                         </span>
                       ) : unit.state === "doing" && Number(unit.progress_pct ?? 0) > 0 ? (
-                        <span className="shrink-0 text-[11px] tabular-nums text-ink-2">
+                        <span className="shrink-0 text-xs tabular-nums text-ink-2">
                           {Number(unit.progress_pct)}%
                         </span>
                       ) : null}
@@ -138,13 +144,12 @@ export default function FlowSection({ detail }: { detail: ProjectDetail }) {
       )}
 
       {units.some((u) => u.state === "na") && (
-        <p className="mt-1.5 text-[11px] text-ink-3">
+        <p className="mt-1.5 text-xs text-ink-3">
           另有 {units.filter((u) => u.state === "na").length} 項標為「不適用」
           {user?.permissions.edit_project ? "——在「編輯流程」勾回來可還原" : ""}。
         </p>
       )}
 
-      <FlowUnitModal unitId={openUnit} onClose={() => setOpenUnit(null)} />
       {editingFlows && (
         <FlowEditorModal detail={detail} onClose={() => setEditingFlows(false)} />
       )}
@@ -162,29 +167,86 @@ function groupByStage(units: FlowUnit[]) {
   return [...map.values()].sort((a, b) => a.seq - b.seq);
 }
 
-/** 編輯流程：勾選清單預帶目前的勾法，存檔走 set-flows */
+/**
+ * 編輯流程（D49 改版）：Notion 式編排——勾選、拖曳排序、加自訂流程。
+ * 儲存時依序：set-flows（勾選增減）→ add-flow（新自訂）→
+ * 刪掉被取消的自訂 → reorder-flows（最終順序）。
+ */
 function FlowEditorModal({ detail, onClose }: { detail: ProjectDetail; onClose: () => void }) {
   const { data: stages } = useFlowCatalog();
   const setFlows = useSetFlows(detail.id);
+  const addCustom = useAddCustomFlow(detail.id);
+  const reorder = useReorderFlows(detail.id);
+  const deleteUnit = useDeleteFlowUnit();
   const toast = useToast();
-  const [selected, setSelected] = useState<Set<number>>(
-    () => new Set(detail.flow_units.filter((u) => u.state !== "na").map((u) => u.flow_item)),
-  );
+  const [entries, setEntries] = useState<FlowEntry[] | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function submit() {
-    setFlows.mutate([...selected], {
-      onSuccess: (result) => {
-        const lines = [
-          result.added.length ? `加勾：${result.added.join("、")}` : "",
-          result.removed.length ? `移除：${result.removed.join("、")}` : "",
-          result.marked_na.length ? `標不適用（已有紀錄）：${result.marked_na.join("、")}` : "",
-          result.restored.length ? `還原：${result.restored.join("、")}` : "",
-        ].filter(Boolean);
-        toast.success("流程已更新", lines.length ? lines : ["沒有變動"]);
-        onClose();
-      },
-      onError: () => toast.error("儲存失敗"),
-    });
+  // 目錄載入後建一次起始清單（既有單元照 seq 排＋還沒勾的目錄項）
+  if (stages && entries === null) {
+    setEntries(entriesFromProject(stages, detail.flow_units));
+  }
+
+  const included = (entries ?? []).filter((e) => e.included);
+
+  async function submit() {
+    if (!stages || !entries) return;
+    const stageIdBySeq = new Map(stages.map((s) => [s.seq, s.id]));
+    setSaving(true);
+    try {
+      // ① 勾選增減（只管目錄項；自訂流程不歸它管）
+      const itemIds = included.filter((e) => e.itemId !== null).map((e) => e.itemId as number);
+      const result = await setFlows.mutateAsync(itemIds);
+      const unitByItem = new Map(
+        result.project.flow_units
+          .filter((u) => u.flow_item !== null)
+          .map((u) => [u.flow_item as number, u.id]),
+      );
+
+      // ② 新自訂流程
+      const createdByKey = new Map<string, number>();
+      for (const e of entries) {
+        if (e.isCustom && e.unitId === null && e.included) {
+          const stageId = stageIdBySeq.get(e.stageSeq);
+          if (!stageId) continue;
+          const unit = await addCustom.mutateAsync({ name: e.name, stage: stageId });
+          createdByKey.set(e.key, unit.id);
+        }
+      }
+
+      // ③ 被取消勾選的自訂流程 → 刪除（做過的後端會擋，改標不適用要在卡片上做）
+      for (const e of entries) {
+        if (e.isCustom && e.unitId !== null && !e.included) {
+          await deleteUnit.mutateAsync(e.unitId);
+        }
+      }
+
+      // ④ 最終順序
+      const orderedIds = included
+        .map((e) =>
+          e.unitId !== null
+            ? e.unitId
+            : e.itemId !== null
+              ? unitByItem.get(e.itemId) ?? null
+              : createdByKey.get(e.key) ?? null,
+        )
+        .filter((id): id is number => id !== null);
+      await reorder.mutateAsync(orderedIds);
+
+      const lines = [
+        result.added.length ? `加勾：${result.added.join("、")}` : "",
+        result.removed.length ? `移除：${result.removed.join("、")}` : "",
+        result.marked_na.length ? `標不適用（已有紀錄）：${result.marked_na.join("、")}` : "",
+        result.restored.length ? `還原：${result.restored.join("、")}` : "",
+        createdByKey.size ? `新增自訂：${createdByKey.size} 項` : "",
+      ].filter(Boolean);
+      toast.success("流程已更新", lines.length ? lines : ["順序已更新"]);
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.body.detail ?? "儲存失敗" : "儲存失敗");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -200,19 +262,21 @@ function FlowEditorModal({ detail, onClose }: { detail: ProjectDetail; onClose: 
           <Button
             variant="primary"
             onClick={submit}
-            loading={setFlows.isPending}
-            disabled={selected.size === 0}
+            loading={saving}
+            disabled={included.length === 0}
             className="flex-1"
           >
-            儲存（{selected.size} 項）
+            儲存（{included.length} 項）
           </Button>
         </>
       }
     >
-      <p className="mb-3 text-[11px] leading-relaxed text-ink-3">
+      <p className="mb-3 text-xs leading-relaxed text-ink-3">
         取消勾選時：還沒開始且沒有紀錄的直接移除；已經有進度或附件的改標「不適用」，歷史會留著。
       </p>
-      {stages && <FlowPicker stages={stages} selected={selected} onChange={setSelected} />}
+      {stages && entries && (
+        <FlowArranger stages={stages} entries={entries} onChange={setEntries} />
+      )}
     </Modal>
   );
 }

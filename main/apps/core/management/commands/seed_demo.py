@@ -152,6 +152,9 @@ class Command(BaseCommand):
                     "description": item.description,
                     "deliverables": item.deliverables,
                     "done_criteria": item.done_criteria,
+                    # D49：順序與大階段記在單元上
+                    "seq": item.seq * 10,
+                    "stage": item.stage,
                 },
             )
             units[item.code] = unit

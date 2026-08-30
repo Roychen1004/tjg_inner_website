@@ -37,7 +37,7 @@ export function StatusBadge({ status, size = "sm" }: { status: StatusCode; size?
     <span
       className={[
         "inline-flex shrink-0 items-center gap-1 rounded-full font-semibold",
-        size === "xs" ? "px-1.5 py-0.5 text-[11px]" : "px-2 py-0.5 text-xs",
+        size === "xs" ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-xs",
       ].join(" ")}
       style={{ color: meta.fg, background: meta.bg }}
     >
@@ -204,7 +204,7 @@ export function KpiCard({
         </span>
         {unit && <span className="text-xs text-ink-3">{unit}</span>}
       </p>
-      {detail && <p className="mt-1 text-[11px] leading-snug text-ink-3">{detail}</p>}
+      {detail && <p className="mt-1 text-xs leading-snug text-ink-3">{detail}</p>}
     </Card>
   );
 }
@@ -373,9 +373,9 @@ export function Field({
         {required && <span style={{ color: "var(--color-delayed)" }}> *</span>}
       </span>
       {children}
-      {hint && !error && <span className="mt-1 block text-[11px] text-ink-3">{hint}</span>}
+      {hint && !error && <span className="mt-1 block text-xs text-ink-3">{hint}</span>}
       {error && (
-        <span className="mt-1 block text-[11px]" style={{ color: "var(--color-delayed)" }}>
+        <span className="mt-1 block text-xs" style={{ color: "var(--color-delayed)" }}>
           {error}
         </span>
       )}
@@ -494,7 +494,7 @@ export function DateInput({
             </button>
           </div>
 
-          <div className="mt-1 grid grid-cols-7 text-center text-[11px] font-semibold text-ink-3">
+          <div className="mt-1 grid grid-cols-7 text-center text-xs font-semibold text-ink-3">
             {WEEKDAYS.map((w) => (
               <span key={w} className="py-1">
                 {w}
@@ -591,7 +591,7 @@ export function FormErrors({
 /** 按鈕停用時說明缺什麼。看得到按鈕卻按不下去，是最讓人困惑的狀態 */
 export function DisabledHint({ show, children }: { show: boolean; children: ReactNode }) {
   if (!show) return null;
-  return <p className="mb-2 text-center text-[11px] text-ink-3">{children}</p>;
+  return <p className="mb-2 text-center text-xs text-ink-3">{children}</p>;
 }
 
 // ── 按鈕 ───────────────────────────────────────────────────────────
@@ -636,6 +636,53 @@ export function Button({
       {loading && <Loader2 size={15} className="animate-spin" />}
       {children}
     </button>
+  );
+}
+
+// ── 頂排選項（分頁切換）──────────────────────────────────────────
+/**
+ * D50（老闆）：所有頂排選項（客戶／廠商、應收／應付、流程看板／甘特…）
+ * 都要**有邊界**——每個選項一個帶框的按鈕，選中的填藍色。
+ * 之前是灰底滑塊樣式，沒選中的選項看起來像純文字，不知道能按。
+ */
+export function Segmented({
+  value,
+  onChange,
+  options,
+  grow = false,
+  className = "",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: ReadonlyArray<{ value: string; label: ReactNode }>;
+  /** 撐滿一列（主分頁列用）；false＝依內容寬 */
+  grow?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-wrap gap-1.5 ${className}`}>
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            aria-pressed={active}
+            className={[
+              "flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5",
+              "text-sm font-semibold transition-base",
+              grow ? "flex-1" : "",
+              active
+                ? "border-stage-2 bg-stage-2 text-white shadow-sm"
+                : "border-line bg-card text-ink-2 hover:bg-page",
+            ].join(" ")}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

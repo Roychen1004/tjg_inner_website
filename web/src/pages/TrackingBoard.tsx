@@ -13,15 +13,16 @@
  * 改成清單就失去「哪一欄比較高」這個唯一的重點。
  */
 import { Filter, Layers } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useFlowCatalog, useFlowUnits, useOptions } from "@/api/hooks";
 import type { FlowUnit } from "@/api/types";
+import MiniCalendarPanel from "@/components/tracking/MiniCalendarPanel";
 import StaffBoard from "@/components/tracking/StaffBoard";
 import TimelineGantt from "@/components/tracking/TimelineGantt";
 import FlowStateBadge from "@/components/tracking/FlowStateBadge";
-import FlowUnitModal from "@/components/tracking/FlowUnitModal";
-import { ErrorState, Select, Spinner } from "@/components/ui";
+import { useUnitPanel } from "@/components/tracking/UnitPanelContext";
+import { ErrorState, Segmented, Select, Spinner } from "@/components/ui";
 import { useStickyParams } from "@/lib/stickyParams";
 
 const VIEWS = [
@@ -48,21 +49,14 @@ export default function TrackingBoard() {
 
   return (
     <div>
-      <div className="mb-3 flex rounded-lg bg-page p-0.5">
-        {VIEWS.map((v) => (
-          <button
-            key={v.key}
-            type="button"
-            onClick={() => setParam("view", v.key)}
-            className={[
-              "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-base",
-              view === v.key ? "bg-card text-ink shadow-sm" : "text-ink-3",
-            ].join(" ")}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
+      {/* 邊界標示的頂排選項（D50） */}
+      <Segmented
+        className="mb-3"
+        grow
+        value={view}
+        onChange={(v) => setParam("view", v)}
+        options={VIEWS.map((v) => ({ value: v.key, label: v.label }))}
+      />
 
       {view === "calendar" ? (
         <CalendarView searchParams={searchParams} setParam={setParam} />
@@ -85,7 +79,7 @@ function FlowBoard({
 }) {
   const { data: options } = useOptions();
   const { data: catalog } = useFlowCatalog();
-  const [openUnit, setOpenUnit] = useState<number | null>(null);
+  const { open: openUnitPanel } = useUnitPanel();
 
   const project = searchParams.get("project") ?? "";
   const state = searchParams.get("state") ?? "";
@@ -97,14 +91,17 @@ function FlowBoard({
     page_size: 300,
   });
 
-  // 從通知或「我的任務」的連結過來時帶 ?unit=，直接打開那一張
+  // 從通知或「我的任務」的連結過來時帶 ?unit=，直接打開那一張。
+  // 側欄是全域的（D49）——開卡片是跨元件的 setState，要進 effect 不能在 render 裡做
   const deepLinkUnit = searchParams.get("unit");
   const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
-  if (deepLinkUnit && openedDeepLink !== deepLinkUnit) {
-    setOpenedDeepLink(deepLinkUnit);
-    setOpenUnit(Number(deepLinkUnit));
-  }
-  if (!deepLinkUnit && openedDeepLink !== null) setOpenedDeepLink(null);
+  useEffect(() => {
+    if (deepLinkUnit && openedDeepLink !== deepLinkUnit) {
+      setOpenedDeepLink(deepLinkUnit);
+      openUnitPanel(Number(deepLinkUnit));
+    }
+    if (!deepLinkUnit && openedDeepLink !== null) setOpenedDeepLink(null);
+  }, [deepLinkUnit, openedDeepLink, openUnitPanel]);
 
   const units = data?.results ?? [];
   const byStage = useMemo(() => {
@@ -158,20 +155,20 @@ function FlowBoard({
                       <h2 className="min-w-0 flex-1 truncate text-xs font-bold text-white">
                         {stage.seq}. {stage.name}
                       </h2>
-                      <span className="shrink-0 rounded-full bg-white/25 px-1.5 text-[11px] font-bold text-white tabular-nums">
+                      <span className="shrink-0 rounded-full bg-white/25 px-1.5 text-xs font-bold text-white tabular-nums">
                         {columnUnits.length}
                       </span>
                     </header>
                     <div className="flex flex-col gap-2 p-2">
                       {columnUnits.length === 0 ? (
-                        <p className="py-6 text-center text-[11px] text-ink-3">—</p>
+                        <p className="py-6 text-center text-xs text-ink-3">—</p>
                       ) : (
                         columnUnits.map((unit) => (
                           <FlowCard
                             key={unit.id}
                             unit={unit}
                             showProject={!project}
-                            onOpen={() => setOpenUnit(unit.id)}
+                            onOpen={() => openUnitPanel(unit.id)}
                           />
                         ))
                       )}
@@ -181,20 +178,13 @@ function FlowBoard({
               })}
             </div>
           </div>
-          <p className="mt-3 flex items-center gap-1 text-[11px] text-ink-3">
+          <p className="mt-3 flex items-center gap-1 text-xs text-ink-3">
             <Layers size={12} />
             欄位＝五大階段（順序固定）。哪一欄未完成的卡片多，瓶頸就在那裡
           </p>
         </>
       )}
 
-      <FlowUnitModal
-        unitId={openUnit}
-        onClose={() => {
-          setOpenUnit(null);
-          if (deepLinkUnit) setParam("unit", "");
-        }}
-      />
     </div>
   );
 }
@@ -221,8 +211,8 @@ function FlowCard({
         </span>
         <FlowStateBadge state={unit.state} overdue={unit.is_overdue} />
       </div>
-      {showProject && <p className="mt-1 truncate text-[11px] text-ink-3">{unit.project_name}</p>}
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-2">
+      {showProject && <p className="mt-1 truncate text-xs text-ink-3">{unit.project_name}</p>}
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-2">
         <span>{unit.assignee_name || "未指派"}</span>
         {unit.plan_end && (
           <span style={unit.is_overdue ? { color: "var(--color-delayed)" } : undefined}>
@@ -250,7 +240,7 @@ function CalendarView({
   setParam: (name: string, value: string) => void;
 }) {
   const { data: options } = useOptions();
-  const [openUnit, setOpenUnit] = useState<number | null>(null);
+  const { open: openUnitPanel } = useUnitPanel();
 
   // 選的專案記在網址（可分享、可回上一頁）；空＝全部。
   // 舊網址可能存了逗號分隔的多選，取第一個
@@ -265,16 +255,18 @@ function CalendarView({
   if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   return (
-    // 甘特圖滿版——跳出置中窄欄，用整個視窗寬度畫時間軸
-    <div className="mx-[calc(50%-50vw+8px)]">
+    // 甘特圖滿版——跳出置中窄欄，用主內容區的整個寬度畫時間軸。
+    // 用 cqw（對 main 容器算）不用 vw：側欄開著時 vw 會畫到側欄底下（D49）
+    <div className="relative mx-[calc(50%-50cqw+8px)]">
       <TimelineGantt
         units={data?.results ?? []}
         projects={options?.projects ?? []}
         selected={selected}
         onSelectProject={(id) => setParam("gantt_projects", id)}
-        onOpenUnit={setOpenUnit}
+        onOpenUnit={openUnitPanel}
       />
-      <FlowUnitModal unitId={openUnit} onClose={() => setOpenUnit(null)} />
+      {/* 右上角小日曆（D49）：點日期看那天有哪些流程在跑、哪些錢要進出 */}
+      <MiniCalendarPanel units={data?.results ?? []} onOpenUnit={openUnitPanel} />
     </div>
   );
 }

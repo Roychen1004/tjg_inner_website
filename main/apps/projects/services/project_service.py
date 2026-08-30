@@ -34,7 +34,12 @@ def set_flows(project, flow_item_ids, actor):
     if unknown := ids - set(valid):
         raise BusinessRuleError(f"流程項不存在或已停用：{sorted(unknown)}")
 
-    existing = {u.flow_item_id: u for u in project.flow_units.select_related("flow_item")}
+    # ⚠️ 自訂流程（flow_item 為空，D49）不在勾選清單的管轄範圍——
+    # 不濾掉的話 None 鍵會落進「取消勾選」分支，把自訂流程整批刪掉
+    existing = {
+        u.flow_item_id: u
+        for u in project.flow_units.filter(flow_item__isnull=False).select_related("flow_item")
+    }
     ct = ContentType.objects.get_for_model(FlowUnit)
 
     added, restored, removed, marked_na = [], [], [], []
@@ -58,6 +63,11 @@ def set_flows(project, flow_item_ids, actor):
             unit.state = FlowState.NA
             unit.save(update_fields=["state", "updated_at"])
             marked_na.append(unit.flow_item.name)
+
+    # 勾選增減會讓流程進出排程表——顯示編號跟著位置重編（D51）
+    from main.apps.tracking.services.flow_service import renumber_codes
+
+    renumber_codes(project)
 
     parts = []
     if added:

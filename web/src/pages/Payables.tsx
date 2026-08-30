@@ -11,7 +11,7 @@
  *   應付  待計價 → 已核可 → 已付款          錢出去
  */
 import { AlertTriangle, Banknote, ExternalLink, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
@@ -66,6 +66,26 @@ export default function PayablesBody() {
 
   const rows = data?.results ?? [];
   const overdue = summary?.overdue;
+
+  // D51：從現金流時間軸／流程卡片跳過來的那一筆——
+  // 先清掉會把它濾掉的舊篩選，載入後框出並捲到眼前
+  const highlightId = searchParams.get("payable");
+  useEffect(() => {
+    if (!highlightId) return;
+    const next = new URLSearchParams(window.location.search);
+    if (next.get("project") || next.get("state")) {
+      next.delete("project");
+      next.delete("state");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightId]);
+  useEffect(() => {
+    if (!highlightId || isLoading) return;
+    document
+      .getElementById(`payable-${highlightId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightId, isLoading, rows.length]);
 
   return (
     <div className="space-y-4">
@@ -129,6 +149,7 @@ export default function PayablesBody() {
             <Row
               key={row.id}
               row={row}
+              highlighted={highlightId === String(row.id)}
               onTransition={() => setTransitioning(row)}
               onEdit={canCreate ? () => setEditing(row) : undefined}
             />
@@ -147,10 +168,13 @@ export default function PayablesBody() {
 
 function Row({
   row,
+  highlighted = false,
   onTransition,
   onEdit,
 }: {
   row: Payable;
+  /** D51：從別處跳過來的那一筆——藍框標示 */
+  highlighted?: boolean;
   onTransition: () => void;
   onEdit?: () => void;
 }) {
@@ -159,21 +183,23 @@ function Row({
     // 整列可點（D47）：點哪裡都開明細編輯；右側按鈕區自己攔截點擊
     <Card
       as="li"
+      id={`payable-${row.id}`}
       className={`p-3 ${onEdit ? "cursor-pointer transition-base hover:ring-stage-2" : ""}`}
+      style={highlighted ? { boxShadow: "0 0 0 3px var(--color-stage-2)" } : undefined}
       onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span
-              className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              className="rounded-full px-2 py-0.5 text-xs font-semibold"
               style={{ color: style.color, background: style.bg }}
             >
               {row.state_label}
             </span>
             <p className="truncate text-sm font-semibold text-ink">{row.title}</p>
           </div>
-          <p className="mt-0.5 text-[11px] text-ink-3">
+          <p className="mt-0.5 text-xs text-ink-3">
             {row.vendor_name} · {row.project_name} · {row.category_label}
             {row.subcontract_code && ` · ${row.subcontract_code}`}
             {row.flow_unit_name && (
@@ -186,7 +212,7 @@ function Row({
             )}
           </p>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2">
             <span>
               計價 {row.billing_date ?? "—"}
             </span>
@@ -198,7 +224,7 @@ function Row({
           </div>
           {/* 支票的話一定要說清楚錢什麼時候真的出去 */}
           {row.cash_date_note && (
-            <p className="mt-1 text-[11px] leading-snug text-ink-3">{row.cash_date_note}</p>
+            <p className="mt-1 text-xs leading-snug text-ink-3">{row.cash_date_note}</p>
           )}
         </div>
 
@@ -211,7 +237,7 @@ function Row({
             <Money value={row.payable_amount} />
           </p>
           {Number(row.retention_amount) > 0 && (
-            <p className="text-[11px] text-ink-3">
+            <p className="text-xs text-ink-3">
               扣保 <Money value={row.retention_amount} compact />
             </p>
           )}
@@ -341,7 +367,7 @@ function TransitionModal({ payable, onClose }: { payable: Payable; onClose: () =
               style={{ background: "var(--color-atrisk-bg)" }}
             >
               <p
-                className="mb-2 text-[11px] font-semibold leading-relaxed"
+                className="mb-2 text-xs font-semibold leading-relaxed"
                 style={{ color: "var(--color-atrisk)" }}
               >
                 開了票不等於錢出去了。填上票期，現金流才會把這筆算在正確的那一週。
@@ -366,7 +392,7 @@ function TransitionModal({ payable, onClose }: { payable: Payable; onClose: () =
       )}
 
       {needsCheckDate && (
-        <p className="text-[11px] text-ink-3">支票沒填票期也能存，但現金流會用開票日估算。</p>
+        <p className="text-xs text-ink-3">支票沒填票期也能存，但現金流會用開票日估算。</p>
       )}
     </Modal>
   );

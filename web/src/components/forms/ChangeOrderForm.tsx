@@ -74,7 +74,7 @@ export default function ChangeOrderSection({ project }: { project: ProjectDetail
       </SectionTitle>
 
       {orders.length === 0 ? (
-        <p className="rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+        <p className="rounded-lg bg-page px-3 py-2 text-xs leading-relaxed text-ink-2">
           合約金額要改，走這裡。<strong>直接改專案的合約金額是不行的</strong>——
           改了沒人知道為什麼改、誰准的。核准後有效合約額會變，
           <strong>尚未請款的里程碑金額自動重算</strong>。
@@ -95,7 +95,7 @@ export default function ChangeOrderSection({ project }: { project: ProjectDetail
       )}
 
       {project.approved_change_amount && Number(project.approved_change_amount) !== 0 && (
-        <p className="mt-2 text-[11px] text-ink-2">
+        <p className="mt-2 text-xs text-ink-2">
           原合約 <Money value={project.contract_amount} compact />
           {" ＋ 已核准變更 "}
           <Money value={project.approved_change_amount} compact />
@@ -156,7 +156,7 @@ function Row({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-ink">{order.title}</p>
-          <p className="mt-0.5 text-[11px] text-ink-3">
+          <p className="mt-0.5 text-xs text-ink-3">
             {order.code}
             {order.approved_by_name && ` · ${order.approved_by_name} 核准`}
             {order.approved_at && ` · ${new Date(order.approved_at).toLocaleDateString("zh-TW")}`}
@@ -171,7 +171,7 @@ function Row({
             <Money value={order.amount} />
           </p>
           <span
-            className="rounded px-1.5 py-0.5 text-[11px] font-semibold"
+            className="rounded px-1.5 py-0.5 text-xs font-semibold"
             style={{ color: style.color, background: style.bg }}
           >
             {order.status_label}
@@ -215,7 +215,7 @@ function Row({
           </>
         )}
         {order.status === "submitted" && !canApprove && (
-          <span className="text-[11px] text-ink-3">等待經理核准</span>
+          <span className="text-xs text-ink-3">等待經理核准</span>
         )}
       </div>
     </Card>
@@ -270,7 +270,7 @@ function ChangeOrderForm({
 
   return (
     <Modal open={open} onClose={onClose} title={order ? "修改變更單" : "新增變更追加單"}>
-      <p className="mb-4 rounded-lg bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+      <p className="mb-4 rounded-lg bg-page px-3 py-2 text-xs leading-relaxed text-ink-2">
         合約金額改變的<strong>唯一合法途徑</strong>。核准後有效合約額會變，
         <strong>尚未請款的里程碑金額自動重算</strong>；已經請款的不動——
         送出去的數字不能被改掉。
@@ -383,7 +383,7 @@ function ApproveDialog({
           <p className="mt-0.5 text-xs leading-relaxed text-ink-2">{order.reason}</p>
 
           <div className="mt-4 rounded-lg bg-page p-3">
-            <p className="mb-1.5 text-[11px] font-semibold text-ink">核准後會發生什麼</p>
+            <p className="mb-1.5 text-xs font-semibold text-ink">核准後會發生什麼</p>
             <dl className="space-y-1 text-xs">
               <div className="flex justify-between">
                 <dt className="text-ink-2">目前有效合約額</dt>
@@ -413,7 +413,7 @@ function ApproveDialog({
             style={{ background: "var(--color-atrisk-bg)", color: "var(--color-atrisk)" }}
           >
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-            <p className="text-[11px] leading-relaxed">
+            <p className="text-xs leading-relaxed">
               <strong>尚未請款的里程碑金額會自動重算</strong>（金額＝有效合約額 × 比例）。
               已經產生請款的里程碑<strong>不會被改動</strong>——送出去的數字不能被改掉。
               <br />

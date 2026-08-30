@@ -9,17 +9,24 @@
  * 完成不需要主管再確認（老闆定的）——按了完成就是完成。
  */
 import { CheckCircle2, ChevronRight, Play } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { Link } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
-import { useFlowTransition, useFlowUnits, useMilestones, useSaveTaskAssignment, useTaskAssignments } from "@/api/hooks";
+import {
+  useFlowTransition,
+  useFlowUnits,
+  useMilestones,
+  useReportAssignment,
+  useStartAssignment,
+  useTaskAssignments,
+} from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { FlowTaskAssignment, FlowUnit, Milestone } from "@/api/types";
 import FlowStateBadge from "@/components/tracking/FlowStateBadge";
-import FlowUnitModal from "@/components/tracking/FlowUnitModal";
+import { useUnitPanel } from "@/components/tracking/UnitPanelContext";
 import { Button, Card, EmptyState, ErrorState, SectionTitle, Spinner } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 
@@ -35,16 +42,19 @@ export default function MyWork() {
     { accountant: "me", state: "claimable,invoiced", page_size: 50 },
     Boolean(user?.permissions.view_money),
   );
-  const [openUnit, setOpenUnit] = useState<number | null>(null);
+  const { open: openUnitPanel } = useUnitPanel();
 
   // 通知的連結帶 ?unit=，點過來直接打開那一張任務
   const [searchParams] = useSearchParams();
   const deepLink = searchParams.get("unit");
   const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
-  if (deepLink && openedDeepLink !== deepLink) {
-    setOpenedDeepLink(deepLink);
-    setOpenUnit(Number(deepLink));
-  }
+  // 側欄是全域的（D49）——開卡片是跨元件的 setState，要進 effect 不能在 render 裡做
+  useEffect(() => {
+    if (deepLink && openedDeepLink !== deepLink) {
+      setOpenedDeepLink(deepLink);
+      openUnitPanel(Number(deepLink));
+    }
+  }, [deepLink, openedDeepLink, openUnitPanel]);
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -92,20 +102,18 @@ export default function MyWork() {
           </SectionTitle>
           <ul className="space-y-2">
             {myAssignments.map((a) => (
-              <AssignmentCard key={a.id} assignment={a} onOpen={() => setOpenUnit(a.unit)} />
+              <AssignmentCard key={a.id} assignment={a} onOpen={() => openUnitPanel(a.unit)} />
             ))}
           </ul>
         </section>
       )}
 
       {overdue.length > 0 && (
-        <Group title="逾期——先處理這些" units={overdue} onOpen={setOpenUnit} urgent />
+        <Group title="逾期——先處理這些" units={overdue} onOpen={openUnitPanel} urgent />
       )}
-      {doing.length > 0 && <Group title="進行中" units={doing} onOpen={setOpenUnit} />}
-      {todo.length > 0 && <Group title="待開始" units={todo} onOpen={setOpenUnit} />}
-      {done.length > 0 && <Group title="最近完成" units={done} onOpen={setOpenUnit} muted />}
-
-      <FlowUnitModal unitId={openUnit} onClose={() => setOpenUnit(null)} />
+      {doing.length > 0 && <Group title="進行中" units={doing} onOpen={openUnitPanel} />}
+      {todo.length > 0 && <Group title="待開始" units={todo} onOpen={openUnitPanel} />}
+      {done.length > 0 && <Group title="最近完成" units={done} onOpen={openUnitPanel} muted />}
     </div>
   );
 }
@@ -121,11 +129,11 @@ function CollectCard({ milestone: m }: { milestone: Milestone }) {
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-bold text-ink">{m.label}</span>
-            <span className="rounded-full bg-page px-2 py-0.5 text-[11px] font-semibold text-ink-2">
+            <span className="rounded-full bg-page px-2 py-0.5 text-xs font-semibold text-ink-2">
               {m.state_label}
             </span>
           </span>
-          <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+          <span className="mt-0.5 block truncate text-xs text-ink-3">
             {m.project_name}
             {m.trigger_unit_name && `·由「${m.trigger_unit_name}」完成觸發`}
           </span>
@@ -147,19 +155,25 @@ function AssignmentCard({
   assignment: FlowTaskAssignment;
   onOpen: () => void;
 }) {
-  const save = useSaveTaskAssignment();
+  const report = useReportAssignment();
+  const start = useStartAssignment();
   const toast = useToast();
   const [value, setValue] = useState(String(Number(a.qty_done)));
 
   const assignedNum = Number(a.qty_assigned);
   const pct = assignedNum ? Math.round((Number(a.qty_done) / assignedNum) * 100) : 0;
+  // 進行中第幾天（D52）——從按「開始」那天起算
+  const dayN = a.started_at
+    ? Math.max(1, Math.floor((Date.now() - new Date(a.started_at).getTime()) / 86400000) + 1)
+    : null;
 
   function commit() {
     if (value === "" || Number(value) === Number(a.qty_done)) {
       setValue(String(Number(a.qty_done)));
       return;
     }
-    save.mutate(
+    // D52：回報走流水帳端點——一人一天 1 工的計工靠它
+    report.mutate(
       { id: a.id, qty_done: value },
       {
         onSuccess: (saved) => {
@@ -188,9 +202,18 @@ function AssignmentCard({
               {a.unit_of_measure && ` ${a.unit_of_measure}`}
             </span>
           </span>
-          <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+          <span className="mt-0.5 block truncate text-xs text-ink-3">
             {a.project_name}·{a.flow_name}
           </span>
+          {/* 經理分配時的叮嚀（D49）——特別標出來，做之前先看這段 */}
+          {a.note && (
+            <span
+              className="mt-1 block rounded-md px-2 py-1 text-xs leading-relaxed"
+              style={{ background: "var(--color-atrisk-bg)", color: "var(--color-atrisk)" }}
+            >
+              📌 經理叮嚀：{a.note}
+            </span>
+          )}
           <span className="mt-1 block h-1 rounded-full bg-line">
             <span
               className="block h-full rounded-full"
@@ -200,22 +223,44 @@ function AssignmentCard({
         </span>
         <ChevronRight size={15} className="shrink-0 text-ink-3" />
       </button>
-      <div className="flex shrink-0 items-center gap-1 text-xs">
-        <input
-          type="number"
-          inputMode="decimal"
-          min={0}
-          max={assignedNum}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
-          aria-label={`${a.task_name} ${a.status} 的完成量`}
-          className="w-16 rounded-lg border border-line bg-page px-2 py-1.5 text-right tabular-nums text-ink"
-        />
-        <span className="tabular-nums text-ink-3">/{assignedNum}</span>
+      <div className="flex shrink-0 flex-col items-end gap-1 text-xs">
+        {/* D52：先按開始，經理才看得到你動工了；當日工作結束回報完成量 */}
+        {a.started_at ? (
+          <span className="text-[11px] font-semibold" style={{ color: "var(--color-ontrack)" }}>
+            進行中 第 {dayN} 天
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() =>
+              start.mutate(a.id, {
+                onSuccess: () => toast.success("已開始", ["當日工作結束記得回報完成量"]),
+                onError: (e) =>
+                  toast.error(e instanceof ApiError ? e.body.detail ?? "操作失敗" : "操作失敗"),
+              })
+            }
+            className="rounded-lg bg-stage-2 px-2.5 py-1 text-xs font-bold text-white transition-base hover:opacity-90"
+          >
+            ▶ 開始
+          </button>
+        )}
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={assignedNum}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            aria-label={`${a.task_name} ${a.status} 的完成量`}
+            className="w-16 rounded-lg border border-line bg-page px-2 py-1.5 text-right tabular-nums text-ink"
+          />
+          <span className="tabular-nums text-ink-3">/{assignedNum}</span>
+        </div>
       </div>
     </Card>
   );
@@ -285,7 +330,7 @@ function TaskCard({
             </span>
             <FlowStateBadge state={unit.state} overdue={unit.is_overdue} />
           </span>
-          <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+          <span className="mt-0.5 block truncate text-xs text-ink-3">
             {unit.project_name}
             {unit.plan_end && (
               <span

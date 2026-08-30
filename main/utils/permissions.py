@@ -32,6 +32,10 @@ PERMISSION_ROLES = {
 
     # 金流（應收、應付、現金流、損益）：整個分頁只有這兩種角色看得到
     "view_money": [Role.OWNER, Role.FINANCE],
+    # 公司現有現金（D49）：只有經理（與系統管理員）——連會計師都不給看
+    "view_cash_balance": [Role.OWNER],
+    # 產能統計（D52）：涉及員工表現評比，同樣只有經理（與系統管理員）
+    "view_productivity": [Role.OWNER],
 
     # 專案與進度：只有經理（與系統管理員）能改——
     # 會計師的編輯範圍限金流，員工全部唯讀（D40）
@@ -71,6 +75,9 @@ NAV_ROLES = {
     "tracking": None,   # 追蹤看板：跨案看「東西卡在哪一站」，不含金額
     "mywork": ["view_mywork"],
     "finance": ["view_money"],
+    # 統計（D52）：產能區塊要 view_productivity、金額區塊要 view_money——
+    # 任一權限就看得到頁面，頁內各區塊再各自把關
+    "stats": ["view_productivity", "view_money"],
     # 設定：頁面所有人都看得到（查同事分機、客戶聯絡人），
     # 新增／修改的按鈕跟著 manage_masters 走（D40）
     "settings": None,

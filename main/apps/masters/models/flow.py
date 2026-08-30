@@ -1,6 +1,46 @@
 from django.db import models
 
 
+class FlowTemplate(models.Model):
+    """流程模板 —— 一份「這種案子要走哪些流程」的目錄（2026-08-29 D49）
+
+    D37 起全公司只有一套 19 項目錄；D49 老闆要求可以有**好幾套**
+    （標準案、小案、純土建案各一套），並且經理／系統管理員能在前端
+    直接維護內容與新增模板——不再只能進 Django Admin。
+
+    五大階段（FlowStage）仍是全公司共用的骨架；模板只決定
+    「各階段底下放哪些工作項、預設順序與預設的工作內容」。
+    改模板只影響**之後新建的案子**——已建案子的單元早就把內容抄走了。
+    """
+
+    name = models.CharField("名稱", max_length=50, unique=True)
+    is_default = models.BooleanField(
+        "預設模板", default=False, help_text="建案表單預先選中的那一套；全系統只有一套是預設",
+    )
+    is_active = models.BooleanField("啟用中", default=True)
+    created_at = models.DateTimeField("建立時間", auto_now_add=True)
+
+    class Meta:
+        db_table = "masters_flowtemplate"
+        verbose_name = verbose_name_plural = "流程模板"
+        ordering = ["-is_default", "id"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # 預設只有一套——把別套的預設旗標拿掉，不靠使用者記得去取消
+        if self.is_default:
+            FlowTemplate.objects.exclude(pk=self.pk).filter(is_default=True).update(
+                is_default=False
+            )
+
+    @classmethod
+    def default(cls):
+        return cls.objects.filter(is_active=True).order_by("-is_default", "id").first()
+
+
 class FlowStage(models.Model):
     """流程大階段 —— 全公司只有一套（docs/鋼構專案流程.md 的五大階段）
 
@@ -29,16 +69,21 @@ class FlowStage(models.Model):
 class FlowItem(models.Model):
     """流程工作項 —— 大階段底下的一格（如 3.2 施工圖／加工圖繪製）
 
-    ★ 順序在這裡定死（seq 全域唯一遞增），任何專案都不能重排——
-    「訂料與採購一定排在施工放樣收點後面」是目錄的責任，不是使用者的選項。
-    專案能做的只有「勾或不勾」。
+    D49（2026-08-29）起工作項屬於某一套**流程模板**，順序是「模板的預設順序」：
+    建案時抄進專案，之後每個案子可以自己增刪與拖移重排（順序存在 FlowUnit.seq）。
+    D37 的「順序全域定死」規則由老闆本人翻案。
     """
 
+    template = models.ForeignKey(
+        FlowTemplate, verbose_name="流程模板", on_delete=models.CASCADE,
+        related_name="items", null=True, blank=True,
+        help_text="D49 之前的舊資料由資料遷移補上預設模板",
+    )
     stage = models.ForeignKey(
         FlowStage, verbose_name="大階段", on_delete=models.PROTECT, related_name="items",
     )
-    seq = models.SmallIntegerField("全域順序", unique=True, help_text="11,12,…,54，跨階段全域排序")
-    code = models.CharField("代號", max_length=10, unique=True, help_text="如 3.2")
+    seq = models.SmallIntegerField("模板內順序", help_text="11,12,…,54，跨階段排序（模板內唯一）")
+    code = models.CharField("代號", max_length=10, help_text="如 3.2（模板內唯一）")
     name = models.CharField("名稱", max_length=50)
 
     description = models.TextField("工作內容", blank=True)
@@ -61,6 +106,9 @@ class FlowItem(models.Model):
         ordering = ["seq"]
         constraints = [
             models.CheckConstraint(condition=models.Q(seq__gte=1), name="ck_flowitem_seq_positive"),
+            # D49：唯一性從全域改成「模板內」——不同模板可以各有自己的 3.2
+            models.UniqueConstraint(fields=["template", "seq"], name="uniq_flowitem_template_seq"),
+            models.UniqueConstraint(fields=["template", "code"], name="uniq_flowitem_template_code"),
         ]
 
     def __str__(self):

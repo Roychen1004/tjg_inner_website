@@ -13,7 +13,7 @@ import { useState } from "react";
 import { useStaffWorkload } from "@/api/hooks";
 import type { WorkloadAssignment, WorkloadUnit } from "@/api/types";
 import FlowStateBadge from "@/components/tracking/FlowStateBadge";
-import FlowUnitModal from "@/components/tracking/FlowUnitModal";
+import { useUnitPanel } from "@/components/tracking/UnitPanelContext";
 import { Card, ErrorState, Spinner } from "@/components/ui";
 
 function currentMonth() {
@@ -30,7 +30,7 @@ function shiftMonth(month: string, dir: 1 | -1) {
 export default function StaffBoard() {
   const [month, setMonth] = useState(currentMonth);
   const { data, isLoading, error, refetch } = useStaffWorkload(month);
-  const [openUnit, setOpenUnit] = useState<number | null>(null);
+  const { open: openUnitPanel } = useUnitPanel();
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -69,7 +69,7 @@ export default function StaffBoard() {
             本月
           </button>
         )}
-        <span className="ml-auto text-[11px] text-ink-3">
+        <span className="ml-auto text-xs text-ink-3">
           進行中＝現在手上的；完成＝{Number(mon)} 月做完的
         </span>
       </div>
@@ -83,39 +83,39 @@ export default function StaffBoard() {
               <div className="flex items-baseline gap-1.5">
                 <span className="text-sm font-bold text-ink">{person.name}</span>
                 {person.title && person.title !== person.name && (
-                  <span className="text-[11px] text-ink-3">{person.title}</span>
+                  <span className="text-xs text-ink-3">{person.title}</span>
                 )}
-                <span className="ml-auto text-[11px] tabular-nums text-ink-3">
+                <span className="ml-auto text-xs tabular-nums text-ink-3">
                   手上 {openCount}・本月完成 {doneCount}
                 </span>
               </div>
 
               {openCount === 0 && doneCount === 0 ? (
-                <p className="mt-2 text-[11px] text-ink-3">這個月沒有任何指派或完成紀錄</p>
+                <p className="mt-2 text-xs text-ink-3">這個月沒有任何指派或完成紀錄</p>
               ) : (
                 <>
                   {openCount > 0 && (
                     <div className="mt-2">
-                      <p className="text-[11px] font-semibold text-ink-2">進行中</p>
+                      <p className="text-xs font-semibold text-ink-2">進行中</p>
                       <ul className="mt-1 space-y-1">
                         {person.open_units.map((u) => (
-                          <UnitRow key={`u${u.id}`} unit={u} onOpen={setOpenUnit} />
+                          <UnitRow key={`u${u.id}`} unit={u} onOpen={openUnitPanel} />
                         ))}
                         {person.open_assignments.map((a) => (
-                          <AssignmentRow key={`a${a.id}`} row={a} onOpen={setOpenUnit} />
+                          <AssignmentRow key={`a${a.id}`} row={a} onOpen={openUnitPanel} />
                         ))}
                       </ul>
                     </div>
                   )}
                   {doneCount > 0 && (
                     <div className="mt-2">
-                      <p className="text-[11px] font-semibold text-ink-2">本月完成</p>
+                      <p className="text-xs font-semibold text-ink-2">本月完成</p>
                       <ul className="mt-1 space-y-1">
                         {person.done_units.map((u) => (
-                          <UnitRow key={`u${u.id}`} unit={u} onOpen={setOpenUnit} done />
+                          <UnitRow key={`u${u.id}`} unit={u} onOpen={openUnitPanel} done />
                         ))}
                         {person.done_assignments.map((a) => (
-                          <AssignmentRow key={`a${a.id}`} row={a} onOpen={setOpenUnit} done />
+                          <AssignmentRow key={`a${a.id}`} row={a} onOpen={openUnitPanel} done />
                         ))}
                       </ul>
                     </div>
@@ -127,8 +127,7 @@ export default function StaffBoard() {
         })}
       </div>
 
-      <FlowUnitModal unitId={openUnit} onClose={() => setOpenUnit(null)} />
-    </div>
+          </div>
   );
 }
 
@@ -147,7 +146,7 @@ function UnitRow({
       <button
         type="button"
         onClick={() => onOpen(unit.id)}
-        className="flex w-full items-center gap-1.5 rounded-md bg-page px-2 py-1 text-left text-[11px] transition-base hover:bg-line/40"
+        className="flex w-full items-center gap-1.5 rounded-md bg-page px-2 py-1 text-left text-xs transition-base hover:bg-line/40"
       >
         <span className="min-w-0 flex-1 truncate text-ink">
           <span className="font-semibold">{unit.flow_name}</span>
@@ -184,20 +183,45 @@ function AssignmentRow({
       <button
         type="button"
         onClick={() => onOpen(row.unit)}
-        className="flex w-full items-center gap-1.5 rounded-md bg-page px-2 py-1 text-left text-[11px] transition-base hover:bg-line/40"
+        className="flex w-full items-center gap-1.5 rounded-md bg-page px-2 py-1 text-left text-xs transition-base hover:bg-line/40"
       >
         <span className="min-w-0 flex-1 truncate text-ink">
           <span className="font-semibold">
             {row.task_name} {row.status}
           </span>
+          {row.work_type_name && (
+            <span className="ml-1 text-[11px] text-ink-3">〔{row.work_type_name}〕</span>
+          )}
           <span className="ml-1 text-ink-3">
             {row.project_name}·{row.flow_name}
           </span>
         </span>
+        {/* D52：老闆要的三色狀態——未開始🔴／進行中（第 N 天）／今日已回報🟢 */}
+        {!done && (
+          <span
+            className="shrink-0 rounded-full px-1.5 py-px text-[11px] font-semibold"
+            title={row.started_at ? `開始於 ${row.started_at}` : "被分到的人還沒按開始"}
+            style={{
+              background: "var(--color-page)",
+              color: row.started_at ? "var(--color-ontrack)" : "var(--color-delayed)",
+            }}
+          >
+            {row.started_at
+              ? `進行中 第 ${
+                  Math.max(1, Math.floor((Date.now() - new Date(row.started_at).getTime()) / 86400000) + 1)
+                } 天${row.reported_today ? "・今日已回報" : ""}`
+              : "未開始"}
+          </span>
+        )}
         <span className="shrink-0 tabular-nums text-ink-2">
           {row.qty_done}/{row.qty_assigned}
           {row.unit_of_measure && ` ${row.unit_of_measure}`}
         </span>
+        {row.man_days > 0 && (
+          <span className="shrink-0 tabular-nums text-ink-3" title="工數（一人一天 1 工，依回報自動計）">
+            {row.man_days} 工
+          </span>
+        )}
         {done && (
           <span className="shrink-0 tabular-nums text-ink-3">
             <CheckCircle2 size={11} className="mr-0.5 inline" style={{ color: "var(--color-ontrack)" }} />

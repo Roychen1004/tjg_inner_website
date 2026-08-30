@@ -22,9 +22,9 @@ def assigned(unit, actor):
         return
     Notification.send(
         [unit.assignee],
-        f"你收到任務：{unit.flow_item.name}",
+        f"你收到任務：{unit.flow_display_name}",
         body=(
-            f"專案「{unit.project.name}」的「{unit.flow_item.name}」指派給你。"
+            f"專案「{unit.project.name}」的「{unit.flow_display_name}」指派給你。"
             + (f"預計 {unit.plan_start} 開始、{unit.plan_end} 完成。" if unit.plan_end else "")
         ),
         link_url=f"/mywork?unit={unit.pk}",
@@ -42,7 +42,7 @@ def flow_completed(unit, actor):
     ]
     Notification.send(
         recipients,
-        f"{unit.project.name}：「{unit.flow_item.name}」已完成",
+        f"{unit.project.name}：「{unit.flow_display_name}」已完成",
         body=f"由 {getattr(actor, 'name', '系統')} 回報完成。",
         link_url=f"/projects?open={unit.project_id}",
         category=NotificationCategory.TRACKING,
@@ -66,10 +66,12 @@ def task_assigned(assignment, actor):
         f"你收到工作：{task.name} {assignment.status} "
         f"{_qty_text(assignment.qty_assigned, task.unit_of_measure)}",
         body=(
-            f"專案「{unit.project.name}」·{unit.flow_item.name}："
+            f"專案「{unit.project.name}」·{unit.flow_display_name}："
             f"「{task.name}」的「{assignment.status}」分了 "
             f"{_qty_text(assignment.qty_assigned, task.unit_of_measure)} 給你。"
             "做多少回報多少，全部做完會通知主要負責人。"
+            # D49：分配時的叮嚀直接進通知——被分到的人第一眼就看到
+            + (f"\n📌 注意事項：{assignment.note}" if assignment.note else "")
         ),
         link_url=f"/mywork?unit={unit.pk}",
         category=NotificationCategory.TRACKING,
@@ -95,7 +97,7 @@ def task_progress(assignment, actor):
         [unit.assignee],
         f"{task.name}·{assignment.status}：{getattr(actor, 'name', '系統')} 回報完成",
         body=(
-            f"專案「{unit.project.name}」·{unit.flow_item.name}：「{task.name}」的"
+            f"專案「{unit.project.name}」·{unit.flow_display_name}：「{task.name}」的"
             f"「{assignment.status}」目前 {stage_done:g}/{denom:g}（{pct:g}%）。"
         ),
         link_url=f"/mywork?unit={unit.pk}",
@@ -112,7 +114,7 @@ def flow_overdue(unit):
         recipients.append(unit.assignee)
     Notification.send(
         recipients,
-        f"逾期：{unit.project.name}·{unit.flow_item.name}",
+        f"逾期：{unit.project.name}·{unit.flow_display_name}",
         body=f"預計 {unit.plan_end} 完成，目前仍是「{unit.get_state_display()}」。",
         link_url=f"/mywork?unit={unit.pk}",
         category=NotificationCategory.ALERT,

@@ -43,6 +43,9 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* D50（老闆）：全站字體放大。Tailwind 的字級與間距都是 rem，
+     調這裡等於整體放大約 6%——比逐一改幾百處 class 可靠 */
+  font-size: 17px;
 }
 
 body {

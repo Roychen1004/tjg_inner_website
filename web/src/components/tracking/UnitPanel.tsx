@@ -115,7 +115,7 @@ function ViewMode({
             type="button"
             onClick={onEdit}
             className="ml-auto flex h-7 min-h-0 items-center gap-1 rounded-lg px-2
-                       text-[11px] font-semibold text-ink-2 hover:bg-page"
+                       text-xs font-semibold text-ink-2 hover:bg-page"
           >
             <Pencil size={12} />
             編輯
@@ -131,7 +131,7 @@ function ViewMode({
           return (
             <li
               key={stage.id}
-              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold"
+              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold"
               style={{
                 background: current ? stage.color : done ? "var(--color-page)" : "transparent",
                 color: current ? "#fff" : done ? "var(--color-ink-2)" : "var(--color-ink-3)",
@@ -154,7 +154,7 @@ function ViewMode({
               : `「${detail.stage_name}」完成度`
           }
         />
-        <p className="mt-1 text-[11px] text-ink-3">
+        <p className="mt-1 text-xs text-ink-3">
           這是<strong>目前這一站</strong>的進度，換站會歸零重算。
           整體進度看上面的階段軌道（第 {detail.stage_seq}／{detail.stage_total} 站）。
         </p>

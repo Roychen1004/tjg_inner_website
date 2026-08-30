@@ -10,7 +10,7 @@
  *   進度維護權限　　＋直接改排程（負責人、日期、數量）
  */
 import { CheckCircle2, Play, Plus, RotateCcw, Wallet, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -30,28 +30,62 @@ import {
   useSaveMilestone,
   useSavePayable,
   useSaveTaskAssignment,
+  useSaveWorkType,
+  useWorkTypes,
+  suggestWorkType,
 } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import type { FlowTask, FlowTaskAssignment, FlowUnit } from "@/api/types";
 import AttachmentSection from "@/components/attachments/AttachmentSection";
 import FlowStateBadge from "@/components/tracking/FlowStateBadge";
-import { Button, DateInput, Field, inputClass, Modal } from "@/components/ui";
+import { useUnitPanel } from "@/components/tracking/UnitPanelContext";
+import { Button, DateInput, Field, inputClass } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 
-export default function FlowUnitModal({
-  unitId,
-  onClose,
-}: {
-  unitId: number | null;
-  onClose: () => void;
-}) {
+/**
+ * 全域唯一的流程卡片側欄（D49），由 AppShell 掛在版面層。
+ * 桌機＝版面右欄（主內容被往左擠，同一個平面、兩邊都能操作）；
+ * 手機＝全螢幕蓋板（螢幕擠不下兩欄）。
+ * 開哪一張由 UnitPanelContext 管——點任何頁面的流程都是換這一個側欄的內容，
+ * 不會疊出第二層。（歷輪「工作內容不斷複製」的真兇其實是 Body 裡
+ * SpecBlock/ScheduleEditor 的兄弟 key 重複，D51 修正——見 Body 內註解。）
+ */
+export function FlowUnitSidePanel() {
+  const { unitId, close } = useUnitPanel();
   const { data: unit } = useFlowUnit(unitId);
+
+  // Esc 關閉（跟原本 Modal 的行為一致）
+  useEffect(() => {
+    if (unitId === null) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [unitId, close]);
+
   if (unitId === null) return null;
+  const title = unit ? `${unit.flow_code} ${unit.flow_name}` : "載入中…";
+
   return (
-    // 從右側滑出（約 1/3 螢幕，D47）——排程表、甘特圖留在左邊，兩邊對照著看
-    <Modal open side onClose={onClose} title={unit ? `${unit.flow_code} ${unit.flow_name}` : "載入中…"}>
-      {unit && <Body unit={unit} onClose={onClose} />}
-    </Modal>
+    <aside
+      role="dialog"
+      aria-label={title}
+      className="shrink-0 border-l border-line bg-card
+                 max-sm:fixed max-sm:inset-0 max-sm:z-50 max-sm:overflow-y-auto
+                 sm:sticky sm:top-0 sm:h-dvh sm:w-[max(33vw,420px)] sm:overflow-y-auto"
+    >
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-card px-4 py-3">
+        <h3 className="text-sm font-bold text-ink">{title}</h3>
+        <button
+          type="button"
+          onClick={close}
+          aria-label="關閉"
+          className="rounded-lg p-1.5 text-ink-3 hover:bg-page"
+        >
+          <X size={18} />
+        </button>
+      </div>
+      <div className="px-4 py-4">{unit && <Body unit={unit} onClose={close} />}</div>
+    </aside>
   );
 }
 
@@ -90,7 +124,7 @@ function Body({ unit, onClose }: { unit: FlowUnit; onClose: () => void }) {
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <FlowStateBadge state={unit.state} overdue={unit.is_overdue} />
         <span className="text-xs text-ink-2">{unit.project_name}</span>
-        <span className="text-[11px] text-ink-3">
+        <span className="text-xs text-ink-3">
           第{unit.stage_seq}階段 · {unit.stage_name}
         </span>
       </div>
@@ -98,7 +132,10 @@ function Body({ unit, onClose }: { unit: FlowUnit; onClose: () => void }) {
       {/* ★ 全卡片唯一的文字區塊（D43）：工作內容＋產出物＋完成條件都在這一格。
           「詳細內容」欄位已併入工作內容——兩個都在回答「這一步要做什麼」，
           分兩格只會看起來像同一個區塊被複製 */}
-      <SpecBlock key={unit.id} unit={unit} canEdit={canEditSchedule} />
+      {/* ⚠️ key 要帶前綴（D51）：SpecBlock 與 ScheduleEditor 曾同用 key={unit.id}——
+          React 兄弟 key 重複，切換單元時 reconciliation 錯配、舊區塊變孤兒 DOM，
+          這就是「工作內容區塊不斷複製」纏了好幾輪的真兇 */}
+      <SpecBlock key={`spec-${unit.id}`} unit={unit} canEdit={canEditSchedule} />
 
       <dl className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
         {!canEditSchedule && (
@@ -120,7 +157,7 @@ function Body({ unit, onClose }: { unit: FlowUnit; onClose: () => void }) {
       <Progress unit={unit} />
 
       {/* 排程緊跟在進度下面（D45），且不再有總數量／單位——進度由分配算 */}
-      {canEditSchedule && <ScheduleEditor key={unit.id} unit={unit} />}
+      {canEditSchedule && <ScheduleEditor key={`sched-${unit.id}`} unit={unit} />}
 
       <TaskSection unit={unit} />
 
@@ -167,7 +204,7 @@ function Body({ unit, onClose }: { unit: FlowUnit; onClose: () => void }) {
       {/* 掛在這一步的應付款（D47）——在卡片上就看得到這一步花了什麼錢 */}
       {user?.permissions.view_money && <UnitPayables unit={unit} />}
       {unit.state === "done" && unit.is_gate && (
-        <p className="mb-3 rounded-lg px-3 py-2 text-[11px]" style={{ background: "var(--color-ontrack-bg)", color: "var(--color-ontrack)" }}>
+        <p className="mb-3 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--color-ontrack-bg)", color: "var(--color-ontrack)" }}>
           這是關卡流程——完成代表可以進入下一階段。
         </p>
       )}
@@ -236,7 +273,7 @@ function SpecBlock({ unit, canEdit }: { unit: FlowUnit; canEdit: boolean }) {
         <>
           {SPEC_FIELDS.map((f, i) => (
             <label key={f.key} className={`block ${i > 0 ? "mt-1.5" : ""}`}>
-              <span className="text-[11px] font-semibold text-ink-2">
+              <span className="text-xs font-semibold text-ink-2">
                 {f.label}
                 {i === 0 && saved && (
                   <span className="ml-1.5 font-normal text-ink-3">已儲存 ✓</span>
@@ -247,16 +284,16 @@ function SpecBlock({ unit, canEdit }: { unit: FlowUnit; canEdit: boolean }) {
                 value={form[f.key]}
                 onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
                 onBlur={() => commit(f.key)}
-                className={`${inputClass} mb-0 mt-0.5 text-[11px] leading-relaxed`}
+                className={`${inputClass} mb-0 mt-0.5 text-xs leading-relaxed`}
               />
             </label>
           ))}
-          <p className="mt-1.5 text-[10px] leading-relaxed text-ink-3">
-            改完離開欄位就會儲存，只影響這個案子；新案的預設內容在後台的流程目錄維護。
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-3">
+            改完離開欄位就會儲存，只影響這個案子；新案的預設內容在「設定 → 流程模板」維護（D49）。
           </p>
         </>
       ) : (
-        <dl className="space-y-1.5 text-[11px] leading-relaxed">
+        <dl className="space-y-1.5 text-xs leading-relaxed">
           {unit.description && <SpecRow label="工作內容" text={unit.description} />}
           {unit.deliverables && <SpecRow label="產出物" text={unit.deliverables} />}
           {unit.done_criteria && <SpecRow label="完成條件" text={unit.done_criteria} />}
@@ -269,7 +306,7 @@ function SpecBlock({ unit, canEdit }: { unit: FlowUnit; canEdit: boolean }) {
 function InfoRow({ label, value, warn = false }: { label: string; value: string; warn?: boolean }) {
   return (
     <div>
-      <dt className="text-[11px] text-ink-3">{label}</dt>
+      <dt className="text-xs text-ink-3">{label}</dt>
       <dd
         className="font-semibold"
         style={{ color: warn ? "var(--color-delayed)" : "var(--color-ink)" }}
@@ -309,7 +346,7 @@ function Progress({ unit }: { unit: FlowUnit }) {
           style={{ width: `${unit.completion_ratio}%`, background: "var(--color-stage-2)" }}
         />
       </div>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-ink-3">
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-3">
         {unit.is_batch_driven ? (
           <>
             這一步的進度由<strong>構件批次自動彙總</strong>——到專案明細的「構件批次」
@@ -387,7 +424,7 @@ function TaskSection({ unit }: { unit: FlowUnit }) {
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-ink-2 transition-base hover:bg-card"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold text-ink-2 transition-base hover:bg-card"
           >
             <Plus size={12} />
             新增項目
@@ -396,7 +433,7 @@ function TaskSection({ unit }: { unit: FlowUnit }) {
       </div>
 
       {unit.tasks.length === 0 && !adding && (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-3">
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-3">
           這一步要處理哪些東西？例如「鐵材 200 噸」——點「新增項目」開始記。
           每個項目有**自己的**狀態清單（鐵材走切割→噴漆、螺栓走下訂→到貨），
           加好後能把每個工段的數量分配給員工做。
@@ -443,7 +480,7 @@ function TaskSection({ unit }: { unit: FlowUnit }) {
               placeholder="單位"
               className={`${inputClass} mb-0 w-20`}
             />
-            <span className="flex items-center text-[11px] text-ink-3">狀態預設「未開始」</span>
+            <span className="flex items-center text-xs text-ink-3">狀態預設「未開始」</span>
           </div>
           <div className="mt-1.5 flex gap-1.5">
             <Button onClick={() => setAdding(false)} className="flex-1">
@@ -495,11 +532,11 @@ function TaskStatusEditor({ task }: { task: FlowTask }) {
 
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1">
-      <span className="text-[11px] text-ink-3">工段</span>
+      <span className="text-xs text-ink-3">工段</span>
       {task.statuses.map((s) => (
         <span
           key={s}
-          className="flex items-center gap-0.5 rounded-full bg-page px-2 py-0.5 text-[11px] font-semibold text-ink-2"
+          className="flex items-center gap-0.5 rounded-full bg-page px-2 py-0.5 text-xs font-semibold text-ink-2"
         >
           {s}
           <button
@@ -521,13 +558,13 @@ function TaskStatusEditor({ task }: { task: FlowTask }) {
         }}
         placeholder="新狀態（如：切割中）"
         aria-label={`${task.name} 的新狀態`}
-        className="w-32 rounded-md border border-line bg-page px-1.5 py-0.5 text-[11px] text-ink"
+        className="w-32 rounded-md border border-line bg-page px-1.5 py-0.5 text-xs text-ink"
       />
       <button
         type="button"
         onClick={add}
         disabled={!draft.trim()}
-        className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page disabled:opacity-40"
+        className="rounded-md px-1.5 py-0.5 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page disabled:opacity-40"
       >
         新增
       </button>
@@ -586,7 +623,7 @@ function TaskRow({
           {qtyText && <span className="ml-1.5 font-normal tabular-nums text-ink-2">{qtyText}</span>}
         </span>
         {workStatuses.length > 0 && (
-          <span className="shrink-0 text-[11px] font-bold tabular-nums text-ink">
+          <span className="shrink-0 text-xs font-bold tabular-nums text-ink">
             總進度 {task.progress_pct}%
           </span>
         )}
@@ -604,13 +641,13 @@ function TaskRow({
 
       {/* 狀態自己一行（D41）：從單元的狀態選項挑 */}
       <div className="mt-1.5 flex items-center gap-2">
-        <span className="shrink-0 text-[11px] text-ink-3">狀態</span>
+        <span className="shrink-0 text-xs text-ink-3">狀態</span>
         {canEdit ? (
           <select
             value={task.status}
             onChange={(e) => changeStatus(e.target.value)}
             aria-label={`${task.name} 的狀態`}
-            className="rounded-md border border-line bg-page px-1.5 py-1 text-[11px] font-semibold text-ink"
+            className="rounded-md border border-line bg-page px-1.5 py-1 text-xs font-semibold text-ink"
           >
             {options.map((s) => (
               <option key={s} value={s}>
@@ -619,7 +656,7 @@ function TaskRow({
             ))}
           </select>
         ) : (
-          <span className="rounded-full bg-page px-2 py-0.5 text-[11px] font-semibold text-ink-2">
+          <span className="rounded-full bg-page px-2 py-0.5 text-xs font-semibold text-ink-2">
             {task.status}
           </span>
         )}
@@ -664,17 +701,17 @@ function StageBlock({
   return (
     <div className="rounded-md bg-page px-2 py-1.5">
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ink-2">{status}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink-2">{status}</span>
         {canEdit && remain !== null && remain > 0 && (
           <span
-            className="shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold"
+            className="shrink-0 rounded-full px-1.5 py-px text-[11px] font-semibold"
             style={{ background: "var(--color-atrisk-bg, var(--color-page))", color: "var(--color-atrisk)" }}
           >
             還可分 {remain}
             {task.unit_of_measure && ` ${task.unit_of_measure}`}
           </span>
         )}
-        <span className="shrink-0 text-[11px] tabular-nums text-ink">
+        <span className="shrink-0 text-xs tabular-nums text-ink">
           {done}/{denom || "？"}
           {task.unit_of_measure && ` ${task.unit_of_measure}`}
           <span className="ml-1 text-ink-3">({pct}%)</span>
@@ -683,7 +720,7 @@ function StageBlock({
           <button
             type="button"
             onClick={() => setAssigning((v) => !v)}
-            className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-semibold text-ink-2 transition-base hover:bg-card"
+            className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-xs font-semibold text-ink-2 transition-base hover:bg-card"
           >
             <Plus size={11} />
             分配
@@ -727,6 +764,26 @@ function AssignmentRow({
   const toast = useToast();
   const [value, setValue] = useState(String(Number(a.qty_done)));
   const canReport = canEdit || a.assignee === userId;
+  // 工數補登修正（D52）：空＝系統依回報自動計
+  const [manDays, setManDays] = useState(
+    a.man_days_override === null ? "" : String(Number(a.man_days_override)),
+  );
+
+  function commitManDays() {
+    const current = a.man_days_override === null ? "" : String(Number(a.man_days_override));
+    if (manDays === current) return;
+    save.mutate(
+      { id: a.id, man_days_override: manDays === "" ? null : manDays },
+      {
+        onSuccess: () =>
+          toast.success(manDays === "" ? "工數改回自動計" : `工數修正為 ${manDays} 工`),
+        onError: (e) => {
+          setManDays(current);
+          toast.error(e instanceof ApiError ? e.body.detail ?? "修正失敗" : "修正失敗");
+        },
+      },
+    );
+  }
 
   function commit() {
     if (value === "" || Number(value) === Number(a.qty_done)) {
@@ -749,11 +806,54 @@ function AssignmentRow({
   }
 
   return (
-    <li className="flex items-center gap-1.5 text-[11px]">
+    <li className="flex flex-wrap items-center gap-1.5 text-xs">
       <span className="min-w-0 flex-1 truncate text-ink-2">
         {a.assignee_name || "（已停用帳號）"}
         {a.is_done && <span className="ml-1 text-ink-3">✓</span>}
+        {/* D52：開始了沒——經理掃一眼就知道 */}
+        {!a.is_done && (
+          <span
+            className="ml-1.5 rounded-full px-1.5 py-px text-[11px] font-semibold"
+            title={a.started_at ? `開始於 ${a.started_at}` : "還沒按開始"}
+            style={
+              a.started_at
+                ? { background: "var(--color-page)", color: "var(--color-ontrack)" }
+                : { background: "var(--color-page)", color: "var(--color-delayed)" }
+            }
+          >
+            {a.started_at ? "進行中" : "未開始"}
+          </span>
+        )}
+        {a.work_type_name && (
+          <span className="ml-1.5 text-[11px] text-ink-3">{a.work_type_name}</span>
+        )}
+        {a.note && (
+          <span className="ml-1.5 text-ink-3" title={`注意事項：${a.note}`}>
+            📌 {a.note}
+          </span>
+        )}
       </span>
+      {canEdit && (
+        <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-ink-3">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step={0.5}
+            value={manDays}
+            onChange={(e) => setManDays(e.target.value)}
+            onBlur={commitManDays}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            placeholder="自動"
+            title="工數補登修正——留空＝系統依回報自動計（一人一天 1 工）"
+            aria-label={`${a.assignee_name} 的工數修正`}
+            className="w-12 rounded border border-line bg-card px-1 py-0.5 text-right tabular-nums text-ink"
+          />
+          工
+        </span>
+      )}
       {canReport ? (
         <>
           <input
@@ -828,7 +928,38 @@ function AssignForm({
   const toast = useToast();
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [qty, setQty] = useState("");
+  const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+
+  // 工作類型（D52）：必選，產能統計的分類；依工段用字自動預帶上次的選擇
+  const { data: workTypes } = useWorkTypes();
+  const saveWorkType = useSaveWorkType();
+  const [workType, setWorkType] = useState<number | "">("");
+  const touchedRef = useRef(false);
+  useEffect(() => {
+    if (touchedRef.current) return;
+    let alive = true;
+    suggestWorkType(status).then((res) => {
+      if (alive && !touchedRef.current && res.work_type) setWorkType(res.work_type);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [status]);
+
+  function addWorkType() {
+    const name = window.prompt("新增工作類型（如：焊接、切割、泥作）：")?.trim();
+    if (!name) return;
+    saveWorkType.mutate(
+      { name },
+      {
+        onSuccess: (created) => {
+          touchedRef.current = true;
+          setWorkType(created.id);
+        },
+        onError: (e) =>
+          toast.error(e instanceof ApiError ? e.body.detail ?? "新增失敗" : "新增失敗"),
+      },
+    );
+  }
 
   // 這個工段還剩多少可以分（項目有填數量才有上限）
   const already = task.assignments
@@ -851,13 +982,14 @@ function AssignForm({
   }
 
   async function submit() {
-    if (picked.size === 0 || !(total > 0) || overRemain) return;
+    if (picked.size === 0 || !(total > 0) || overRemain || workType === "") return;
     const ids = [...picked];
     setSending(true);
     try {
       for (let i = 0; i < ids.length; i++) {
         await add.mutateAsync({
           task: task.id, status, assignee: ids[i], qty_assigned: shares[i],
+          note: note.trim(), work_type: workType,
         });
       }
       toast.success(
@@ -874,7 +1006,7 @@ function AssignForm({
 
   return (
     <div className="mt-1.5 rounded-md bg-card p-2 ring-1 ring-line">
-      <p className="text-[11px] font-semibold text-ink-2">
+      <p className="text-xs font-semibold text-ink-2">
         分配「{status}」——勾人，總量會平均分
       </p>
       <div className="mt-1 flex flex-wrap gap-1">
@@ -887,7 +1019,7 @@ function AssignForm({
               onClick={() => toggle(u.id)}
               aria-pressed={on}
               className={[
-                "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-base",
+                "rounded-full px-2 py-0.5 text-xs font-semibold transition-base",
                 on ? "bg-stage-2 text-white" : "bg-page text-ink-2",
               ].join(" ")}
             >
@@ -896,6 +1028,42 @@ function AssignForm({
           );
         })}
       </div>
+      {/* 工作類型（D52）：必選——產能統計靠它分類；依工段自動預帶 */}
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <label className="shrink-0 text-xs text-ink-3" htmlFor={`worktype-${task.id}-${status}`}>
+          類型
+        </label>
+        <select
+          id={`worktype-${task.id}-${status}`}
+          value={workType}
+          onChange={(e) => {
+            touchedRef.current = true;
+            setWorkType(e.target.value ? Number(e.target.value) : "");
+          }}
+          className="min-w-0 flex-1 rounded-md border border-line bg-page px-1.5 py-1 text-xs text-ink"
+        >
+          <option value="">（必選）這是哪種工作？</option>
+          {(workTypes ?? []).map((wt) => (
+            <option key={wt.id} value={wt.id}>{wt.name}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={addWorkType}
+          className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+        >
+          ＋新類型
+        </button>
+      </div>
+      {/* 注意事項（D49）：經理的叮嚀——進每個人的通知與「我的任務」卡片 */}
+      <textarea
+        rows={2}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="注意事項（選填）——如：切割前先確認圖面版次。被分到的人會特別看到這段話"
+        aria-label="分配的注意事項"
+        className="mt-1.5 w-full rounded-md border border-line bg-page px-1.5 py-1 text-xs leading-relaxed text-ink"
+      />
       <div className="mt-1.5 flex items-center gap-1.5">
         <input
           type="number"
@@ -904,19 +1072,19 @@ function AssignForm({
           onChange={(e) => setQty(e.target.value)}
           placeholder={remain !== null ? `總量（最多 ${remain}）` : "總量"}
           aria-label="要分配的總量"
-          className="w-24 shrink-0 rounded-md border border-line bg-page px-1.5 py-1 text-right text-[11px] tabular-nums text-ink"
+          className="w-24 shrink-0 rounded-md border border-line bg-page px-1.5 py-1 text-right text-xs tabular-nums text-ink"
         />
         {remain !== null && remain > 0 && (
           <button
             type="button"
             onClick={() => setQty(String(remain))}
             title={`把這個工段還沒分的 ${remain} 全部填入`}
-            className="shrink-0 rounded-md px-1.5 py-1 text-[11px] font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
+            className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-ink-2 ring-1 ring-line transition-base hover:bg-page"
           >
             最大
           </button>
         )}
-        <span className="min-w-0 flex-1 truncate text-[10px] text-ink-3">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-3">
           {overRemain
             ? `超過剩餘量（還能分 ${remain}）`
             : picked.size > 1 && shares.length
@@ -926,7 +1094,7 @@ function AssignForm({
         <Button
           onClick={submit}
           loading={sending}
-          disabled={picked.size === 0 || !(total > 0) || overRemain}
+          disabled={picked.size === 0 || !(total > 0) || overRemain || workType === ""}
         >
           分配{picked.size > 1 ? `（${picked.size} 人）` : ""}
         </Button>
@@ -967,7 +1135,7 @@ function BillingLinkSection({ unit }: { unit: FlowUnit }) {
   return (
     <div className="mb-3 rounded-lg bg-page px-3 py-2.5">
       <p className="text-xs font-semibold text-ink-2">收款連結</p>
-      <p className="mt-0.5 text-[10px] leading-relaxed text-ink-3">
+      <p className="mt-0.5 text-[11px] leading-relaxed text-ink-3">
         掛上來的期別會在這一步完成時自動轉「可請款」，並通知指定的會計師收款
         （出現在他的「我的任務」）。
       </p>
@@ -975,7 +1143,7 @@ function BillingLinkSection({ unit }: { unit: FlowUnit }) {
       {linked.length > 0 && (
         <ul className="mt-1.5 space-y-1">
           {linked.map((m) => (
-            <li key={m.id} className="flex flex-wrap items-center gap-1.5 rounded-md bg-card px-2 py-1.5 text-[11px] ring-1 ring-line">
+            <li key={m.id} className="flex flex-wrap items-center gap-1.5 rounded-md bg-card px-2 py-1.5 text-xs ring-1 ring-line">
               <span className="min-w-0 flex-1 truncate font-semibold text-ink">
                 {m.label}
                 <span className="ml-1.5 font-normal tabular-nums text-ink-2">
@@ -992,7 +1160,7 @@ function BillingLinkSection({ unit }: { unit: FlowUnit }) {
                         e.target.value ? "已指定收款會計師" : "已取消指定")
                 }
                 aria-label={`${m.label} 的收款會計師`}
-                className="shrink-0 rounded-md border border-line bg-page px-1 py-0.5 text-[11px] text-ink"
+                className="shrink-0 rounded-md border border-line bg-page px-1 py-0.5 text-xs text-ink"
               >
                 <option value="">未指定會計師</option>
                 {(options?.accountants ?? []).map((a) => (
@@ -1027,7 +1195,7 @@ function BillingLinkSection({ unit }: { unit: FlowUnit }) {
                     "已連結——這一步完成，那期就轉可請款");
           }}
           aria-label="把應收期別掛在這個流程上"
-          className="mt-1.5 w-full rounded-md border border-line bg-card px-1.5 py-1 text-[11px] text-ink"
+          className="mt-1.5 w-full rounded-md border border-line bg-card px-1.5 py-1 text-xs text-ink"
         >
           <option value="">＋把應收期別掛在這一步…</option>
           {linkable.map((m) => (
@@ -1061,7 +1229,7 @@ function UnitPayables({ unit }: { unit: FlowUnit }) {
           <li key={p.id}>
             <RouterLink
               to={`/finance?tab=out&payable=${p.id}`}
-              className="flex items-center gap-1.5 rounded-md bg-card px-2 py-1.5 text-[11px] ring-1 ring-line transition-base hover:ring-stage-2"
+              className="flex items-center gap-1.5 rounded-md bg-card px-2 py-1.5 text-xs ring-1 ring-line transition-base hover:ring-stage-2"
             >
               <span className="min-w-0 flex-1 truncate text-ink">
                 <span className="font-semibold">{p.title}</span>
@@ -1184,7 +1352,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
           value={form.vendor}
           onChange={(e) => setForm((f) => ({ ...f, vendor: e.target.value }))}
           aria-label="付費對象"
-          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-[11px] text-ink"
+          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-xs text-ink"
         >
           <option value="">付費對象（廠商）…</option>
           {(vendors.data?.results ?? []).map((v) => (
@@ -1203,9 +1371,9 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
           }}
           placeholder={count > 1 ? "總金額（稅後）" : "金額（稅後）"}
           aria-label="金額（稅後實際金額）"
-          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-right text-[11px] tabular-nums text-ink"
+          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-right text-xs tabular-nums text-ink"
         />
-        <label className="flex items-center gap-1 text-[11px] text-ink-3">
+        <label className="flex items-center gap-1 text-xs text-ink-3">
           {count > 1 ? "首期付款日" : "預計付費日"}
           <DateInput
             value={form.due_date}
@@ -1221,7 +1389,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
           value={form.payment_method}
           onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
           aria-label="付款方式"
-          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-[11px] text-ink"
+          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-xs text-ink"
         >
           {(options?.payment_method ?? []).map((o) => (
             <option key={o.value} value={o.value}>
@@ -1233,7 +1401,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
           value={form.category}
           onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
           aria-label="類別"
-          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-[11px] text-ink"
+          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-xs text-ink"
         >
           <option value="">類別…</option>
           {(options?.subcontract_category ?? []).map((o) => (
@@ -1247,10 +1415,10 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
           onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
           placeholder={`項目（預設：${unit.flow_name}）`}
           aria-label="項目"
-          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-[11px] text-ink"
+          className="rounded-md border border-line bg-card px-1.5 py-1.5 text-xs text-ink"
         />
         {/* 分期付款（D48）：一期＝一筆應付款，現金流按各期日期落格 */}
-        <label className="flex items-center gap-1 text-[11px] text-ink-3">
+        <label className="flex items-center gap-1 text-xs text-ink-3">
           分期
           <select
             value={count}
@@ -1260,7 +1428,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
               regen(n, form.amount, form.due_date);
             }}
             aria-label="分幾期付款"
-            className="min-w-0 flex-1 rounded-md border border-line bg-card px-1.5 py-1.5 text-[11px] text-ink"
+            className="min-w-0 flex-1 rounded-md border border-line bg-card px-1.5 py-1.5 text-xs text-ink"
           >
             <option value={1}>一次付清</option>
             {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
@@ -1276,7 +1444,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
         <div className="mt-1.5 space-y-1">
           {rows.map((r, i) => (
             <div key={i} className="flex items-center gap-1.5">
-              <span className="w-10 shrink-0 text-[11px] tabular-nums text-ink-3">
+              <span className="w-10 shrink-0 text-xs tabular-nums text-ink-3">
                 第{i + 1}期
               </span>
               <input
@@ -1287,7 +1455,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
                   setRows((prev) => prev.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))
                 }
                 aria-label={`第 ${i + 1} 期金額`}
-                className="w-24 shrink-0 rounded-md border border-line bg-card px-1.5 py-1 text-right text-[11px] tabular-nums text-ink"
+                className="w-24 shrink-0 rounded-md border border-line bg-card px-1.5 py-1 text-right text-xs tabular-nums text-ink"
               />
               <DateInput
                 value={r.due_date}
@@ -1299,7 +1467,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
               />
             </div>
           ))}
-          <p className="text-[10px] text-ink-3">
+          <p className="text-[11px] text-ink-3">
             各期合計{" "}
             {rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0).toLocaleString("zh-TW")} 元
             （預設平均拆、逐月推，每期都可以改）
@@ -1321,7 +1489,7 @@ function AddPayableForm({ unit, onDone }: { unit: FlowUnit; onDone: () => void }
           {count > 1 ? `登錄 ${count} 期應付款` : "登錄應付款"}
         </Button>
       </div>
-      <p className="mt-1 text-[10px] leading-relaxed text-ink-3">
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-3">
         金額一律填稅後的實際金額；之後的核可（經理）與付款（會計師）在 金流 → 應付 操作。
       </p>
     </div>
