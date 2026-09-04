@@ -277,9 +277,14 @@ PAYABLE_OPTIONS = {
 }
 
 
-from .cashflow import CashBalanceView, CashflowForecastView, ProjectPnlView  # noqa: E402
+from .cashflow import (  # noqa: E402
+    CashBalanceView,
+    CashflowForecastView,
+    CashLedgerView,
+    ProjectPnlView,
+)
 
 __all__ = [
-    "CashBalanceView", "CashflowForecastView", "PAYABLE_OPTIONS", "PayableViewSet",
-    "ProjectPnlView", "SubcontractViewSet",
+    "CashBalanceView", "CashflowForecastView", "CashLedgerView", "PAYABLE_OPTIONS",
+    "PayableViewSet", "ProjectPnlView", "SubcontractViewSet",
 ]

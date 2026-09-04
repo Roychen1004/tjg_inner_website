@@ -64,6 +64,14 @@ TARGETS = {
         "scope": "main.utils.scoping.scope_billing",
         "write_permission": "edit_milestone",
     },
+    # 行政事項（D53）：全員都看得到，寫給經理；被指派的人也能傳
+    # （完成回報要附照片、繳費要附收據）
+    "affair-task": {
+        "label": "行政事項",
+        "model": ("affairs", "affairtask"),
+        "scope": "main.utils.scoping.scope_affairs",
+        "write_permission": "edit_affairs",
+    },
 }
 
 
@@ -251,6 +259,9 @@ class AttachmentListView(APIView):
         # 員工能給**自己被指派的**流程單元傳產出物——上傳權跟著任務走
         if target == "flow-unit" and obj is not None:
             return getattr(obj, "assignee_id", None) == user.pk
+        # 行政事項（D53）同理：被指派的人要能附完成照片與收據
+        if target == "affair-task" and obj is not None:
+            return obj.assignees.filter(pk=user.pk).exists()
         return False
 
 

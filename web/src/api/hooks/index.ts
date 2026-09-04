@@ -10,12 +10,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../client";
 import type {
+  AffairCategory,
+  AffairRule,
+  AffairTask,
   Attachment,
   AttachmentList,
   AttachmentTarget,
   AttentionData,
   Activity,
   CashBalance,
+  CashLedger,
   CashflowForecast,
   BillingSummary,
   DashboardOverview,
@@ -40,6 +44,7 @@ import type {
   ProjectSummary,
   ReportProgressResult,
   StaffWorkload,
+  StageTemplate,
   Subcontract,
   TrackingCard,
   TrackingDetail,
@@ -705,6 +710,19 @@ export function useCashflow(params: Params = {}, enabled = true) {
   });
 }
 
+/**
+ * 收支明細（D55）：一段期間的收支流水帳。
+ * 跟現金流預測同一道權限（經理與會計師），員工不要打這支。
+ */
+export function useCashLedger(params: Params = {}, enabled = true) {
+  return useQuery({
+    queryKey: key("cashflow", "ledger", params),
+    queryFn: () => api.get<CashLedger>("/cashflow/ledger", params),
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
 /** 公司現有現金（D49）：只有經理與系統管理員拿得到，其他人不要打這支 */
 export function useCashBalance(enabled: boolean) {
   return useQuery({
@@ -800,5 +818,183 @@ export function useFlowCostStats(enabled = true) {
     queryKey: key("stats", "flow-costs"),
     queryFn: () => api.get<FlowCostStats>("/stats/flow-costs"),
     enabled,
+  });
+}
+
+// ── 行政（D53）──────────────────────────────────────────────────────
+// 三張表互相牽動（改規則會重長待辦、改類別換顏色），
+// 變更後整組 invalidate——資料量小，不值得算「只動到哪份」
+
+function invalidateAffairs(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: key("affair-tasks") });
+  qc.invalidateQueries({ queryKey: key("affair-rules") });
+  qc.invalidateQueries({ queryKey: key("affair-categories") });
+  // D55：行政事項可以帶金額，改了會影響收支明細與現金流預測
+  qc.invalidateQueries({ queryKey: key("cashflow") });
+}
+
+export function useAffairCategories(includeInactive = false) {
+  return useQuery({
+    queryKey: key("affair-categories", includeInactive),
+    queryFn: () =>
+      api.get<AffairCategory[]>("/affair-categories", includeInactive ? { active: "false" } : {}),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useSaveAffairCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id?: number; name?: string; color?: string; is_active?: boolean }) =>
+      id
+        ? api.patch<AffairCategory>(`/affair-categories/${id}`, body)
+        : api.post<AffairCategory>("/affair-categories", body),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+export function useDeleteAffairCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/affair-categories/${id}`),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+/** 日曆一次抓一段（含前後補滿的格子）；後端順手把例行規則展開 */
+export function useAffairTasks(start: string, end: string, extra: Params = {}) {
+  return useQuery({
+    queryKey: key("affair-tasks", start, end, extra),
+    queryFn: () => api.get<AffairTask[]>("/affair-tasks", { start, end, ...extra }),
+  });
+}
+
+/** 我的任務的行政區塊：指派給我、未完成、14 天內（含逾期） */
+export function useMyAffairTasks() {
+  return useQuery({
+    queryKey: key("affair-tasks", "mine"),
+    queryFn: () => api.get<AffairTask[]>("/affair-tasks/mine"),
+  });
+}
+
+export function useSaveAffairTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: {
+      id?: number;
+      title?: string;
+      category?: number;
+      date?: string;
+      note?: string;
+      amount?: string;
+      direction?: string;
+      /** D56：只是參考的預估金額，不進金流 */
+      is_reference?: boolean;
+      assignees?: number[];
+    }) =>
+      id
+        ? api.patch<AffairTask>(`/affair-tasks/${id}`, body)
+        : api.post<AffairTask>("/affair-tasks", body),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+export function useDeleteAffairTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/affair-tasks/${id}`),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+export function useCompleteAffairTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, done = true }: { id: number; done?: boolean }) =>
+      api.post<AffairTask>(`/affair-tasks/${id}/complete`, { done }),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+export function useAffairRules(includeInactive = false) {
+  return useQuery({
+    queryKey: key("affair-rules", includeInactive),
+    queryFn: () =>
+      api.get<AffairRule[]>("/affair-rules", includeInactive ? { active: "false" } : {}),
+  });
+}
+
+export function useSaveAffairRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id?: number } & Record<string, unknown>) =>
+      id
+        ? api.patch<AffairRule>(`/affair-rules/${id}`, body)
+        : api.post<AffairRule>("/affair-rules", body),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+export function useDeleteAffairRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/affair-rules/${id}`),
+    onSuccess: () => invalidateAffairs(qc),
+  });
+}
+
+// ── 構件批次站別（D54：Django Admin 移除後，站別改在網站上維護）──────
+export function useStageTemplates(params: Params = {}) {
+  return useQuery({
+    queryKey: key("stage-templates", params),
+    queryFn: () => api.get<StageTemplate[]>("/stage-templates", params),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+function invalidateStageTemplates(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: key("stage-templates") });
+  // 站別改了，看板與批次卡片上的名稱／顏色都要跟著換
+  qc.invalidateQueries({ queryKey: key("tracking") });
+  qc.invalidateQueries({ queryKey: key("flow-units") });
+}
+
+export function useAddStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ template, ...body }: {
+      template: number; name: string; color?: string; stall_days?: number | null;
+    }) => api.post<StageTemplate>(`/stage-templates/${template}/stages`, body),
+    onSuccess: () => invalidateStageTemplates(qc),
+  });
+}
+
+export function useSaveStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ template, stage, ...body }: {
+      template: number; stage: number;
+      name?: string; color?: string; stall_days?: number | null; is_active?: boolean;
+    }) => api.patch<StageTemplate>(`/stage-templates/${template}/stages/${stage}`, body),
+    onSuccess: () => invalidateStageTemplates(qc),
+  });
+}
+
+/** 拖曳重排站別（D55）。送的是全部**啟用中**站別的 id，依新順序 */
+export function useReorderStages() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ template, stage_ids }: { template: number; stage_ids: number[] }) =>
+      api.post<StageTemplate>(`/stage-templates/${template}/stages/reorder`, { stage_ids }),
+    onSuccess: () => invalidateStageTemplates(qc),
+  });
+}
+
+export function useDeleteStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ template, stage }: { template: number; stage: number }) =>
+      api.delete<void>(`/stage-templates/${template}/stages/${stage}`),
+    onSuccess: () => invalidateStageTemplates(qc),
   });
 }

@@ -57,6 +57,10 @@ PERMISSION_ROLES = {
 
     # 主檔（客戶、廠商、員工）：頁面大家都看得到，改只有經理能改
     "manage_masters": [Role.OWNER],
+
+    # 行政事項（D53）：頁面所有人都看得到，增刪改只有經理（與系統管理員）；
+    # 被指派的員工「勾完成」不在這張表——那是資料層的關係，檢查在 view 裡
+    "edit_affairs": [Role.OWNER],
 }
 
 # 舊碼名的相容別名——view_amounts 散在序列化器與附件權限裡，
@@ -74,6 +78,8 @@ NAV_ROLES = {
     "projects": ["view_overview"],
     "tracking": None,   # 追蹤看板：跨案看「東西卡在哪一站」，不含金額
     "mywork": ["view_mywork"],
+    # 行政（D53）：公司例行／臨時事務的日曆，所有登入者都看得到
+    "affairs": None,
     "finance": ["view_money"],
     # 統計（D52）：產能區塊要 view_productivity、金額區塊要 view_money——
     # 任一權限就看得到頁面，頁內各區塊再各自把關

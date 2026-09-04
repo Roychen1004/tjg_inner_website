@@ -31,7 +31,6 @@ AUTH_USER_MODEL = "core.User"
 
 # ── 應用程式 ───────────────────────────────────────────────────────────
 DJANGO_APPS = [
-    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -57,6 +56,7 @@ LOCAL_APPS = [
     "main.apps.billing",
     "main.apps.payables",
     "main.apps.analytics",
+    "main.apps.affairs",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

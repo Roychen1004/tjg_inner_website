@@ -202,7 +202,7 @@ export default function UnitForm({
               hint={
                 selected
                   ? `共 ${selected.stages.length} 站：${selected.stages.map((s) => s.name).join(" → ")}`
-                  : "流程是設定出來的，不是寫死的。要新增流程請至 /admin/masters/stagetemplate/"
+                  : "流程是設定出來的，不是寫死的。要改站別請至 設定 → 批次站別"
               }
               error={error?.fieldError("template")}
             >

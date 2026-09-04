@@ -1,4 +1,7 @@
-"""現金流預測與專案損益的端點"""
+"""現金流預測、收支明細與專案損益的端點"""
+import datetime as dt
+
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
@@ -79,9 +82,93 @@ class CashflowForecastView(APIView):
             granularity=granularity,
             certainties=certainties,
             opening_balance=opening,
+            # D55：行政收支是公司層級的錢，只看單一案子時不摻進去
+            include_affairs=not params.get("project"),
         )
         data["project_count"] = projects.count()
         return Response(data)
+
+
+class CashLedgerView(APIView):
+    """收支明細（D55）：GET /cashflow/ledger?start=&end=&source=&direction=
+
+    回答的問題：**這段期間，哪一天收了什麼、付了什麼、是哪個案子或哪件行政。**
+
+    跟現金流預測是同一份資料的兩個角度——預測分格算累計、只看未來；
+    這裡不分格、不算累計，連已經收付掉的也列（那是這本帳的重點）。
+
+    跟預測同一道門檻（經理與會計師），理由一樣：這是全公司的資金狀況。
+    """
+
+    permission_classes = [IsAuthenticated]
+    MAX_DAYS = 370
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("start", str, description="YYYY-MM-DD，預設本月一日"),
+            OpenApiParameter("end", str, description="YYYY-MM-DD，預設本月底"),
+            OpenApiParameter("source", str, description="all（預設）｜project｜affair"),
+            OpenApiParameter("direction", str, description="in｜out，不帶＝都要"),
+            OpenApiParameter("project", int, description="只看單一專案（會排除行政）"),
+        ],
+        responses=OpenApiTypes.OBJECT,
+    )
+    def get(self, request):
+        if not has_permission(request.user, "view_cashflow"):
+            return Response(
+                {
+                    "type": "permission_denied",
+                    "detail": "收支明細只開放給經理與會計師——這是全公司的資金狀況",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        params = request.query_params
+        today = timezone.localdate()
+        first = today.replace(day=1)
+        try:
+            start = dt.date.fromisoformat(params.get("start") or str(first))
+            end = dt.date.fromisoformat(
+                params.get("end") or str(_month_end(first))
+            )
+        except ValueError:
+            return Response(
+                {"type": "validation_error", "detail": "日期格式須為 YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if end < start:
+            return Response(
+                {"type": "validation_error", "detail": "結束日不能早於起始日"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if (end - start).days > self.MAX_DAYS:
+            return Response(
+                {"type": "validation_error",
+                 "detail": f"一次最多看 {self.MAX_DAYS} 天，請縮短期間"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        source = params.get("source") or "all"
+        sources = {"project", "affair"} if source == "all" else {source}
+        # 明細是一本帳，未成交與暫停的案子也算——收過的錢不會因為案子停了就消失
+        projects = scope_projects(Project.objects.all(), request.user)
+        if project_id := params.get("project"):
+            projects = projects.filter(pk=project_id)
+            sources.discard("affair")   # 行政不屬於任何案子
+
+        data = cashflow_service.ledger(
+            list(projects.values_list("pk", flat=True)),
+            start, end,
+            sources=sources,
+            direction=params.get("direction"),
+        )
+        # 帶專案篩選時行政被拿掉了，回報實際用的來源，畫面才不會說謊
+        data["source"] = source if "affair" in sources else "project"
+        return Response(data)
+
+
+def _month_end(first):
+    return (first.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
 
 
 class CashBalanceView(APIView):

@@ -7,13 +7,14 @@
  * 物品主檔、位置階層、階段流程留在 Django Admin——欄位多、動得少，
  * Admin 的表單處理得比自己刻的好（決策 D26）。
  */
-import { Building2, KeyRound, ListChecks, Pencil, Plus, Truck, Users } from "lucide-react";
+import { Boxes, Building2, KeyRound, ListChecks, Pencil, Plus, Truck, Users } from "lucide-react";
 import { useState } from "react";
 
 import { ApiError, api } from "@/api/client";
 import { useOptions } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
 import FlowTemplateBoard from "@/components/forms/FlowTemplateBoard";
+import StageBoard from "@/components/settings/StageBoard";
 import {
   Button,
   Card,
@@ -32,7 +33,7 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-type Tab = "customers" | "vendors" | "employees" | "flows";
+type Tab = "customers" | "vendors" | "employees" | "flows" | "stages";
 
 interface Customer {
   id: number;
@@ -85,6 +86,8 @@ const TABS: Array<{ key: Tab; label: string; icon: typeof Building2 }> = [
   { key: "employees", label: "員工", icon: Users },
   // 流程模板（D49）只給經理與系統管理員——列表渲染時再過濾
   { key: "flows", label: "流程模板", icon: ListChecks },
+  // 構件批次站別（D54：Django Admin 移除後搬過來的），同樣只給經理
+  { key: "stages", label: "批次站別", icon: Boxes },
 ];
 
 export default function Settings() {
@@ -103,7 +106,8 @@ export default function Settings() {
         q: q || undefined,
         page_size: 100,
       }),
-    enabled: tab !== "flows", // 流程模板分頁有自己的資料流
+    // 流程模板與批次站別有自己的資料流，不走這支通用清單
+    enabled: !["flows", "stages"].includes(tab),
   });
 
   const close = () => {
@@ -121,7 +125,7 @@ export default function Settings() {
             setTab(v as Tab);
             setQ("");
           }}
-          options={TABS.filter((t) => t.key !== "flows" || canEdit).map((t) => ({
+          options={TABS.filter((t) => !["flows", "stages"].includes(t.key) || canEdit).map((t) => ({
             value: t.key,
             label: (
               <>
@@ -146,6 +150,8 @@ export default function Settings() {
 
       {tab === "flows" ? (
         <FlowTemplateBoard />
+      ) : tab === "stages" ? (
+        <StageBoard />
       ) : list.isLoading ? (
         <Spinner />
       ) : list.error ? (
@@ -170,17 +176,6 @@ export default function Settings() {
               ))}
           </ul>
         </>
-      )}
-
-      {canEdit && (
-      <p className="mt-4 rounded-xl bg-card px-3 py-2.5 text-xs leading-relaxed text-ink-2 ring-1 ring-line">
-        <strong>這裡沒有的東西在哪裡改：</strong>
-        物品主檔（規格、材質、尺寸）在 <code className="font-mono">/admin/masters/item/</code>；
-        位置階層（倉庫、儲位、工地）在 <code className="font-mono">/admin/inventory/location/</code>；
-        <strong>階段流程</strong>（幾站、叫什麼、哪一站觸發請款）在{" "}
-        <code className="font-mono">/admin/masters/stagetemplate/</code>。
-        這些欄位多、動得少，用 Django Admin 的表單比較合適。
-      </p>
       )}
 
       {canEdit && tab === "customers" && (

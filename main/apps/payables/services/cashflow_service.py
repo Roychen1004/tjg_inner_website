@@ -21,9 +21,14 @@
      開票日 ≠ 兌現日，中間可能還有 60–90 天。用開票日算，
      現金流會早兩三個月，看起來安全的那一週實際上會缺錢。
 
-⚠️ **這是專案現金流，不是公司現金流。** 不含薪資、租金、水電。
+⚠️ **這不是公司的全部現金流。** 專案的應收應付，加上行政事項填了金額的那些
+（D55：網路費、清潔費這類），薪資與沒建在系統裡的固定支出還是不含在內。
 輸出一定帶著 `disclaimer`，畫面必須顯示它——
 不寫這句，看的人會以為累計是正的就沒事。
+
+同一份資料的第二個角度是 `ledger()`（D55，金流 → 收支明細）：
+不分格、不算累計，就是一本依日期排的流水帳，而且**連已經發生的也列**
+（已收款、已付款、做完的行政事項）。預測看未來，明細看全部。
 """
 from collections import defaultdict
 from datetime import date, timedelta
@@ -32,19 +37,21 @@ from decimal import Decimal
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from main.apps.affairs.models import AffairTask
 from main.apps.billing.models import BillingMilestone
 from main.apps.payables.models import Payable, Subcontract
 from main.apps.payables.services import terms_service
 from main.utils.choices import (
     Certainty,
     MilestoneState,
+    MoneyDirection,
     PayableState,
     SubcontractStatus,
 )
 
 DISCLAIMER = (
-    "這是**專案現金流**，不含薪資、租金、水電等固定支出。"
-    "公司整體現金部位請再扣掉每月固定成本。"
+    "這是**系統裡有的錢**：專案的應收應付，加上行政事項填了金額的那些（D55）。"
+    "薪資、以及沒有建在系統裡的固定支出不含在內——公司整體現金部位請再扣掉它們。"
 )
 
 # D48（老闆確認）：所有金額一律是稅後——現金流直接用存的數字，不再 ×1.05
@@ -96,14 +103,13 @@ def _place(buckets, day):
 
 
 # ── 收入 ───────────────────────────────────────────────────────────
-def collect_inflows(buckets, projects, today):
+def collect_inflows(window_end, projects, today):
     """三種來源，三種確定性。
 
     刻意不把「已收款」算進來——那筆錢已經在帳上了，
     預測的是**還沒發生的事**。混進去會讓累計看起來很漂亮。
     """
     rows = []
-    window_end = buckets[-1]["end"]
 
     milestones = (
         BillingMilestone.objects.filter(project__in=projects)
@@ -143,15 +149,14 @@ def collect_inflows(buckets, projects, today):
             "date": when, "amount": m.amount, "certainty": certainty,
             "party": customer.name, "project": m.project.name,
             "title": m.label, "note": note,
-            "kind": "milestone", "id": m.pk,
+            "kind": "milestone", "id": m.pk, "source_kind": "project",
         })
     return rows
 
 
 # ── 支出 ───────────────────────────────────────────────────────────
-def collect_outflows(buckets, projects, today):
+def collect_outflows(window_end, projects, today):
     rows = []
-    window_end = buckets[-1]["end"]
 
     payables = (
         Payable.objects.filter(project__in=projects)
@@ -171,7 +176,7 @@ def collect_outflows(buckets, projects, today):
             "amount": payable.payable_amount, "certainty": certainty,
             "party": payable.vendor.name, "project": payable.project.name,
             "title": payable.title, "note": note,
-            "kind": "payable", "id": payable.pk,
+            "kind": "payable", "id": payable.pk, "source_kind": "project",
         })
 
     # 合約還沒計價的部分：依剩餘工期均攤。這是最軟的一級，
@@ -191,7 +196,7 @@ def collect_outflows(buckets, projects, today):
                 "party": contract.vendor.name, "project": contract.project.name,
                 "title": f"{contract.title}（未計價餘額均攤）",
                 "note": f"合約剩 {remaining:,.0f} 元未計價",
-                "kind": "subcontract", "id": contract.pk,
+                "kind": "subcontract", "id": contract.pk, "source_kind": "project",
             })
     return rows
 
@@ -216,9 +221,57 @@ def _spread(contract, remaining, today, window_end):
     return out
 
 
+
+# ── 行政收支（D55）─────────────────────────────────────────────────
+#: 行政事項在時間軸與明細裡的來源名稱（案子那一側放的是專案名）
+AFFAIR_GROUP = "行政事項"
+
+
+def collect_affairs(window_start, window_end, include_done=False):
+    """行政事項裡**填了金額**的那些——網路費、清潔費、規費、報稅。
+
+    金額 0 的不算：那是純待辦（打掃、送件），根本不碰錢。
+    標成「只是參考」的也不算（D56）：那是還沒談定的估價，
+    混進帳本與累計線，數字就不是錢了。
+
+    預測只看還沒做的：做完＝錢已經付掉了，跟「已付款不列入預測」同一條規矩。
+    收支明細要看歷史，所以帶 include_done=True 把做完的也拿出來。
+    """
+    tasks = (
+        AffairTask.objects.filter(
+            amount__gt=0, is_reference=False,
+            date__gte=window_start, date__lte=window_end,
+        )
+        .select_related("category")
+    )
+    if not include_done:
+        tasks = tasks.filter(is_done=False)
+
+    rows = []
+    for task in tasks:
+        rows.append({
+            "date": task.date,
+            "amount": task.amount,
+            # 行政收支是排定好的固定收付（每月網路費就是那個數字），確定性最高
+            "certainty": Certainty.CONFIRMED,
+            "party": task.category.name,
+            "project": AFFAIR_GROUP,
+            "title": task.title,
+            "note": (
+                "已完成" if task.is_done
+                else "逾期未處理" if task.is_overdue
+                else "尚未處理"
+            ),
+            "kind": "affair", "id": task.pk, "source_kind": "affair",
+            "direction": task.direction,
+            "is_done": task.is_done,
+        })
+    return rows
+
+
 # ── 組裝 ───────────────────────────────────────────────────────────
 def forecast(projects, periods=12, granularity="week", certainties=None, today=None,
-             opening_balance=None):
+             opening_balance=None, include_affairs=True):
     """回傳整張表。
 
     `certainties` 是要納入計算的等級（預設全部）。
@@ -226,13 +279,21 @@ def forecast(projects, periods=12, granularity="week", certainties=None, today=N
 
     `opening_balance`（D49）：公司現有現金。有給的話「累計」列從這個數字
     起算（缺口＝現金真的見底，不是專案收支軋不平）；沒給（None）照舊從 0。
+
+    `include_affairs`（D55）：把行政事項的收支也算進來。看**單一專案**時
+    關掉——公司的網路費不屬於任何一個案子，混進去那個案子的現金流就不對了。
     """
     today = today or timezone.localdate()
     allowed = set(certainties or Certainty.values)
     buckets = build_buckets(today, periods, granularity)
 
-    inflow = collect_inflows(buckets, projects, today)
-    outflow = collect_outflows(buckets, projects, today)
+    window_end = buckets[-1]["end"]
+    inflow = collect_inflows(window_end, projects, today)
+    outflow = collect_outflows(window_end, projects, today)
+    if include_affairs:
+        affairs = collect_affairs(today, window_end)
+        inflow += [r for r in affairs if r["direction"] == MoneyDirection.IN]
+        outflow += [r for r in affairs if r["direction"] == MoneyDirection.OUT]
 
     cells = [
         {
@@ -283,6 +344,8 @@ def forecast(projects, periods=12, granularity="week", certainties=None, today=N
                         "party": d["party"], "project": d["project"],
                         "title": d["title"], "note": d["note"],
                         "kind": d["kind"], "id": d["id"],
+                        # D55：案子的錢還是行政的錢——時間軸與明細靠這個分行
+                        "source_kind": d.get("source_kind", "project"),
                     }
                     for d in cell["details"]
                 ),
@@ -314,6 +377,131 @@ def forecast(projects, periods=12, granularity="week", certainties=None, today=N
         ],
         "disclaimer": DISCLAIMER,
         "tax_note": "金額即實際收付金額（稅後）——系統不另外加稅",
+    }
+
+
+# ── 收支明細（D55）─────────────────────────────────────────────────
+def _row_out(row, direction, state):
+    """把收集器的列轉成明細的一列（日期、金額一律轉字串）"""
+    return {
+        "date": str(row["date"]),
+        "direction": direction,
+        "amount": str(row["amount"]),
+        # actual＝錢已經進出了（已收款、已付款、做完的行政事項）
+        # planned＝還沒發生，是預測
+        "state": state,
+        "certainty": row["certainty"],
+        "source_kind": row.get("source_kind", "project"),
+        "source": row["project"],
+        "party": row["party"],
+        "title": row["title"],
+        "note": row["note"],
+        "kind": row["kind"],
+        "id": row["id"],
+    }
+
+
+def ledger(projects, start, end, sources=None, direction=None, today=None):
+    """一本依日期排的流水帳：這一天收了什麼、付了什麼、是哪個案子或哪件行政。
+
+    跟 forecast() 是同一份資料的兩個角度：
+      · forecast 分格、算累計，只看**還沒發生**的錢（回答「哪個月會缺錢」）
+      · ledger 不分格、不算累計，**已經發生的也列**（回答「錢花到哪裡去了」）
+
+    `sources`：{"project", "affair"} 的子集——畫面上的「全部／只看案子／只看行政」。
+    `direction`："in"｜"out" 只看單一方向。
+    """
+    today = today or timezone.localdate()
+    sources = set(sources or ("project", "affair"))
+    rows = []
+
+    if "project" in sources:
+        # ① 已經發生的：用**實際**的收付日，不是預計日
+        received = (
+            BillingMilestone.objects.filter(
+                project__in=projects, state=MilestoneState.RECEIVED,
+                receive_date__gte=start, receive_date__lte=end,
+            )
+            .select_related("project__customer")
+        )
+        for m in received:
+            rows.append(_row_out({
+                "date": m.receive_date, "amount": m.amount,
+                "certainty": Certainty.CONFIRMED,
+                "party": m.project.customer.name, "project": m.project.name,
+                "title": m.label, "note": "已收款",
+                "kind": "milestone", "id": m.pk, "source_kind": "project",
+            }, "in", "actual"))
+
+        paid = (
+            Payable.objects.filter(
+                project__in=projects, state=PayableState.PAID,
+                paid_date__gte=start, paid_date__lte=end,
+            )
+            .select_related("vendor", "project")
+        )
+        for p in paid:
+            rows.append(_row_out({
+                "date": p.paid_date, "amount": p.payable_amount,
+                "certainty": Certainty.CONFIRMED,
+                "party": p.vendor.name, "project": p.project.name,
+                "title": p.title, "note": f"已付款（{p.get_payment_method_display()}）",
+                "kind": "payable", "id": p.pk, "source_kind": "project",
+            }, "out", "actual"))
+
+        # ② 還沒發生的：跟現金流預測同一套算法，避免兩個畫面各說各話
+        for row in collect_inflows(end, projects, today):
+            if row["date"] and start <= row["date"] <= end:
+                rows.append(_row_out(row, "in", "planned"))
+        for row in collect_outflows(end, projects, today):
+            if row["date"] and start <= row["date"] <= end:
+                rows.append(_row_out(row, "out", "planned"))
+
+    if "affair" in sources:
+        for row in collect_affairs(start, end, include_done=True):
+            rows.append(_row_out(
+                row, row["direction"], "actual" if row["is_done"] else "planned",
+            ))
+
+    if direction in ("in", "out"):
+        rows = [r for r in rows if r["direction"] == direction]
+
+    # 同一天的排法：先收後付，再依金額大到小——一天裡最大的那筆先看到
+    rows.sort(key=lambda r: (r["date"], r["direction"], -Decimal(r["amount"])))
+
+    days = []
+    totals = defaultdict(Decimal)
+    for row in rows:
+        if not days or days[-1]["date"] != row["date"]:
+            days.append({"date": row["date"], "income": Decimal("0"),
+                         "expense": Decimal("0"), "rows": []})
+        day = days[-1]
+        bucket = "income" if row["direction"] == "in" else "expense"
+        day[bucket] += Decimal(row["amount"])
+        totals[bucket] += Decimal(row["amount"])
+        totals[f"{row['state']}_{bucket}"] += Decimal(row["amount"])
+        day["rows"].append(row)
+
+    for day in days:
+        day["net"] = str(day["income"] - day["expense"])
+        day["income"] = str(day["income"])
+        day["expense"] = str(day["expense"])
+
+    return {
+        "start": str(start),
+        "end": str(end),
+        "count": len(rows),
+        "days": days,
+        "totals": {
+            "income": str(totals["income"]),
+            "expense": str(totals["expense"]),
+            "net": str(totals["income"] - totals["expense"]),
+            "actual_income": str(totals["actual_income"]),
+            "actual_expense": str(totals["actual_expense"]),
+            "planned_income": str(totals["planned_income"]),
+            "planned_expense": str(totals["planned_expense"]),
+        },
+        "disclaimer": DISCLAIMER,
     }
 
 

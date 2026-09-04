@@ -11,7 +11,8 @@ import Login from "@/pages/Login";
  * 路由——六個分頁，各回答一個問題：
  *   總覽：今天有什麼要處理　　專案：這個案子進行到哪
  *   追蹤看板：東西卡在哪一步　我的任務：今天輪到我做什麼
- *   金流：錢進來、錢出去、會不會缺　　設定：基礎資料
+ *   行政：非案子的公司事務何時該做　　金流：錢進來、錢出去、會不會缺
+ *   設定：基礎資料
  *
  * 分頁由後端的 `visible_nav` 決定——員工登入只看得到看板與我的任務，
  * 檢視角色的路由表裡根本沒有 /finance，不是「有但擋住」。
@@ -21,6 +22,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Projects = lazy(() => import("@/pages/Projects"));
 const TrackingBoard = lazy(() => import("@/pages/TrackingBoard"));
 const MyWork = lazy(() => import("@/pages/MyWork"));
+const Affairs = lazy(() => import("@/pages/Affairs"));
 const Finance = lazy(() => import("@/pages/Finance"));
 const Stats = lazy(() => import("@/pages/Stats"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -30,6 +32,7 @@ const SCREENS: Record<string, React.ComponentType> = {
   projects: Projects,
   tracking: TrackingBoard,
   mywork: MyWork,
+  affairs: Affairs,
   finance: Finance,
   stats: Stats,
   settings: Settings,

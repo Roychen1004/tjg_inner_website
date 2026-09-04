@@ -125,7 +125,7 @@ class FlowStageSerializer(serializers.ModelSerializer):
 class StageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Stage
-        fields = ["id", "seq", "code", "name", "color", "stall_days"]
+        fields = ["id", "seq", "code", "name", "color", "stall_days", "is_active"]
 
 
 class StageTemplateSerializer(serializers.ModelSerializer):
@@ -136,8 +136,12 @@ class StageTemplateSerializer(serializers.ModelSerializer):
         fields = ["id", "code", "name", "applies_to", "is_default", "stages"]
 
     def get_stages(self, obj) -> list[dict]:
+        """預設只給啟用中的站——畫軌道、選模板都不該看到停用的。
+        設定頁的站別維護要連停用的一起看（才停得回來），用 context 開關。"""
+        include_inactive = self.context.get("include_inactive", False)
         stages = sorted(
-            (s for s in obj.stages.all() if s.is_active), key=lambda s: s.seq
+            (s for s in obj.stages.all() if include_inactive or s.is_active),
+            key=lambda s: s.seq,
         )
         return StageSerializer(stages, many=True).data
 

@@ -33,6 +33,8 @@ export interface Stage {
   name: string;
   color: string;
   stall_days: number | null;
+  /** 停用的站只有「設定 → 批次站別」（?include_inactive=true）看得到 */
+  is_active: boolean;
 }
 
 export interface StageTemplate {
@@ -479,6 +481,8 @@ export interface OptionsData {
   /** 工作項目狀態的建議字——沿用大家之前新增過的（頻率高的在前） */
   task_status_suggestions: string[];
   projects: Array<{ id: number; code: string; name: string }>;
+  /** 已結案的案子——只有「收支明細」的查詢下拉用，表單不要拿它當選項（D55） */
+  closed_projects: Array<{ id: number; code: string; name: string }>;
 }
 
 export interface Notification {
@@ -494,7 +498,12 @@ export interface Notification {
 
 // ── 附件 ────────────────────────────────────────────────────────────
 /** 附件掛在哪。用名字而不是 ContentType id——那是資料庫內部編號 */
-export type AttachmentTarget = "project" | "tracking-unit" | "flow-unit" | "milestone";
+export type AttachmentTarget =
+  | "project"
+  | "tracking-unit"
+  | "flow-unit"
+  | "milestone"
+  | "affair-task";
 
 export interface Attachment {
   id: number;
@@ -618,8 +627,14 @@ export interface PayableSummary {
   overdue: { count: number; amount: string };
 }
 
+/** 一筆錢的方向（D55） */
+export type MoneyDirection = "in" | "out";
+
+/** 這筆錢是案子的還是行政的（D55） */
+export type MoneySource = "project" | "affair";
+
 export interface CashflowDetail {
-  direction: "in" | "out";
+  direction: MoneyDirection;
   date: string;
   amount: string;
   certainty: Certainty;
@@ -629,6 +644,7 @@ export interface CashflowDetail {
   note: string;
   kind: string;
   id: number;
+  source_kind: MoneySource;
 }
 
 export interface CashflowCell {
@@ -662,6 +678,51 @@ export interface CashflowForecast {
   project_count: number;
   /** 公司現有現金（D49）。null＝這個人看不到（或看單一專案）；有值＝累計已含它 */
   opening_balance: string | null;
+}
+
+/** 收支明細的一列（D55）：一筆錢＋它是誰的 */
+export interface LedgerRow {
+  date: string;
+  direction: MoneyDirection;
+  amount: string;
+  /** actual＝錢已經進出了；planned＝還沒發生，是預測 */
+  state: "actual" | "planned";
+  certainty: Certainty;
+  source_kind: MoneySource;
+  /** 案子名稱，或「行政事項」 */
+  source: string;
+  /** 客戶／廠商，行政則是類別 */
+  party: string;
+  title: string;
+  note: string;
+  kind: string;
+  id: number;
+}
+
+export interface LedgerDay {
+  date: string;
+  income: string;
+  expense: string;
+  net: string;
+  rows: LedgerRow[];
+}
+
+export interface CashLedger {
+  start: string;
+  end: string;
+  count: number;
+  days: LedgerDay[];
+  totals: {
+    income: string;
+    expense: string;
+    net: string;
+    actual_income: string;
+    actual_expense: string;
+    planned_income: string;
+    planned_expense: string;
+  };
+  source: string;
+  disclaimer: string;
 }
 
 /** 公司現有現金（D49）：只有經理與系統管理員看得到 */
@@ -755,4 +816,66 @@ export interface FlowCostStats {
     total: number;
     avg: number;
   }>;
+}
+
+// ── 行政（D53）─────────────────────────────────────────────────────
+
+export interface AffairCategory {
+  id: number;
+  name: string;
+  color: string;
+  is_active: boolean;
+}
+
+export interface AffairTask {
+  id: number;
+  rule: number | null;
+  /** 例行規則的人話，如「每週一、四」；臨時事項為空字串 */
+  rule_text: string;
+  title: string;
+  category: number;
+  category_name: string;
+  category_color: string;
+  date: string;
+  note: string;
+  /** D55：行政收支。"0.00"＝純待辦，不進金流 */
+  amount: string;
+  direction: MoneyDirection;
+  direction_label: string;
+  /** D56：這筆金額只是預估——畫面上看得到，但不計入收入與支出 */
+  is_reference: boolean;
+  assignees: number[];
+  assignee_names: string[];
+  is_done: boolean;
+  done_by: number | null;
+  done_by_name: string | null;
+  done_at: string | null;
+  is_overdue: boolean;
+}
+
+export interface AffairRule {
+  id: number;
+  title: string;
+  category: number;
+  category_name: string;
+  category_color: string;
+  note: string;
+  /** D55：每一次的金額；長出來的待辦會帶著它 */
+  amount: string;
+  direction: MoneyDirection;
+  direction_label: string;
+  /** D56：只是預估的金額，不進金流；長出來的每一次也帶著它 */
+  is_reference: boolean;
+  freq: "weekly" | "monthly" | "yearly";
+  freq_label: string;
+  freq_text: string;
+  weekdays: number[];
+  month_day: number | null;
+  year_month: number | null;
+  year_day: number | null;
+  start_date: string;
+  end_date: string | null;
+  assignees: number[];
+  assignee_names: string[];
+  is_active: boolean;
 }

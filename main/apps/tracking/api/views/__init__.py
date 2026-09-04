@@ -1,4 +1,8 @@
+from django.db import transaction
+from django.db.models import ProtectedError
+from django.http import Http404
 from django.db.models import Count, Exists, F, OuterRef, Q
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
@@ -35,6 +39,7 @@ from main.apps.tracking.serializers import (
 )
 from main.apps.tracking.services import flow_service, stage_service
 from main.utils.choices import FlowState, StageDirection, Status, TemplateAppliesTo
+from main.utils.exceptions import BusinessRuleError
 from main.utils.permissions import has_permission
 from main.utils.scoping import scope_tracking_units
 from main.utils.viewsets import BaseModelViewSet, bool_param
@@ -516,21 +521,120 @@ class TrackingUnitViewSet(BaseModelViewSet):
 
 
 class StageTemplateViewSet(BaseModelViewSet):
-    """階段模板（唯讀）。
+    """階段模板。
 
-    流程是資料不是程式——改流程走 Django Admin，不用改程式碼、不用重新部署。
-    這裡只提供讀取，讓前端畫出軌道。
+    流程是資料不是程式——改站別不用改程式碼、不用重新部署。
+    D54 起 Django Admin 已移除，站別的增修改由這裡的 stages 動作負責
+    （設定 → 構件批次站別）。
     """
 
-    queryset = StageTemplate.objects.filter(is_active=True).prefetch_related("stages")
+    # 刻意不在這裡 prefetch stages——擋刪的路徑會提早丟例外、根本不序列化，
+    # nplusone 會把「預抓了卻沒用到」當成錯誤。要序列化時才抓（_with_stages）
+    queryset = StageTemplate.objects.filter(is_active=True)
     serializer_class = StageTemplateSerializer
     read_permission = None
     write_permission = "manage_masters"
-    http_method_names = ["get", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     pagination_class = None
+
+    def _with_stages(self, template, code=status.HTTP_200_OK):
+        """回傳整個模板（含各站）——前端改一站就換掉整張卡，不用自己拼。"""
+        obj = self.get_queryset().prefetch_related("stages").get(pk=template.pk)
+        return Response(self.get_serializer(obj).data, status=code)
+
+    @action(detail=True, methods=["post"], url_path="stages")
+    def add_stage(self, request, pk=None):
+        """新增一站，接在最後面。body：{name, color?, stall_days?}"""
+        template = self.get_object()
+        name = (request.data.get("name") or "").strip()
+        if not name:
+            return Response(
+                {"type": "validation_error", "detail": "請填站別名稱"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        last = template.stages.order_by("-seq").first()
+        stage = Stage.objects.create(
+            template=template,
+            seq=(last.seq + 1) if last else 1,
+            # code 只是內部代號，使用者不填——用序號組一個唯一值
+            code=f"s{(last.seq + 1) if last else 1}-{int(timezone.now().timestamp()) % 100000}",
+            name=name[:30],
+            color=request.data.get("color") or "#64748b",
+            stall_days=request.data.get("stall_days") or None,
+        )
+        return self._with_stages(template, status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="stages/reorder")
+    def reorder_stages(self, request, pk=None):
+        """重排站別順序（D55，拖曳）。body：{"stage_ids": [依新順序]}
+
+        送的是**啟用中**站別的完整清單；停用的站排在最後，不佔號。
+        改的是所有批次共用的流程順序——批次的下一站是照 seq 走的。
+        """
+        template = self.get_object()
+        ids = request.data.get("stage_ids", [])
+        active = {s.pk for s in template.stages.filter(is_active=True)}
+        inactive = [s.pk for s in template.stages.filter(is_active=False).order_by("seq")]
+        if not isinstance(ids, list) or {int(i) for i in ids} != active:
+            return Response(
+                {"type": "validation_error",
+                 "detail": "stage_ids 必須是這套模板**全部啟用中**站別的 id、依新順序排列"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ordered = [int(i) for i in ids] + inactive
+        with transaction.atomic():
+            # 兩段式重編，避開 (template, seq) 唯一約束在中途撞號
+            # （seq 是 SmallInteger，暫存區間取 30000 起，別超過 32767）
+            for offset, stage_id in enumerate(ordered):
+                Stage.objects.filter(pk=stage_id).update(seq=30000 + offset)
+            for pos, stage_id in enumerate(ordered, start=1):
+                Stage.objects.filter(pk=stage_id).update(seq=pos)
+        return self._with_stages(template)
+
+    @action(detail=True, methods=["patch", "delete"], url_path=r"stages/(?P<stage_id>\d+)")
+    def edit_stage(self, request, pk=None, stage_id=None):
+        """改一站（名稱／顏色／停滯天數／啟用），或刪一站（沒被用過才給刪）。"""
+        template = self.get_object()
+        stage = template.stages.filter(pk=stage_id).first()
+        if stage is None:
+            raise Http404
+
+        if request.method == "DELETE":
+            # 有批次停在這一站、或歷程指著它（PROTECT），都不能刪——
+            # 刪了歷史就斷了。這種情況改為停用
+            if stage.current_units.exists():
+                raise BusinessRuleError("這一站目前有批次停著，不能刪除；可以改為停用")
+            try:
+                stage.delete()
+            except ProtectedError:
+                raise BusinessRuleError("這一站有批次的歷程紀錄，不能刪除；可以改為停用")
+        else:
+            for field in ("name", "color", "stall_days", "is_active"):
+                if field in request.data:
+                    value = request.data[field]
+                    if field == "name":
+                        value = (value or "").strip()[:30]
+                        if not value:
+                            return Response(
+                                {"type": "validation_error", "detail": "請填站別名稱"},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                    if field == "stall_days":
+                        value = value or None
+                    setattr(stage, field, value)
+            stage.save()
+        return self._with_stages(template)
+
+    def get_serializer_context(self):
+        # ?include_inactive=true → 停用的站也回傳（設定 → 批次站別 才需要）
+        context = super().get_serializer_context()
+        context["include_inactive"] = bool_param(self.request, "include_inactive") or False
+        return context
 
     def get_queryset(self):
         qs = super().get_queryset()
+        if self.action in ("list", "retrieve"):
+            qs = qs.prefetch_related("stages")
         if applies := self.request.query_params.get("applies_to"):
             qs = qs.filter(applies_to__in=applies.split(","))
         if bool_param(self.request, "for_units"):

@@ -23,10 +23,6 @@ class ${APP^}Config(AppConfig):
     verbose_name = "$APP"
 PY
 
-cat > "$DIR/admin.py" <<PY
-from django.contrib import admin  # noqa: F401
-PY
-
 cat > "$DIR/api/urls.py" <<PY
 from django.urls import path  # noqa: F401
 

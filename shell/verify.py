@@ -28,6 +28,11 @@ from http.cookiejar import CookieJar
 BASE = os.environ.get("BASE", "http://localhost:30080")
 API = f"{BASE}/api/v0.1"
 PASSWORD = os.environ.get("SEED_DEMO_PASSWORD", "28494320")
+# 員工端驗收要用哪個帳號。密碼被改過時可換人：WORKER=worker02 python3 shell/verify.py
+WORKER = os.environ.get("WORKER", "worker01")
+
+# 驗收用的檢視帳號：固定一個、跑完停用（員工刪不掉，見 EmployeeViewSet）
+VIEWER_USER = "viewer_verify"
 
 # D40 名冊的密碼（與 docs/帳號密碼.md 同步）；沒列的帳號用 SEED_DEMO_PASSWORD
 ACCOUNTS = {
@@ -35,6 +40,8 @@ ACCOUNTS = {
     "accountant": "uc6j6cw2",
     "drafter": "k9kswbac",
     "worker01": "ucwpfpu9",
+    "worker02": "n9mnjx7w",
+    "worker03": "k2g7k5dn",
 }
 
 PASS, FAIL = [], []
@@ -141,6 +148,37 @@ PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\
 HTML = b"<html><script>alert('xss')</script></html>"
 
 
+def _drop_test_payables(owner):
+    """把測試建立的計價收乾淨。
+
+    已付款的刪不掉（那是對的），所以先往回轉成待計價再刪——
+    不收的話每跑一次驗收就在示範資料裡多一筆 50 萬的假支出。
+    """
+    for row in owner.get("/payables?q=驗收計價&page_size=50").get("results", []):
+        if row["state"] != "pending":
+            # 已付款的要一站一站退回來（往回轉一律要填原因）
+            for state in ("approved", "pending"):
+                owner.post(f"/payables/{row['id']}/transition",
+                           {"to_state": state, "reason": "驗收測試清理"})
+        owner.delete(f"/payables/{row['id']}")
+
+
+def _drop_test_project(owner, pid):
+    """把測試案連同它的追蹤單元、應收款一起收乾淨。
+
+    已請款／已收款的案子擋刪是對的（鐵律 5），所以先把那幾列往回轉成
+    「可請款」再刪——不收的話，每跑一次驗收就在示範資料裡多一個假案子。
+    """
+    for u in owner.get(f"/tracking-units?project={pid}").get("results", []):
+        owner.delete(f"/tracking-units/{u['id']}")
+    for m in owner.get(f"/billing-milestones?project={pid}&page_size=50").get("results", []):
+        if m["state"] in ("invoiced", "received"):
+            for state in ("invoiced", "claimable"):
+                owner.post(f"/billing-milestones/{m['id']}/transition",
+                           {"to_state": state, "reason": "驗收測試清理"})
+    owner.delete(f"/projects/{pid}")
+
+
 def main():
     stamp = int(time.time()) % 100000
     owner = Client("manager").login()
@@ -148,19 +186,19 @@ def main():
 
     # 清掉上次沒跑完留下的測試案（冪等）
     for p in owner.get("/projects?q=驗收案&page_size=20").get("results", []):
-        for u in owner.get(f"/tracking-units?project={p['id']}").get("results", []):
-            owner.delete(f"/tracking-units/{u['id']}")
-        owner.delete(f"/projects/{p['id']}")
+        _drop_test_project(owner, p["id"])
+    # 測試計價掛在真的示範案上，不會跟著測試案一起消失——自己收（冪等）
+    _drop_test_payables(owner)
 
     # ── A. 導航與角色（D40 權限矩陣；D52 加「統計」）─────────────────
     print("\n▌A. 導航與角色（7 分頁、4 角色）")
     me = owner.get("/auth/me")
-    check("經理導航是 7 個分頁（含統計）",
-          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "stats", "settings"],
+    check("經理導航是 8 個分頁（含行政與統計）",
+          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "finance", "stats", "settings"],
           me.get("visible_nav"))
     me_f = finance.get("/auth/me")
-    check("會計師看得到全部 7 個分頁（設定唯讀；統計只有金額區塊）",
-          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "finance", "stats", "settings"],
+    check("會計師看得到全部 8 個分頁（設定唯讀；統計只有金額區塊）",
+          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "finance", "stats", "settings"],
           me_f.get("visible_nav"))
     check("產能統計限經理（D52）：經理有、會計沒有 view_productivity",
           me.get("permissions", {}).get("view_productivity")
@@ -174,17 +212,26 @@ def main():
 
     staff = Client("drafter").login()
     me_s = staff.get("/auth/me")
-    check("員工看得到金流以外的 5 個分頁，登入直達 /mywork",
-          me_s.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "settings"]
+    check("員工看得到金流以外的 6 個分頁（含行政），登入直達 /mywork",
+          me_s.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "settings"]
           and me_s.get("default_route") == "/mywork",
           {k: me_s.get(k) for k in ("visible_nav", "default_route")})
 
-    viewer_name = f"viewer{stamp}"
-    created = owner.post("/employees", {
-        "username": viewer_name, "name": "測試檢視", "roles": ["viewer"],
-    })
-    check("經理能建立員工帳號", owner.status == 201, f"{owner.status} {created}")
-    viewer = Client(viewer_name).login(required=False)
+    # 固定一個驗收用的檢視帳號，跑完停用——員工刪不掉（歷史會斷），
+    # 每次建一個新的會在名冊裡越積越多
+    found = owner.get(f"/employees?q={VIEWER_USER}").get("results", [])
+    if found:
+        viewer_id = found[0]["id"]
+        owner.patch(f"/employees/{viewer_id}", {"is_active": True, "roles": ["viewer"]})
+        owner.post(f"/employees/{viewer_id}/reset-password", {"password": PASSWORD})
+        check("經理能啟用既有的驗收帳號", owner.status == 200, owner.status)
+    else:
+        created = owner.post("/employees", {
+            "username": VIEWER_USER, "name": "驗收檢視帳號", "roles": ["viewer"],
+        })
+        viewer_id = created.get("id")
+        check("經理能建立員工帳號", owner.status == 201, f"{owner.status} {created}")
+    viewer = Client(VIEWER_USER, PASSWORD).login(required=False)
     if viewer.status != 200:
         check("檢視帳號能登入", False, "登入失敗")
         viewer = None
@@ -237,8 +284,10 @@ def main():
     check("順序自動編號 1,2,3", [r["seq"] for r in rows] == [1, 2, 3], rows)
 
     units = detail.get("flow_units", [])
-    check("勾 6 個流程 → 生 6 張單元，照目錄順序",
-          [u["flow_code"] for u in units] == chosen_codes, [u.get("flow_code") for u in units])
+    # D51：顯示編號是「位置制」——每大階段內從 1 重編，不再是目錄代號
+    check("勾 6 個流程 → 生 6 張單元，位置制編號（D51）",
+          [u["flow_code"] for u in units] == ["1.1", "3.1", "3.2", "4.1", "4.2", "5.1"],
+          [u.get("flow_code") for u in units])
     check("第二期掛上觸發流程 3.4",
           rows and rows[1].get("trigger_unit_name") == item_by_code["3.4"]["name"],
           rows and rows[1].get("trigger_unit_name"))
@@ -255,7 +304,9 @@ def main():
 
     # ── B2. 流程軌：指派、員工操作、順序鎖、金流自動觸發 ────────────
     print("\n▌B2. 流程軌（指派→員工完成→期別自動可請款）")
-    unit_by_code = {u["flow_code"]: u for u in units}
+    # D51 起 flow_code 是位置制——要對回「勾的是哪一項」得用 flow_item 對目錄
+    code_of_item = {i["id"]: c for c, i in item_by_code.items()}
+    unit_by_code = {code_of_item[u["flow_item"]]: u for u in units}
     drafter_id = next(u["id"] for u in users if u["name"] == "繪圖師")
 
     r = staff.patch(f"/flow-units/{unit_by_code['3.2']['id']}", {"assignee": drafter_id})
@@ -463,17 +514,33 @@ def main():
     r = owner.patch(f"/flow-tasks/{task['id']}", {"statuses": ["切割中"]})
     check("項目能維護自己的狀態清單", owner.status == 200
           and r.get("statuses") == ["切割中"], f"{owner.status} {r}")
-    worker_id = next(u["id"] for u in users if u["name"] == "工廠員工1")
+    # 分給誰＝等一下用誰的帳號登入回報（WORKER 可用環境變數換人）
+    worker_no = WORKER.replace("worker", "").lstrip("0") or "1"
+    worker_id = next(u["id"] for u in users if u["name"] == f"工廠員工{worker_no}")
+    # D52：分配必選工作類型（產能統計的分類）
+    wts = owner.get("/work-types")
+    wt_id = wts[0]["id"] if wts else owner.post("/work-types", {"name": "驗證切割"})["id"]
     assign = owner.post("/task-assignments", {
-        "task": task["id"], "status": "切割中", "assignee": worker_id, "qty_assigned": "200",
+        "task": task["id"], "status": "切割中", "assignee": worker_id,
+        "qty_assigned": "200", "work_type": wt_id,
     })
     check("分配工段給員工（對方收通知）", owner.status == 201, f"{owner.status} {assign}")
-    worker = Client("worker01").login()
-    r = worker.patch(f"/task-assignments/{assign['id']}", {"qty_done": "200"})
-    check("員工回報做完自己的分量", worker.status == 200 and r.get("is_done"), f"{worker.status} {r}")
-    t = owner.get(f"/flow-tasks/{task['id']}")
-    check("總進度＝工段完成度平均（200/500 → 40%）", t.get("progress_pct") == 40.0,
-          t.get("progress_pct"))
+    # 員工端要用真的帳號登入。密碼若被使用者改過（系統本來就會要求首次登入改密碼），
+    # 就跳過這三項而不是整份驗收中斷——這不是系統壞了
+    worker = Client(WORKER, ACCOUNTS.get(WORKER, PASSWORD)).login(required=False)
+    if worker.status == 200:
+        worker.post(f"/task-assignments/{assign['id']}/start")
+        check("員工按「開始」（D52）", worker.status == 200, worker.status)
+        r = worker.post(f"/task-assignments/{assign['id']}/report", {"qty_done": "200"})
+        check("員工回報做完自己的分量（走回報流水帳）",
+              worker.status == 200 and r.get("is_done") and r.get("completed_at"),
+              f"{worker.status} {r}")
+        t = owner.get(f"/flow-tasks/{task['id']}")
+        check("總進度＝工段完成度平均（200/500 → 40%）", t.get("progress_pct") == 40.0,
+              t.get("progress_pct"))
+    else:
+        print(f"  … 跳過員工端三項：{WORKER} 密碼與 docs/帳號密碼.md 不符"
+              f"（有人改過密碼）。改法：WORKER=worker02 python3 shell/verify.py")
 
     owner.delete(f"/flow-tasks/{task['id']}")
     check("工作項目可刪除（分配一併刪除）", owner.status == 204, owner.status)
@@ -532,6 +599,97 @@ def main():
     finance.get("/stats/flow-costs")
     check("會計看得到流程花費統計", finance.status == 200, finance.status)
 
+    # ── G4. D53（行政：例行／臨時事項、日曆、我的任務來源）──────────
+    print("\n▌G4. D53（行政事項）")
+    me_owner = owner.get("/auth/me")
+    check("經理導航含行政", "affairs" in me_owner["visible_nav"], me_owner["visible_nav"])
+    me_staff = staff.get("/auth/me")
+    check("員工也看得到行政分頁", "affairs" in me_staff["visible_nav"], me_staff["visible_nav"])
+    check("員工沒有行政編輯權", me_staff["permissions"]["edit_affairs"] is False)
+
+    cats = owner.get("/affair-categories")
+    check("預設類別（繳費／打掃／其他）在", {"繳費", "打掃", "其他"} <= {c["name"] for c in cats},
+          [c["name"] for c in cats])
+    cat = owner.post("/affair-categories", {"name": f"驗證類別{stamp}", "color": "#0ea5e9"})
+    check("經理新增行政類別", owner.status == 201, owner.status)
+    staff.post("/affair-categories", {"name": "員工不可"})
+    check("員工不能新增行政類別", staff.status == 403, staff.status)
+
+    staff_id = me_staff["id"]
+    today_iso = date.today().isoformat()
+    task = owner.post("/affair-tasks", {
+        "title": f"驗證行政事項{stamp}", "category": cat["id"],
+        "date": today_iso, "assignees": [staff_id], "note": "驗收用",
+    })
+    check("經理新增臨時事項", owner.status == 201, owner.status)
+    staff.post("/affair-tasks", {"title": "員工不可", "category": cat["id"], "date": today_iso})
+    check("員工不能新增行政事項", staff.status == 403, staff.status)
+
+    rule = owner.post("/affair-rules", {
+        "title": f"驗證例行{stamp}", "category": cat["id"], "freq": "weekly",
+        "weekdays": [0, 3], "start_date": today_iso, "assignees": [staff_id],
+    })
+    check("經理新增例行規則", owner.status == 201, owner.status)
+    check("例行規則有人話重複說明", "每週" in rule.get("freq_text", ""), rule.get("freq_text"))
+    owner.post("/affair-rules", {
+        "title": "壞規則", "category": cat["id"], "freq": "weekly",
+        "weekdays": [], "start_date": today_iso,
+    })
+    check("每週規則不勾星期會被擋", owner.status == 400, owner.status)
+
+    month_end = date.today().replace(day=28).isoformat()
+    listed = owner.get(f"/affair-tasks?start={today_iso}&end={month_end}")
+    check("日曆列表要帶日期範圍", owner.status == 200, owner.status)
+    owner.get("/affair-tasks")
+    check("沒帶範圍會被擋", owner.status == 400, owner.status)
+    grown = owner.get(f"/affair-tasks?start={today_iso}&end={date.today().replace(day=28).isoformat()}")
+    check("例行規則已自動展開成待辦",
+          any(t.get("rule") == rule["id"] for t in grown), len(grown))
+
+    mine = staff.get("/affair-tasks/mine")
+    check("員工的我的任務有這件行政事項",
+          any(t["id"] == task["id"] for t in mine), [t["title"] for t in mine])
+    done = staff.post(f"/affair-tasks/{task['id']}/complete", {})
+    check("被指派員工可以勾完成", staff.status == 200 and done.get("is_done") is True, staff.status)
+    check("完成者有記錄", done.get("done_by") == staff_id, done.get("done_by_name"))
+    staff.post(f"/affair-tasks/{task['id']}", {"title": "偷改"})
+    check("員工不能改行政事項內容", staff.status in (403, 405), staff.status)
+
+    # ── D56：表單裡直接開類別、金額可標「參考」（不進金流）──────
+    dup = owner.post("/affair-categories", {"name": f"驗證類別{stamp}"})
+    check("類別重名被擋，訊息看得懂",
+          owner.status == 400 and "已經有" in json.dumps(dup, ensure_ascii=False), dup)
+
+    ref_task = owner.post("/affair-tasks", {
+        "title": f"驗證參考金額{stamp}", "category": cat["id"], "date": today_iso,
+        "amount": "12345", "direction": "out", "is_reference": True,
+    })
+    check("行政金額可以標成「參考」",
+          owner.status == 201 and ref_task.get("is_reference") is True, ref_task)
+    real_task = owner.post("/affair-tasks", {
+        "title": f"驗證真支出{stamp}", "category": cat["id"], "date": today_iso,
+        "amount": "777", "direction": "out",
+    })
+    led = owner.get(f"/cashflow/ledger?start={today_iso}&end={today_iso}&source=affair")
+    led_titles = [r["title"] for d in led.get("days", []) for r in d["rows"]]
+    check("參考金額不進收支明細", ref_task["title"] not in led_titles, led_titles)
+    check("一般行政金額有進收支明細", real_task["title"] in led_titles, led_titles)
+    fore = owner.get("/cashflow/forecast?granularity=month&periods=1")
+    fore_titles = [d["title"] for c in fore.get("cells", []) for d in c.get("details", [])]
+    check("參考金額不進現金流預測", ref_task["title"] not in fore_titles, len(fore_titles))
+    check("一般行政金額有進現金流預測", real_task["title"] in fore_titles, fore_titles)
+
+    owner.delete(f"/affair-categories/{cat['id']}")
+    check("用過的類別不能刪", owner.status in (400, 409), owner.status)
+
+    # 清掉驗證用的行政資料（規則連未來待辦一起收）
+    owner.delete(f"/affair-rules/{rule['id']}")
+    owner.delete(f"/affair-tasks/{task['id']}")
+    owner.delete(f"/affair-tasks/{ref_task['id']}")
+    owner.delete(f"/affair-tasks/{real_task['id']}")
+    owner.delete(f"/affair-categories/{cat['id']}")
+    check("行政驗證資料清除", owner.status == 204, owner.status)
+
     # ── H. 儀表板 ──────────────────────────────────────────────────
     print("\n▌H. 儀表板")
     overview = owner.get("/dashboard/overview")
@@ -549,11 +707,16 @@ def main():
 
     # ── 清理 ───────────────────────────────────────────────────────
     print("\n▌清理")
+    _drop_test_payables(owner)
+    check("測試計價清理（往回轉再刪，不留在示範資料裡）",
+          not owner.get("/payables?q=驗收計價").get("results"), "還有殘留")
     owner.delete(f"/tracking-units/{unit['id']}")
-    r = owner.delete(f"/projects/{pid}")
-    check("測試案清理", owner.status in (204, 400), owner.status)
-    if owner.status == 400:  # 有已收款的列擋刪除也是正確行為
-        check("（專案還有資料時拒絕刪除也是對的）", True)
+    _drop_test_project(owner, pid)
+    check("測試案清理（連應收一起收乾淨）",
+          not owner.get("/projects?q=驗收案&page_size=20").get("results"), "還有殘留")
+    if viewer:
+        owner.patch(f"/employees/{viewer_id}", {"is_active": False})
+        check("驗收用的檢視帳號跑完停用", owner.status == 200, owner.status)
 
     # ── 結果 ───────────────────────────────────────────────────────
     print(f"\n{'─' * 46}")

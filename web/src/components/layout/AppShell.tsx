@@ -3,6 +3,7 @@ import {
   Bell,
   Boxes,
   Building2,
+  CalendarDays,
   ClipboardCheck,
   FolderKanban,
   LayoutDashboard,
@@ -34,6 +35,8 @@ const NAV_ITEMS: Array<{
   { key: "projects", label: "專案", icon: FolderKanban },
   { key: "tracking", label: "追蹤看板", icon: Boxes },
   { key: "mywork", label: "我的任務", icon: ClipboardCheck },
+  // D53：行政——公司非案子的例行／臨時事務，大家都看得到，經理維護
+  { key: "affairs", label: "行政", icon: CalendarDays },
   { key: "finance", label: "金流", icon: Wallet },
   // D52：產能與成本統計——經理／系統管理員看全部，會計只看金額區塊
   { key: "stats", label: "統計", icon: BarChart3 },

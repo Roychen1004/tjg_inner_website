@@ -3,12 +3,12 @@
  *
  * 回答的問題：**今天輪到我做什麼**。
  *
- * 員工登入的首頁。兩種東西（D41 起）：
- *   工作分配　被分到的工段分量（如「鐵材 切割中 50 噸」）——直接填完成量回報
- *   流程單元　被指派當主要負責人的流程，逾期排最前面
+ * 員工登入的首頁。任務分兩種來源，用標籤區分（D53）：
+ *   🏗 案子　工作分配（被分到的工段分量）與流程單元（當主要負責人）
+ *   📋 行政　公司非案子的事務（繳費、打掃……），來自行政日曆
  * 完成不需要主管再確認（老闆定的）——按了完成就是完成。
  */
-import { CheckCircle2, ChevronRight, Play } from "lucide-react";
+import { Boxes, Calendar, Check, CheckCircle2, ChevronRight, Play, Repeat } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -19,12 +19,14 @@ import {
   useFlowTransition,
   useFlowUnits,
   useMilestones,
+  useMyAffairTasks,
   useReportAssignment,
   useStartAssignment,
   useTaskAssignments,
 } from "@/api/hooks";
 import { useCurrentUser } from "@/api/hooks/useAuth";
-import type { FlowTaskAssignment, FlowUnit, Milestone } from "@/api/types";
+import type { AffairTask, FlowTaskAssignment, FlowUnit, Milestone } from "@/api/types";
+import AffairTaskCard from "@/components/affairs/AffairTaskCard";
 import FlowStateBadge from "@/components/tracking/FlowStateBadge";
 import { useUnitPanel } from "@/components/tracking/UnitPanelContext";
 import { Button, Card, EmptyState, ErrorState, SectionTitle, Spinner } from "@/components/ui";
@@ -37,6 +39,8 @@ export default function MyWork() {
     page_size: 200,
   });
   const assignments = useTaskAssignments({ assignee: "me", open: "true", page_size: 100 });
+  // 行政事項（D53）：指派給我、未完成、14 天內（含逾期）
+  const affairs = useMyAffairTasks();
   // 指定給我收款的期別（D45）——只有看得到金流的人才抓
   const collectibles = useMilestones(
     { accountant: "me", state: "claimable,invoiced", page_size: 50 },
@@ -62,6 +66,7 @@ export default function MyWork() {
   const units = (data?.results ?? []).filter((u) => u.state !== "na");
   const myAssignments = assignments.data?.results ?? [];
   const myCollectibles = collectibles.data?.results ?? [];
+  const myAffairs = affairs.data ?? [];
   const overdue = units.filter((u) => u.is_overdue);
   const doing = units.filter((u) => u.state === "doing" && !u.is_overdue);
   const todo = units.filter((u) => u.state === "todo" && !u.is_overdue);
@@ -70,7 +75,12 @@ export default function MyWork() {
     .sort((a, b) => (b.actual_end ?? "").localeCompare(a.actual_end ?? ""))
     .slice(0, 10);
 
-  if (units.length === 0 && myAssignments.length === 0 && myCollectibles.length === 0) {
+  if (
+    units.length === 0 &&
+    myAssignments.length === 0 &&
+    myCollectibles.length === 0 &&
+    myAffairs.length === 0
+  ) {
     return (
       <EmptyState
         title="目前沒有指派給你的任務"
@@ -94,9 +104,25 @@ export default function MyWork() {
           </ul>
         </section>
       )}
+      {myAffairs.length > 0 && (
+        <section>
+          <SectionTitle>
+            <SourceTag kind="affair" />
+            行政事項
+            <span className="ml-1.5 text-xs font-normal text-ink-3">{myAffairs.length} 件</span>
+          </SectionTitle>
+          <ul className="space-y-2">
+            {myAffairs.map((t) => (
+              <AffairCard key={t.id} task={t} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       {myAssignments.length > 0 && (
         <section>
           <SectionTitle>
+            <SourceTag kind="project" />
             分給我的工作
             <span className="ml-1.5 text-xs font-normal text-ink-3">{myAssignments.length} 份</span>
           </SectionTitle>
@@ -115,6 +141,83 @@ export default function MyWork() {
       {todo.length > 0 && <Group title="待開始" units={todo} onOpen={openUnitPanel} />}
       {done.length > 0 && <Group title="最近完成" units={done} onOpen={openUnitPanel} muted />}
     </div>
+  );
+}
+
+/** 任務來源標籤（D53）——區分「案子的事」與「公司行政的事」 */
+function SourceTag({ kind }: { kind: "project" | "affair" }) {
+  const affair = kind === "affair";
+  return (
+    <span
+      className="mr-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 align-middle text-xs font-bold"
+      style={{
+        background: affair ? "var(--color-atrisk-bg)" : "var(--color-page)",
+        color: affair ? "var(--color-atrisk)" : "var(--color-ink-2)",
+      }}
+    >
+      {affair ? <Calendar size={11} /> : <Boxes size={11} />}
+      {affair ? "行政" : "案子"}
+    </span>
+  );
+}
+
+/** 一件行政事項（D53）：點開卡片回報完成，順便傳收據／照片 */
+function AffairCard({ task }: { task: AffairTask }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Card as="li" className="p-0">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex w-full items-center gap-2 p-3 text-left transition-base hover:bg-page"
+        >
+          <span
+            aria-hidden
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2"
+            style={{
+              borderColor: task.is_done ? "var(--color-ontrack)" : task.category_color,
+              background: task.is_done ? "var(--color-ontrack)" : "transparent",
+            }}
+          >
+            {task.is_done && <Check size={15} className="text-white" />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="text-sm font-bold text-ink">{task.title}</span>
+              <span
+                className="rounded-full px-2 py-0.5 text-xs font-semibold"
+                style={{ background: `${task.category_color}1a`, color: task.category_color }}
+              >
+                {task.category_name}
+              </span>
+              {task.rule_text && (
+                <span className="inline-flex items-center gap-0.5 text-xs text-ink-3">
+                  <Repeat size={11} />
+                  {task.rule_text}
+                </span>
+              )}
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-ink-3">
+              <span
+                style={
+                  task.is_overdue
+                    ? { color: "var(--color-delayed)", fontWeight: 600 }
+                    : undefined
+                }
+              >
+                {task.date}
+                {task.is_overdue && " 逾期"}
+              </span>
+              {task.note && `　${task.note}`}
+            </span>
+          </span>
+          <ChevronRight size={15} className="shrink-0 text-ink-3" />
+        </button>
+      </Card>
+      {open && <AffairTaskCard task={task} open onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
@@ -282,6 +385,7 @@ function Group({
   return (
     <section>
       <SectionTitle>
+        <SourceTag kind="project" />
         <span style={urgent ? { color: "var(--color-delayed)" } : undefined}>
           {title}
           <span className="ml-1.5 text-xs font-normal text-ink-3">{units.length} 項</span>

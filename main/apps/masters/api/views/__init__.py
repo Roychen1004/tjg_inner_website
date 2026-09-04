@@ -600,6 +600,12 @@ class OptionsView(APIView):
                 scope_projects(Project.objects.filter(is_closed=False), request.user)
                 .values("id", "code", "name")[:200]
             ),
+            # D55：已結案的案子單獨一份。表單不該讓人把新資料掛到結案的案子上，
+            # 但「收支明細」要查得到它——收過的錢不會因為案子結了就消失
+            "closed_projects": list(
+                scope_projects(Project.objects.filter(is_closed=True), request.user)
+                .values("id", "code", "name")[:200]
+            ),
         })
 
     @staticmethod

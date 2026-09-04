@@ -26,6 +26,8 @@ scope_tracking_units = _authenticated
 scope_billing = _authenticated
 scope_payables = _authenticated
 scope_activities = _authenticated
+# 行政事項（D53）：老闆定的——每個帳號都看得到全部行政任務
+scope_affairs = _authenticated
 
 
 def can_view_amount(user, project=None):

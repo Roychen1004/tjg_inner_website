@@ -6,6 +6,7 @@
  * 三個子頁是同一件事的三個角度：
  *   應收　　一筆一筆看，錢什麼時候進來
  *   應付　　一筆一筆看，錢什麼時候出去
+ *   明細　　一天一天看，錢實際上什麼時候進出、給了誰（D55，含行政收支）
  *   現金流　加總起來看，未來哪一週會缺
  *
  * 合成一個導航分頁而不是三個：看這三個畫面的是同樣的人（老闆與會計），
@@ -18,11 +19,13 @@ import { useStickyParams } from "@/lib/stickyParams";
 
 const Receivables = lazy(() => import("@/pages/Billing"));
 const Payables = lazy(() => import("@/pages/Payables"));
+const Ledger = lazy(() => import("@/pages/CashLedger"));
 const Cashflow = lazy(() => import("@/pages/Cashflow"));
 
 const TABS = [
   { key: "in", label: "應收（錢進來）" },
   { key: "out", label: "應付（錢出去）" },
+  { key: "ledger", label: "收支明細" },
   { key: "cashflow", label: "現金流預測" },
 ] as const;
 
@@ -50,7 +53,15 @@ export default function Finance() {
       />
 
       <Suspense fallback={<Spinner />}>
-        {tab === "out" ? <Payables /> : tab === "cashflow" ? <Cashflow /> : <Receivables />}
+        {tab === "out" ? (
+          <Payables />
+        ) : tab === "ledger" ? (
+          <Ledger />
+        ) : tab === "cashflow" ? (
+          <Cashflow />
+        ) : (
+          <Receivables />
+        )}
       </Suspense>
     </div>
   );

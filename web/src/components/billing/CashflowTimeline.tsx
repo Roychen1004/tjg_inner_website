@@ -3,8 +3,11 @@
  * **滾輪縮放、按住拖曳平移**的日曆時間軸。
  *
  * 回答的問題跟表格一樣（未來哪個月會缺錢），但換成「錢什麼時候進出」的
- * 視覺：一列一個專案，綠色＝收入、紅色＝支出，落在它預計發生的那一天；
+ * 視覺：**一個來源兩行——收入一行、支出一行**（D55：原本擠在同一行的上下緣，
+ * 金額字疊在一起看不清楚），落在它預計發生的那一天；
  * 最上面一列是每期淨額與累計。點任何一筆跳到對應的應收／應付。
+ *
+ * 「來源」除了案子，也包含行政事項（D55）——網路費、清潔費那些。
  */
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,13 +23,19 @@ import {
 } from "@/components/tracking/TimelineGantt";
 import { fmtMD } from "@/lib/format";
 
-const LABEL_W = 176; // w-44
+const LABEL_W = 192; // w-48
 const MIN_DAYS = 14;
 const MAX_DAYS = 750;
+/** 後端給行政收支的來源名稱（cashflow_service.AFFAIR_GROUP） */
+const AFFAIR_GROUP = "行政事項";
 
-interface Row {
+type Event = CashflowDetail & { ts: number };
+
+/** 一個來源（案子或行政）＝一組，收入與支出各佔一行 */
+interface Group {
   project: string;
-  events: Array<CashflowDetail & { ts: number }>;
+  in: Event[];
+  out: Event[];
 }
 
 export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
@@ -102,22 +111,29 @@ export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
 
   function openDetail(d: CashflowDetail) {
     if (suppressClick.current) return;
-    if (d.kind === "milestone") navigate(`/finance?milestone=${d.id}`);
+    if (d.source_kind === "affair") navigate(`/affairs?date=${d.date}`);
+    else if (d.kind === "milestone") navigate(`/finance?milestone=${d.id}`);
     else if (d.kind === "payable") navigate(`/finance?tab=out&payable=${d.id}`);
     else navigate("/finance?tab=out");
   }
 
-  // 一列一個專案；事件＝各格明細攤平（日期是真正的預計收付日）
-  const rows = useMemo<Row[]>(() => {
-    const map = new Map<string, Row>();
+  // 一個來源一組、收支各一行；事件＝各格明細攤平（日期是真正的預計收付日）
+  const groups = useMemo<Group[]>(() => {
+    const map = new Map<string, Group>();
     for (const cell of data.cells) {
       for (const d of cell.details) {
-        const row = map.get(d.project) ?? { project: d.project, events: [] };
-        row.events.push({ ...d, ts: +startOfDay(new Date(d.date)) });
-        map.set(d.project, row);
+        const group = map.get(d.project) ?? { project: d.project, in: [], out: [] };
+        group[d.direction].push({ ...d, ts: +startOfDay(new Date(d.date)) });
+        map.set(d.project, group);
       }
     }
-    return [...map.values()].sort((a, b) => a.project.localeCompare(b.project, "zh-TW"));
+    // 行政排最後——看的人先找自己的案子
+    return [...map.values()].sort(
+      (a, b) =>
+        Number(a.in.length + a.out.length === 0) - Number(b.in.length + b.out.length === 0) ||
+        (a.project === AFFAIR_GROUP ? 1 : 0) - (b.project === AFFAIR_GROUP ? 1 : 0) ||
+        a.project.localeCompare(b.project, "zh-TW"),
+    );
   }, [data]);
 
   const { ticks, months } = useMemo(
@@ -189,7 +205,7 @@ export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
         {/* 表頭：月份帶＋日期格（跟追蹤看板同一套） */}
         <div className="border-b border-line bg-page/60">
           <div className="flex">
-            <div className="w-44 shrink-0 px-2 pt-1 text-sm font-semibold text-ink-2">專案</div>
+            <div className="w-48 shrink-0 px-2 pt-1 text-sm font-semibold text-ink-2">來源</div>
             <div className="relative h-[18px] min-w-0 flex-1">
               {months.map((m) => (
                 <span
@@ -203,7 +219,7 @@ export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
             </div>
           </div>
           <div className="flex">
-            <div className="w-44 shrink-0" />
+            <div className="w-48 shrink-0" />
             <div className="relative h-[18px] min-w-0 flex-1">
               <RowBackdrop />
               {ticks.map(
@@ -232,7 +248,7 @@ export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
 
         {/* 淨額列：每期一個帶正負號的數字，累計轉負的期別標紅 */}
         <div className="flex border-b border-line/60">
-          <div className="flex w-44 shrink-0 items-center px-2 py-1 text-xs font-bold text-ink">
+          <div className="flex w-48 shrink-0 items-center px-2 py-1 text-xs font-bold text-ink">
             每期淨額
           </div>
           <div className="relative min-h-7 min-w-0 flex-1">
@@ -269,48 +285,72 @@ export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
           </div>
         </div>
 
-        {rows.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-ink-3">
             這段期間沒有預計的收付——換個確定性或把期間拉長
           </p>
         ) : (
-          rows.map((row) => (
-            <div key={row.project} className="flex border-b border-line/60 last:border-b-0">
-              <div className="flex w-44 shrink-0 items-center px-2 py-1">
-                <span className="truncate text-xs font-semibold leading-tight text-ink">
-                  {row.project}
-                </span>
-              </div>
-              <div className="relative min-h-8 min-w-0 flex-1">
-                <RowBackdrop />
-                {row.events
-                  .filter((ev) => ev.ts + DAY > winStart && ev.ts < winEnd)
-                  .map((ev, i) => {
-                    const isIn = ev.direction === "in";
-                    const amount = Number(ev.amount);
-                    const roomy = pxPerDay >= 3;
-                    return (
-                      <button
-                        key={`${ev.kind}-${ev.id}-${i}`}
-                        type="button"
-                        onClick={() => openDetail(ev)}
-                        title={`${ev.project}·${ev.title}\n${ev.date} ${isIn ? "收" : "付"} ${amount.toLocaleString("zh-TW")} 元（${ev.party}）\n${ev.note}`}
-                        className={[
-                          "absolute z-[5] -translate-x-1/2 whitespace-nowrap rounded px-1 text-[10px] font-bold leading-4 tabular-nums text-white",
-                          isIn ? "top-0.5" : "bottom-0.5",
-                          ev.certainty === "estimated" ? "opacity-55" : "",
-                        ].join(" ")}
+          groups.map((group) => (
+            <div key={group.project} className="border-b border-line last:border-b-0">
+              {/* D55：收入與支出各一行。擠在同一行時金額字會疊在一起 */}
+              {(["in", "out"] as const)
+                .filter((dir) => group[dir].length > 0)
+                .map((dir, index) => (
+                  <div key={dir} className="flex border-b border-line/40 last:border-b-0">
+                    <div className="flex w-48 shrink-0 items-center gap-1.5 px-2 py-1">
+                      <span
+                        className="shrink-0 rounded px-1 py-px text-[11px] font-bold text-white"
                         style={{
-                          left: `${x(ev.ts + DAY / 2)}%`,
-                          background: isIn ? "var(--color-ontrack)" : "var(--color-delayed)",
+                          background:
+                            dir === "in" ? "var(--color-ontrack)" : "var(--color-delayed)",
                         }}
                       >
-                        {roomy ? `${isIn ? "+" : "−"}${compact(amount)}` : ""}
-                        {!roomy && "●"}
-                      </button>
-                    );
-                  })}
-              </div>
+                        {dir === "in" ? "收" : "付"}
+                      </span>
+                      <span
+                        className={[
+                          "truncate text-xs leading-tight",
+                          index === 0 ? "font-semibold text-ink" : "text-ink-3",
+                        ].join(" ")}
+                        title={group.project}
+                      >
+                        {group.project}
+                      </span>
+                    </div>
+                    <div className="relative min-h-9 min-w-0 flex-1">
+                      <RowBackdrop />
+                      {group[dir]
+                        .filter((ev) => ev.ts + DAY > winStart && ev.ts < winEnd)
+                        .map((ev, i) => {
+                          const isIn = dir === "in";
+                          const amount = Number(ev.amount);
+                          const roomy = pxPerDay >= 3;
+                          return (
+                            <button
+                              key={`${ev.kind}-${ev.id}-${i}`}
+                              type="button"
+                              onClick={() => openDetail(ev)}
+                              title={`${ev.project}·${ev.title}\n${ev.date} ${isIn ? "收" : "付"} ${amount.toLocaleString("zh-TW")} 元（${ev.party}）\n${ev.note}`}
+                              className={[
+                                "absolute top-1/2 z-[5] -translate-x-1/2 -translate-y-1/2",
+                                "whitespace-nowrap rounded px-1 py-0.5 text-[11px] font-bold",
+                                "leading-4 tabular-nums text-white",
+                                ev.certainty === "estimated" ? "opacity-55" : "",
+                              ].join(" ")}
+                              style={{
+                                left: `${x(ev.ts + DAY / 2)}%`,
+                                background: isIn
+                                  ? "var(--color-ontrack)"
+                                  : "var(--color-delayed)",
+                              }}
+                            >
+                              {roomy ? `${isIn ? "+" : "−"}${compact(amount)}` : "●"}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
             </div>
           ))
         )}
@@ -318,9 +358,10 @@ export default function CashflowTimeline({ data }: { data: CashflowForecast }) {
 
       <p className="mt-2 text-xs leading-relaxed text-ink-3">
         <b className="text-ink-2">滾輪＝放大縮小時間</b>、<b className="text-ink-2">按住拖曳＝移動</b>。
-        一列一個專案：<span style={{ color: "var(--color-ontrack)" }}>綠色＝預計收入</span>（靠上）、
-        <span style={{ color: "var(--color-delayed)" }}>紅色＝預計支出</span>（靠下），
-        半透明＝預估級（日期是人填或均攤的）。最上列是每期淨額，
+        一個來源兩行：<span style={{ color: "var(--color-ontrack)" }}>「收」＝預計收入</span>、
+        <span style={{ color: "var(--color-delayed)" }}>「付」＝預計支出</span>，
+        半透明＝預估級（日期是人填或均攤的）。最後一組「行政事項」是公司的行政收支（D55）。
+        最上列是每期淨額，
         <AlertTriangle size={10} className="mx-0.5 inline" style={{ color: "var(--color-delayed)" }} />
         ＝累計到那一期轉負。點任何一筆跳到對應的應收／應付。
       </p>

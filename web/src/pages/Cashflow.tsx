@@ -13,7 +13,7 @@
  *      不寫的話，看的人會以為累計是正的就沒事
  */
 import { AlertTriangle, Info } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiError } from "@/api/client";
 import { useCashBalance, useCashflow, useOptions, useSaveCashBalance } from "@/api/hooks";
@@ -79,6 +79,16 @@ export default function Cashflow() {
   );
   const { data, isLoading, error, refetch } =
     view === "timeline" ? timelineQuery : tableQuery;
+
+  // 篩選條件記在瀏覽器（stickyParams）。若記著的專案已經被刪掉，
+  // 整頁會變成「沒有預計的收付」而查不出原因——直接清掉那個條件
+  const projectList = options?.projects;
+  useEffect(() => {
+    if (!project || !projectList) return;
+    if (!projectList.some((p) => String(p.id) === project)) setParam("project", "");
+    // setParam 每次 render 都是新的函式，放進相依會無限迴圈
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, projectList]);
 
   if (isLoading) return <Spinner label="計算現金流…" />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -185,7 +195,19 @@ export default function Cashflow() {
       {!hasMoney ? (
         <EmptyState
           title="這段期間沒有預計的收付"
-          hint="收入來自請款事件與填了「預計可請款日」的里程碑；支出來自應付款項與分包合約。都沒有的話，這張表就是空的——不是系統壞了，是還沒有資料"
+          hint={
+            certainty || project
+              ? `目前有篩選條件（${[
+                  certainty && `確定性＝${
+                    options?.certainty?.find((c) => c.value === certainty)?.label ?? certainty
+                  }`,
+                  project &&
+                    `專案＝${options?.projects?.find((p) => String(p.id) === project)?.name ?? project}`,
+                ]
+                  .filter(Boolean)
+                  .join("、")}），把它清掉或把期間拉長，就會看到其他資料`
+              : "收入來自請款事件與填了「預計可請款日」的里程碑；支出來自應付款項與分包合約。都沒有的話，這張表就是空的——不是系統壞了，是還沒有資料"
+          }
         />
       ) : view === "timeline" ? (
         <CashflowTimeline data={data} />
@@ -227,6 +249,7 @@ export default function Cashflow() {
           </p>
           <p className="mt-0.5 opacity-90">
             公司整體現金部位請再扣掉每月固定成本。{data.tax_note}
+            {project && "。目前只看單一專案，所以不含行政事項的收支"}
           </p>
         </div>
       </div>

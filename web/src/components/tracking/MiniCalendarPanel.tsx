@@ -4,6 +4,9 @@
  * 回答的問題：**這一天（或這段日子）有哪些案子的哪些流程在跑、
  * 哪些錢要進出**。點一天看那天；點兩天看範圍（再點一次重選）。
  *
+ * D55：點完第一下之後，游標掃過的那段會先變成淺藍色——
+ * 不然使用者不知道自己已經點過第一下、系統正在等第二下。
+ *
  * 帳款列只有看得到金流的人（經理、會計師）才會出現——
  * 員工開這個面板只看得到流程。
  */
@@ -44,7 +47,11 @@ export default function MiniCalendarPanel({
     return { y: t.getFullYear(), m: t.getMonth() };
   });
   const [start, setStart] = useState<string>(todayIso());
-  const [end, setEnd] = useState<string | null>(null);
+  // 一開始就是「今天這一天」（起訖同一天）而不是等第二下——
+  // 不然開面板後的第一下會變成「選到今天為止的一段」，跟直覺相反
+  const [end, setEnd] = useState<string | null>(todayIso());
+  // 已經點了第一下、還在等第二下時，游標指到哪就預覽到哪（D55）
+  const [hover, setHover] = useState<string | null>(null);
 
   // 帳款：只有看得到金流的人才抓（員工連請求都不發）
   const milestones = useMilestones({ page_size: 200 }, canMoney && open);
@@ -53,7 +60,13 @@ export default function MiniCalendarPanel({
   const a = start;
   const b = end ?? start;
 
+  // 等第二下：已經有起點、還沒有終點
+  const pending = end === null && Boolean(start);
+  // 預覽範圍（起點 → 游標）。往回指的話點下去是「改起點」，不預覽成一段
+  const previewEnd = pending && hover && hover > start ? hover : null;
+
   function pickDay(iso: string) {
+    setHover(null);
     if (end !== null || !start) {
       setStart(iso);
       setEnd(null);
@@ -208,27 +221,36 @@ export default function MiniCalendarPanel({
           <span key={w}>{w}</span>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-px px-2 pb-1.5 pt-0.5">
+      <div
+        className="grid grid-cols-7 gap-px px-2 pb-1.5 pt-0.5"
+        onMouseLeave={() => setHover(null)}
+      >
         {Array.from({ length: firstWeekday }).map((_, i) => (
           <span key={`e${i}`} />
         ))}
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const iso = isoOf(view.y, view.m, i + 1);
           const inRange = iso >= a && iso <= b;
+          // 淺藍＝點了第一下之後，游標掃過的預覽範圍（D55）
+          const inPreview = Boolean(previewEnd && iso > a && iso <= previewEnd);
           const mark = dayMarks.get(iso);
           return (
             <button
               key={iso}
               type="button"
               onClick={() => pickDay(iso)}
+              onMouseEnter={() => pending && setHover(iso)}
+              onFocus={() => pending && setHover(iso)}
               aria-label={iso}
               className={[
                 "relative h-8 rounded-md text-xs tabular-nums transition-base",
                 inRange
                   ? "bg-stage-2 font-bold text-white"
-                  : iso === today
-                    ? "bg-page font-bold text-ink ring-1 ring-line"
-                    : "text-ink-2 hover:bg-page",
+                  : inPreview
+                    ? "bg-stage-2/20 font-semibold text-ink ring-1 ring-stage-2/40"
+                    : iso === today
+                      ? "bg-page font-bold text-ink ring-1 ring-line"
+                      : "text-ink-2 hover:bg-page",
               ].join(" ")}
             >
               {i + 1}
@@ -258,9 +280,13 @@ export default function MiniCalendarPanel({
       {/* 選取範圍的內容 */}
       <div className="min-h-0 flex-1 overflow-y-auto border-t border-line px-2 py-1.5">
         <p className="text-xs font-semibold text-ink-2">
-          {a === b ? a : `${a} ~ ${b}`}
+          {previewEnd ? `${a} ~ ${previewEnd}` : a === b ? a : `${a} ~ ${b}`}
           <span className="ml-1.5 font-normal text-ink-3">
-            {flowsInRange.length} 條流程{canMoney && moneyRows.length > 0 && `·${moneyRows.length} 筆帳款`}
+            {previewEnd
+              ? "再點一下選這段"
+              : `${flowsInRange.length} 條流程${
+                  canMoney && moneyRows.length > 0 ? `·${moneyRows.length} 筆帳款` : ""
+                }`}
           </span>
         </p>
 

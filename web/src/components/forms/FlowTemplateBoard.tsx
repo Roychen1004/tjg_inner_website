@@ -7,9 +7,12 @@
  *
  * 能做的事：新增／複製／改名／停用模板、設定預設模板；
  * 模板內：加工作項、改名稱與預設的工作內容三欄、調順序、刪（用過的只能停用）。
+ *
+ * D55：順序改成**拖曳**（跟案子裡的流程編排同一套手勢），編號即時跟著位置變——
+ * 3.4 拖到前面，畫面上馬上變 3.3，放開才送出。↑↓ 留著給觸控裝置。
  */
-import { Check, ChevronDown, Copy, Plus, Star, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { Check, ChevronDown, Copy, GripVertical, Plus, Star, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "@/api/client";
 import {
@@ -220,54 +223,115 @@ export default function FlowTemplateBoard() {
   );
 }
 
-/** 模板內容：五大階段 × 工作項（加、改、刪、調順序） */
+/** 模板內容：五大階段 × 工作項（加、改、刪、拖曳調順序） */
 function TemplateItems({ templateId }: { templateId: number }) {
   const { data: catalog } = useFlowCatalog(true, templateId);
   const reorder = useReorderFlowTemplate();
   const toast = useToast();
+  // 拖曳中的暫時順序。放開才送出——每移動一格就打一次 API 太吵
+  const [draft, setDraft] = useState<FlowCatalogStage[] | null>(null);
+  const dragId = useRef<number | null>(null);
+
+  // 伺服器資料換了（新增、刪除、換模板、重排成功）就丟掉本機草稿
+  useEffect(() => setDraft(null), [catalog]);
 
   if (!catalog) return <Spinner />;
+  const stages = draft ?? catalog;
 
-  /** 全部啟用中工作項的 id，依（階段、目前順序）——上下移動時整串重送 */
-  function orderedIds(swap?: [number, number]) {
-    const ids = catalog!.flatMap((s) => s.items.map((i) => i.id));
-    if (swap) {
-      const [a, b] = swap.map((id) => ids.indexOf(id));
-      if (a >= 0 && b >= 0) [ids[a], ids[b]] = [ids[b], ids[a]];
-    }
-    return ids;
+  /** 把 fromId 移到 toId 的位置——只能在自己的階段裡移動 */
+  function move(fromId: number, toId: number) {
+    if (fromId === toId) return;
+    setDraft((prev) => {
+      const list = (prev ?? catalog!).map((s) => ({ ...s, items: [...s.items] }));
+      const from = locate(list, fromId);
+      const to = locate(list, toId);
+      if (!from || !to || from.si !== to.si) return prev;
+      const items = list[from.si].items;
+      const [moved] = items.splice(from.ii, 1);
+      items.splice(to.ii, 0, moved);
+      return list;
+    });
   }
 
-  function nudge(stage: FlowCatalogStage, index: number, dir: -1 | 1) {
-    const j = index + dir;
-    if (j < 0 || j >= stage.items.length) return;
+  /** 放開滑鼠（或按了 ↑↓）才真的送出 */
+  function commit(next?: FlowCatalogStage[]) {
+    dragId.current = null;
+    const list = next ?? draft;
+    if (!list) return;
+    const ids = list.flatMap((s) => s.items.map((i) => i.id));
+    const before = catalog!.flatMap((s) => s.items.map((i) => i.id));
+    if (ids.join() === before.join()) {
+      setDraft(null);
+      return;
+    }
+    if (next) setDraft(next);
     reorder.mutate(
-      { id: templateId, item_ids: orderedIds([stage.items[index].id, stage.items[j].id]) },
+      { id: templateId, item_ids: ids },
       {
-        onError: (e) =>
-          toast.error(e instanceof ApiError ? e.body.detail ?? "順序更新失敗" : "順序更新失敗"),
+        onError: (e) => {
+          setDraft(null);   // 失敗就退回伺服器的順序，不要留一個假的畫面
+          toast.error(e instanceof ApiError ? e.body.detail ?? "順序更新失敗" : "順序更新失敗");
+        },
       },
     );
   }
 
+  /** ↑↓：觸控裝置拖不動，留著這條路 */
+  function nudge(stageId: number, index: number, dir: -1 | 1) {
+    const list = stages.map((s) => ({ ...s, items: [...s.items] }));
+    const si = list.findIndex((s) => s.id === stageId);
+    const j = index + dir;
+    if (si < 0 || j < 0 || j >= list[si].items.length) return;
+    const items = list[si].items;
+    [items[index], items[j]] = [items[j], items[index]];
+    commit(list);
+  }
+
   return (
     <div className="mt-2 space-y-2">
-      {catalog.map((stage) => (
-        <StageSection key={stage.id} stage={stage} templateId={templateId} onNudge={nudge} />
+      {stages.map((stage) => (
+        <StageSection
+          key={stage.id}
+          stage={stage}
+          templateId={templateId}
+          onNudge={nudge}
+          onDragStart={(id) => (dragId.current = id)}
+          onDragOver={(id) => dragId.current !== null && move(dragId.current, id)}
+          onDragEnd={() => commit()}
+        />
       ))}
+      <p className="text-xs text-ink-3">
+        拖曳左邊的握把（或用 ↑↓）調順序，<b className="text-ink-2">編號跟著位置即時重編</b>——
+        3.4 拖到前面就變 3.3。只能在自己的階段裡移動。
+      </p>
     </div>
   );
+}
+
+/** 這個 id 在哪一個階段的第幾個 */
+function locate(list: FlowCatalogStage[], id: number) {
+  for (let si = 0; si < list.length; si++) {
+    const ii = list[si].items.findIndex((i) => i.id === id);
+    if (ii >= 0) return { si, ii };
+  }
+  return null;
+}
+
+interface DragProps {
+  onNudge: (stageId: number, index: number, dir: -1 | 1) => void;
+  onDragStart: (id: number) => void;
+  onDragOver: (id: number) => void;
+  onDragEnd: () => void;
 }
 
 function StageSection({
   stage,
   templateId,
-  onNudge,
+  ...drag
 }: {
   stage: FlowCatalogStage;
   templateId: number;
-  onNudge: (stage: FlowCatalogStage, index: number, dir: -1 | 1) => void;
-}) {
+} & DragProps) {
   const saveItem = useSaveFlowItem();
   const toast = useToast();
   const [draft, setDraft] = useState("");
@@ -296,7 +360,15 @@ function StageSection({
       </p>
       <ul className="mt-1.5 space-y-1">
         {stage.items.map((item, i) => (
-          <ItemRow key={item.id} item={item} index={i} stage={stage} onNudge={onNudge} />
+          <ItemRow
+            key={item.id}
+            item={item}
+            index={i}
+            stage={stage}
+            /* D51／D55：編號是**位置**不是身分——依目前順序即時算，拖曳當下就變 */
+            code={`${stage.seq}.${i + 1}`}
+            {...drag}
+          />
         ))}
       </ul>
       <div className="mt-1.5 flex items-center gap-1.5">
@@ -334,17 +406,24 @@ function ItemRow({
   item,
   index,
   stage,
+  code,
   onNudge,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
 }: {
   item: FlowCatalogItem;
   index: number;
   stage: FlowCatalogStage;
-  onNudge: (stage: FlowCatalogStage, index: number, dir: -1 | 1) => void;
-}) {
+  code: string;
+} & DragProps) {
   const saveItem = useSaveFlowItem();
   const removeItem = useDeleteFlowItem();
   const toast = useToast();
   const [openSpecs, setOpenSpecs] = useState(false);
+  // 只有按住左邊的握把才進入可拖曳狀態——整列都能拖的話，
+  // 在名稱欄裡選字會變成拖整列
+  const [grab, setGrab] = useState(false);
   const [form, setForm] = useState({
     name: item.name,
     description: item.description,
@@ -394,10 +473,38 @@ function ItemRow({
   }
 
   return (
-    <li className="rounded-lg bg-card px-2 py-1.5 ring-1 ring-line">
+    <li
+      draggable={grab}
+      onDragStart={(e) => {
+        onDragStart(item.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver(item.id);
+      }}
+      onDragEnd={() => {
+        setGrab(false);
+        onDragEnd();
+      }}
+      onDrop={(e) => e.preventDefault()}
+      onMouseUp={() => setGrab(false)}
+      className={[
+        "rounded-lg bg-card px-2 py-1.5 ring-1 ring-line",
+        grab ? "ring-stage-2" : "",
+      ].join(" ")}
+    >
       <div className="flex items-center gap-1.5">
+        <span
+          onMouseDown={() => setGrab(true)}
+          onTouchStart={() => setGrab(true)}
+          aria-label={`拖曳 ${item.name} 調整順序`}
+          className="shrink-0 cursor-grab touch-none p-0.5 text-ink-3 active:cursor-grabbing"
+        >
+          <GripVertical size={13} aria-hidden />
+        </span>
         <span className="w-8 shrink-0 text-xs font-semibold tabular-nums text-ink-3">
-          {item.code}
+          {code}
         </span>
         <input
           value={form.name}
@@ -413,7 +520,7 @@ function ItemRow({
         )}
         <button
           type="button"
-          onClick={() => onNudge(stage, index, -1)}
+          onClick={() => onNudge(stage.id, index, -1)}
           aria-label={`${item.name} 上移`}
           className="shrink-0 rounded px-1 py-0.5 text-xs text-ink-3 hover:bg-page"
         >
@@ -421,7 +528,7 @@ function ItemRow({
         </button>
         <button
           type="button"
-          onClick={() => onNudge(stage, index, 1)}
+          onClick={() => onNudge(stage.id, index, 1)}
           aria-label={`${item.name} 下移`}
           className="shrink-0 rounded px-1 py-0.5 text-xs text-ink-3 hover:bg-page"
         >

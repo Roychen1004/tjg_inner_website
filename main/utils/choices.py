@@ -167,11 +167,31 @@ class Certainty(models.TextChoices):
     ESTIMATED = "estimated", "預估"
 
 
+class MoneyDirection(models.TextChoices):
+    """一筆錢的方向（D55）——行政事項的收支與「收支明細」共用。
+
+    案子的錢方向是推出來的（應收＝收、應付＝付）；
+    行政事項沒有這層結構，所以自己記一個方向。
+    """
+
+    IN = "in", "收入"
+    OUT = "out", "支出"
+
+
 class NotificationCategory(models.TextChoices):
     BILLING = "billing", "請款"
     TRACKING = "tracking", "進度"
     ALERT = "alert", "警示"
+    AFFAIR = "affair", "行政"
     SYSTEM = "system", "系統"
+
+
+class AffairFreq(models.TextChoices):
+    """行政例行事項的重複頻率（D53）"""
+
+    WEEKLY = "weekly", "每週"
+    MONTHLY = "monthly", "每月"
+    YEARLY = "yearly", "每年"
 
 
 class ActivityCategory(models.TextChoices):
