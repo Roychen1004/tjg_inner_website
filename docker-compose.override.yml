@@ -1,25 +1,63 @@
 # 開發用覆寫（docker compose 會自動載入這個檔案）
 #
-# 解決的問題：Dockerfile 的 COPY . /app/ 把程式碼烤進映像，
-# 改一行 Python 就要 docker compose build 才會生效。開發時很痛。
+# 目標：前後端都 hot reload，而且網址跟正式環境一樣是 http://localhost:30080
 #
-# 做法：把原始碼 bind mount 進去，並讓 gunicorn 開 --reload。
-# 改完存檔，worker 會自己重啟。
+#   後端　gunicorn --reload      改 .py 存檔 → worker 自己重啟（約 1 秒）
+#   前端　Vite dev server        改 .tsx 存檔 → 瀏覽器不重整就換掉（HMR）
+#   nginx 仍然站在最前面，所以 /api、同源 cookie、以及附件下載的
+#   X-Accel-Redirect 全都跟正式環境一致——不會出現「開發好好的、上線壞掉」。
+#
+# 解決的問題：Dockerfile 的 COPY . /app/ 把程式碼烤進映像，改一行就要
+# docker compose build 才會生效。這裡改用 bind mount 讓原始碼即時反映。
 #
 # ⚠️ 正式部署時要明確排除這個檔案：
 #     docker compose -f docker-compose.yml up -d
-# 否則會把宿主機的原始碼掛進正式環境。
+# 否則會把宿主機的原始碼與一個 Node 程序掛進正式環境。
 
 services:
   web:
     volumes:
-      # ★ 前端 hot deploy（2026-08-30）：nginx 改吃宿主機的 web/dist，
-      #   本機 npm run build 完直接生效，不用再 docker compose build web。
-      #   （compose 會把這串跟 base 的 nginx.conf/media/static 掛載合併）
-      - ./web/dist:/usr/share/nginx/html:ro
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # ★ 開發版 nginx：`/` 反向代理到 Vite dev server（含 HMR 的 websocket）。
+      #   前端不再需要 npm run build，也不用掛 web/dist。
+      - ./deploy/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
       - media:/app/media:ro
       - static:/app/staticfiles:ro
+    depends_on:
+      - api
+      - web-dev
+
+  # ── 前端 dev server（只存在於開發環境）────────────────────────────
+  # 正式映像是多階段建置的產物，裡面沒有任何 Node 程序；這個服務是
+  # 開發時才加上去的，宿主機因此完全不需要安裝 Node。
+  web-dev:
+    image: node:22-alpine
+    working_dir: /app
+    environment:
+      # 瀏覽器是從 :30080（nginx）進來的，HMR 的 websocket 也必須連回同一個埠。
+      # 不設的話它會固執地連 5173，症狀是「頁面正常、但改檔案不會更新」。
+      VITE_HMR_CLIENT_PORT: "30080"
+      # 直連 :30173 時 /api 轉給 nginx（不是 api:8000）——
+      # 這樣連附件下載的 X-Accel-Redirect 都走得通
+      VITE_API_PROXY_TARGET: "http://web"
+    volumes:
+      - ./web:/app
+      # node_modules 放 named volume：不落到宿主機，也不會被 bind mount 蓋掉
+      - web_node_modules:/app/node_modules
+    # npm ci 而不是 npm install：完全照 package-lock.json 裝，
+    # 而且不會回頭改到版控中的鎖檔（.gitignore 裡特別交代鎖檔要版控）
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "127.0.0.1:30173:5173"   # 繞過 nginx 直接看前端（除錯用；HMR 請走 :30080）
+    healthcheck:
+      # 用 127.0.0.1 不用 localhost：容器裡 localhost 先解到 [::1]，
+      # 而 Vite 綁的是 IPv4 的 0.0.0.0——連過去會 connection refused
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:5173/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s        # 第一次啟動要先跑 npm ci
+    restart: unless-stopped
+    mem_limit: 1g
 
   api:
     volumes:
@@ -38,3 +76,6 @@ services:
       - --timeout=120                 # 除錯時放寬，避免中斷
       - --access-logfile=-
       - --error-logfile=-
+
+volumes:
+  web_node_modules:
