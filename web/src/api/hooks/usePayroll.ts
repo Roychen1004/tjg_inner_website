@@ -18,6 +18,7 @@ export interface PayrollPolicy {
   min_hourly_wage: string;
   normal_hours_per_day: string;
   default_daily_ot_hours: string;
+  monthly_wage_divisor: string;
   ot_weekday_1_rate: string;
   ot_weekday_1_hours: string;
   ot_weekday_2_rate: string;
@@ -48,12 +49,18 @@ export interface InsuranceGrade {
   is_active: boolean;
 }
 
+/** 三種計薪方式。差別只在「應發總額怎麼來的」，之後的法規公式共用 */
+export type PayType = "hourly" | "monthly_gross" | "monthly_net";
+
 export interface SalaryProfile {
   id: number;
   user: number;
   user_name: string;
   employee_no: string | null;
   title: string;
+  pay_type: PayType;
+  pay_type_label: string;
+  monthly_salary: string | null;
   hourly_wage: string | null;
   insured_salary: string;
   dependents: number;
@@ -103,9 +110,15 @@ export interface PayrollRecord {
   insured_days: number;
   charge_health_insurance: boolean;
   hourly_wage: string | null;
+  monthly_salary: string | null;
   insured_salary: string | null;
   dependents: number | null;
   note: string;
+  pay_type: PayType;
+  pay_type_label: string;
+  profile_monthly_salary: string | null;
+  /** 實際採用的平日每小時工資額。月薪制是 月薪 ÷ 240 換算的 */
+  effective_hourly_wage: string;
   gross: string;
   deduction: string;
   net: string;

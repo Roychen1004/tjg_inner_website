@@ -139,6 +139,10 @@ class PayrollRecord(TimeStampedModel):
     hourly_wage = models.DecimalField(
         "時薪（本月覆寫）", max_digits=10, decimal_places=2, null=True, blank=True,
     )
+    monthly_salary = models.DecimalField(
+        "月薪（本月覆寫）", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="月薪制才有用。調薪當月填這裡，不必回頭改員工設定",
+    )
     insured_salary = models.DecimalField(
         "投保薪資（本月覆寫）", max_digits=12, decimal_places=2, null=True, blank=True,
     )

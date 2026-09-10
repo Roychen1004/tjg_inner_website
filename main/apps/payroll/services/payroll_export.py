@@ -38,6 +38,8 @@ HOUR_FMT = "0.##"
 SUMMARY_COLUMNS = [
     ("員工編號", "employee_no", None, 11),
     ("姓名", "user_name", None, 12),
+    ("計薪方式", "_pay_type", None, 15),
+    ("月薪", "_monthly", MONEY_FMT, 10),
     ("上班天數", "work_days", HOUR_FMT, 9),
     ("正常工時", "normal_hours", HOUR_FMT, 9),
     ("平日加班(前段)", "ot_weekday_1_hours", HOUR_FMT, 13),
@@ -126,6 +128,14 @@ def _summary_sheet(wb, period, records):
                 value = record.user.employee_no or ""
             elif field == "user_name":
                 value = record.user.name
+            elif field == "_pay_type":
+                value = _profile_of(record).get_pay_type_display() if _profile_of(record) else "時薪制"
+            elif field == "_monthly":
+                raw = record.monthly_salary
+                if raw is None:
+                    profile = _profile_of(record)
+                    raw = profile.monthly_salary if profile else None
+                value = _num(raw) if raw else ""
             elif field == "_insured":
                 value = _num(record.insured_salary if record.insured_salary is not None
                              else _profile_insured(record))
@@ -158,8 +168,12 @@ def _summary_sheet(wb, period, records):
     return ws
 
 
+def _profile_of(record):
+    return getattr(record.user, "salary_profile", None)
+
+
 def _profile_insured(record):
-    profile = getattr(record.user, "salary_profile", None)
+    profile = _profile_of(record)
     return profile.insured_salary if profile else 0
 
 

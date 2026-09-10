@@ -16,7 +16,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 
 from main.apps.payroll.services.workday_service import INSURANCE_MONTH_DAYS
-from main.utils.choices import PayrollLineKind
+from main.utils.choices import PayrollLineKind, PayType
 
 CENT = Decimal("0.01")
 ONE = Decimal("1")
@@ -41,16 +41,77 @@ def round_half_hour(value) -> Decimal:
 
 
 def _num(value) -> str:
-    """數字轉成人看的字串：10.50 → 10.5、196.00 → 196、29500 → 29,500"""
+    """數字轉成人看的字串：10.50 → 10.5、196.00 → 196、29500 → 29,500
+
+    最多兩位小數。算式是拿來給人對計算機的——出現
+    `145.8333333333333333333333333` 就等於沒有算式。
+    """
     d = Decimal(value)
     if d == d.to_integral_value():
         return f"{int(d):,}"
-    return f"{d.normalize():,f}"
+    d = d.quantize(CENT, rounding=ROUND_HALF_UP)
+    return f"{d.normalize():,f}" if d != d.to_integral_value() else f"{int(d):,}"
 
 
 def _rate(value) -> str:
     """百分比：12.500 → 12.5%"""
     return f"{_num(value)}%"
+
+
+def solve_gross_from_net(target, fixed_deductions, welfare_rate):
+    """已知「實際領取」，反推「薪資總額」。
+
+    為什麼要解方程而不是直接相加：勞保、健保、勞退自願提繳都是按**投保薪資**
+    算的固定金額，加回去就好；但**員工福利金是按應發總額 × 1%**——
+    總額還沒算出來，福利金就算不出來，加不回去。
+
+        總額 − 固定扣項 − 總額 × 1% = 實領
+        總額 × (1 − 1%)             = 實領 + 固定扣項
+        總額                        = (實領 + 固定扣項) ÷ (1 − 1%)
+
+    最後那個迴圈是在補四捨五入的零頭：福利金會四捨五入到元，
+    直接套公式可能差一兩塊。會計師打「實領 35,000」，薪資單上就該**剛好**
+    是 35,000——差三塊錢她會找一個下午。
+    """
+    target = Decimal(target)
+    fixed = Decimal(fixed_deductions)
+    rate = Decimal(welfare_rate) / Decimal("100")
+    if rate >= 1:                       # 參數被填成 100% 以上，公式無解
+        return money(target + fixed)
+
+    gross = money((target + fixed) / (Decimal("1") - rate))
+    for _ in range(8):
+        net = gross - fixed - money(gross * rate)
+        diff = target - net
+        if diff == 0:
+            break
+        gross += diff
+    return gross
+
+
+def resolve_wage(record, profile, policy):
+    """這張薪資單實際採用的「平日每小時工資額」。
+
+    三層：本月覆寫 > 員工設定 > 法規最低時薪。月薪制則是 月薪 ÷ 240。
+
+    ★ 抽出來共用，是為了讓**畫面上顯示的時薪**與**算加班費用的時薪**
+      保證是同一個數。各算各的遲早會分岔一分錢，而那一分錢會讓會計師
+      對不起來。
+    """
+    if record.hourly_wage is not None:
+        return Decimal(record.hourly_wage)
+
+    monthly = record.monthly_salary
+    is_monthly = profile is not None and profile.is_monthly
+    # 本月覆寫了月薪 → 時薪也要跟著換算，否則加班費會用舊月薪算
+    if monthly is not None and is_monthly:
+        divisor = Decimal(policy.monthly_wage_divisor or 240)
+        if divisor > 0:
+            return (Decimal(monthly) / divisor).quantize(CENT, rounding=ROUND_HALF_UP)
+
+    if profile is not None:
+        return Decimal(profile.effective_hourly_wage(policy))
+    return Decimal(policy.min_hourly_wage)
 
 
 class _Detail:
@@ -106,25 +167,77 @@ def calculate(record, policy=None, profile=None):
 
     # 本月覆寫 > 員工設定 > 法規預設。三層都留著是因為「這個月特別」
     # 很常見，而為了一個月去改設定檔，下個月一定忘記改回來。
-    wage = record.hourly_wage
-    if wage is None:
-        wage = profile.effective_hourly_wage(policy) if profile else policy.min_hourly_wage
+    wage = resolve_wage(record, profile, policy)
     insured = record.insured_salary
     if insured is None:
         insured = profile.insured_salary if profile else Decimal("0")
     dependents = record.dependents
     if dependents is None:
         dependents = profile.dependents if profile else 0
+    pay_type = profile.pay_type if profile else PayType.HOURLY
+    monthly = record.monthly_salary
+    if monthly is None:
+        monthly = profile.monthly_salary if profile else None
 
     d = _Detail()
 
-    # ── 應發 ───────────────────────────────────────────────────────
-    d.add(
-        "earning", "正常工時",
-        f"{_num(record.normal_hours)} 小時 × {_num(wage)}",
-        Decimal(record.normal_hours) * Decimal(wage),
-        always=True,
+    # ── 先算「跟應發總額無關」的扣項 ───────────────────────────────
+    # 反推實領時要用到它們；順序提前不影響時薪制的結果
+    days = int(record.insured_days)
+    day_ratio = Decimal(days) / Decimal(INSURANCE_MONTH_DAYS)
+    partial = days != INSURANCE_MONTH_DAYS
+    day_text = f" ÷ {INSURANCE_MONTH_DAYS} × {days} 天" if partial else ""
+
+    labor = money(
+        Decimal(insured) * Decimal(policy.labor_insurance_rate) / Decimal("100")
+        * Decimal(policy.labor_insurance_employee_share) / Decimal("100") * day_ratio
     )
+    heads = 1 + min(int(dependents), int(policy.health_max_dependents))
+    health_one = money(
+        Decimal(insured) * Decimal(policy.health_insurance_rate) / Decimal("100")
+        * Decimal(policy.health_insurance_employee_share) / Decimal("100")
+    )
+    health = health_one * heads if record.charge_health_insurance else Decimal("0")
+    voluntary = Decimal("0")
+    if profile and profile.voluntary_pension_rate:
+        voluntary = money(
+            Decimal(insured) * Decimal(profile.voluntary_pension_rate) / Decimal("100") * day_ratio
+        )
+
+    # ── 應發 ───────────────────────────────────────────────────────
+    if pay_type == PayType.MONTHLY_GROSS:
+        base = Decimal(monthly or 0) * day_ratio
+        d.add(
+            "earning", "月薪（薪資總額）",
+            f"{_num(monthly or 0)}{day_text}" if partial else f"{_num(monthly or 0)}",
+            base, always=True,
+        )
+    elif pay_type == PayType.MONTHLY_NET:
+        # 老闆跟員工談的是「每月實拿多少」——這裡把它反推成薪資總額
+        target = money(Decimal(monthly or 0) * day_ratio)
+        fixed = labor + health + voluntary
+        base = solve_gross_from_net(target, fixed, policy.welfare_fund_rate)
+        parts = [f"實領 {_num(target)}"]
+        if labor:
+            parts.append(f"勞保 {_num(labor)}")
+        if health:
+            parts.append(f"健保 {_num(health)}")
+        if voluntary:
+            parts.append(f"勞退自提 {_num(voluntary)}")
+        d.add(
+            "earning",
+            "月薪（由實領反推）" + (f"，在職 {days}/{INSURANCE_MONTH_DAYS} 天" if partial else ""),
+            f"（{' ＋ '.join(parts)}）÷（1 − {_rate(policy.welfare_fund_rate)}）",
+            base, always=True,
+        )
+    else:
+        d.add(
+            "earning", "正常工時",
+            f"{_num(record.normal_hours)} 小時 × {_num(wage)}",
+            Decimal(record.normal_hours) * Decimal(wage),
+            always=True,
+        )
+
     _ot_row(d, f"平日加班（前 {_num(policy.ot_weekday_1_hours)} 小時）",
             record.ot_weekday_1_hours, wage, policy.ot_weekday_1_rate)
     _ot_row(d, "平日加班（後段）",
@@ -166,14 +279,8 @@ def calculate(record, policy=None, profile=None):
             Decimal(late_total) / Decimal("60") * Decimal(wage),
         )
 
-    # 勞保按日計，分母固定 30（不分大小月）。整月就是 30/30，不必贅述
-    days = int(record.insured_days)
-    day_ratio = Decimal(days) / Decimal(INSURANCE_MONTH_DAYS)
-    partial = days != INSURANCE_MONTH_DAYS
-    day_text = f" ÷ {INSURANCE_MONTH_DAYS} × {days} 天" if partial else ""
-
-    labor = (Decimal(insured) * Decimal(policy.labor_insurance_rate) / Decimal("100")
-             * Decimal(policy.labor_insurance_employee_share) / Decimal("100") * day_ratio)
+    # 這三筆在最前面就算好了（反推實領時要用）。這裡只負責寫出算式——
+    # 同一個數字算兩次遲早會分岔
     d.add(
         "deduction", "勞保自付（含就保）",
         f"{_num(insured)}{day_text} × {_rate(policy.labor_insurance_rate)}"
@@ -183,9 +290,6 @@ def calculate(record, policy=None, profile=None):
 
     # 健保**不按日拆**——整月計收，由「當月最後一天」的投保單位負擔。
     # 月中離職的人這個月由下一個單位收，公司不扣（charge_health_insurance=False）
-    heads = 1 + min(int(dependents), int(policy.health_max_dependents))
-    health_one = (Decimal(insured) * Decimal(policy.health_insurance_rate) / Decimal("100")
-                  * Decimal(policy.health_insurance_employee_share) / Decimal("100"))
     if record.charge_health_insurance:
         # 健保是「每一口」各算一份再乘人數，不是總額乘人數——
         # 先四捨五入到元再乘，跟健保署的對照表才對得起來
@@ -195,7 +299,7 @@ def calculate(record, policy=None, profile=None):
             f" × {_rate(policy.health_insurance_employee_share)}"
             + (f" × {heads} 口（本人＋眷屬 {min(int(dependents), int(policy.health_max_dependents))}）"
                if heads > 1 else ""),
-            money(health_one) * heads, always=True,
+            health, always=True,
         )
     else:
         d.add(
@@ -204,11 +308,11 @@ def calculate(record, policy=None, profile=None):
             Decimal("0"), always=True,
         )
 
-    if profile and profile.voluntary_pension_rate:
+    if voluntary:
         d.add(
             "deduction", "勞退自願提繳",
             f"{_num(insured)}{day_text} × {_rate(profile.voluntary_pension_rate)}",
-            Decimal(insured) * Decimal(profile.voluntary_pension_rate) / Decimal("100") * day_ratio,
+            voluntary,
         )
 
     if policy.welfare_fund_rate:
@@ -259,7 +363,9 @@ def calculate(record, policy=None, profile=None):
         "net": money(net),
         "employer_cost": money(d.employer),
         "detail": d.rows,
-        "warnings": _warnings(record, policy, wage, net, gross=gross, insured=insured),
+        "warnings": _warnings(
+            record, policy, wage, net, gross=gross, insured=insured, profile=profile,
+        ),
     }
 
 
@@ -284,7 +390,22 @@ def required_grade(monthly_wage):
     return Decimal(amounts[-1])
 
 
-def _warnings(record, policy, wage, net, gross=None, insured=None):
+def missing_monthly_salary(record, profile=None):
+    """選了月薪制卻還沒填金額——那個人的薪水會算成 0。
+
+    回傳 True 時，畫面上要看得到，確認整月時要擋下來。
+    """
+    from main.apps.payroll.models import SalaryProfile
+
+    if profile is None:
+        profile = SalaryProfile.objects.filter(user=record.user).first()
+    if profile is None or not profile.is_monthly:
+        return False
+    amount = record.monthly_salary if record.monthly_salary is not None else profile.monthly_salary
+    return not amount
+
+
+def _warnings(record, policy, wage, net, gross=None, insured=None, profile=None):
     """算得出來、但可能違法或填錯的地方。只提醒不阻擋——
 
     擋下來的話，遇到真的有特殊狀況的那個月，會計師就只能繞過系統用
@@ -292,7 +413,16 @@ def _warnings(record, policy, wage, net, gross=None, insured=None):
     """
     out = []
 
-    if Decimal(wage) < Decimal(policy.min_hourly_wage):
+    if missing_monthly_salary(record, profile):
+        out.append(
+            "選了月薪制但還沒填月薪金額——這個月會算成 0。"
+            "請到「員工設定」把月薪填上"
+        )
+
+    # 月薪制不比這個：月薪 ÷ 240 本來就會低於最低「時薪」，
+    # 那是換算基準不是他的工資率，拿來比只會每個月都跳一個假警示
+    is_monthly = profile is not None and profile.is_monthly
+    if not is_monthly and Decimal(wage) < Decimal(policy.min_hourly_wage):
         out.append(
             f"時薪 {_num(wage)} 低於法定最低時薪 {_num(policy.min_hourly_wage)}"
         )

@@ -228,3 +228,23 @@ class PayrollLineKind(models.TextChoices):
 
     EARNING = "earning", "加項"
     DEDUCTION = "deduction", "扣項"
+
+
+class PayType(models.TextChoices):
+    """計薪方式（D57 第八輪）。
+
+    三種算法，差別只在「應發總額怎麼來的」，之後的勞健保、福利金、
+    雇主負擔全部共用同一套法規公式：
+
+      時薪制　　　　　應發 ＝ 工時 × 時薪 ＋ 各段加班費
+      月薪—薪資總額　 應發 ＝ 你填的月薪（未扣勞健保勞退前的數字）
+      月薪—實際領取　 你填的是**扣完之後**拿到手的錢，系統反推應發
+
+    為什麼要有第三種：老闆跟員工談的常常是「每月實拿三萬五」。
+    會計師如果只能填總額，就得自己反推——而福利金是按總額算的，
+    反推要解方程，那正是最容易算錯的地方。
+    """
+
+    HOURLY = "hourly", "時薪制"
+    MONTHLY_GROSS = "monthly_gross", "月薪制（薪資總額）"
+    MONTHLY_NET = "monthly_net", "月薪制（實際領取）"

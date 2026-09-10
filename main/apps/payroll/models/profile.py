@@ -6,19 +6,33 @@
 這裡放的是「每個月都一樣、跟出勤無關」的東西：時薪、投保級距、眷屬口數。
 會變的是出勤，那個記在 PayrollRecord。
 """
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
 from main.apps.core.models import TimeStampedModel
+from main.utils.choices import PayType
 
 
 class SalaryProfile(TimeStampedModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, verbose_name="員工",
         on_delete=models.CASCADE, related_name="salary_profile",
+    )
+
+    pay_type = models.CharField(
+        "計薪方式", max_length=15, choices=PayType.choices, default=PayType.HOURLY,
+        help_text="時薪制看工時；月薪制填一個固定金額，工時只影響加班與請假",
+    )
+    # 月薪制填這個。意思跟著 pay_type 走：
+    #   薪資總額＝還沒扣勞健保勞退前的數字
+    #   實際領取＝扣完之後拿到手的錢（系統會反推出總額）
+    monthly_salary = models.DecimalField(
+        "月薪", max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="月薪制才要填。是「總額」還是「實領」由計薪方式決定",
     )
 
     # 留空＝用法規參數的最低時薪。這樣調基本工資時只要改一個地方，
@@ -69,8 +83,25 @@ class SalaryProfile(TimeStampedModel):
     def __str__(self):
         return f"{self.user.name} 的薪資設定"
 
+    @property
+    def is_monthly(self):
+        return self.pay_type in (PayType.MONTHLY_GROSS, PayType.MONTHLY_NET)
+
     def effective_hourly_wage(self, policy):
-        """實際採用的時薪：自己填了就用自己的，沒填就用法規的最低時薪"""
+        """平日每小時工資額。加班費、請假扣款、遲到扣款都以它為基準。
+
+        月薪制不是「沒有時薪」——勞基法施行細則規定要用 月薪 ÷ 240 換算，
+        否則算不出加班費。所以這裡一律回得出一個時薪。
+        """
+        if self.is_monthly and self.monthly_salary:
+            divisor = Decimal(policy.monthly_wage_divisor or 240)
+            if divisor > 0:
+                # 取到「分」為止。除不盡的話（35,000 ÷ 240 = 145.8333…）
+                # 若把無限小數直接丟進算式，畫面上會出現一長串數字，
+                # 會計師拿計算機根本對不起來——顯示與計算必須是同一個數
+                return (Decimal(self.monthly_salary) / divisor).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP,
+                )
         return self.hourly_wage if self.hourly_wage is not None else policy.min_hourly_wage
 
     def employed_range(self, first_day, last_day):

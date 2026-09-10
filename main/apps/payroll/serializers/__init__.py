@@ -58,6 +58,7 @@ class HolidaySerializer(serializers.ModelSerializer):
 
 class SalaryProfileSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.name", read_only=True)
+    pay_type_label = serializers.CharField(source="get_pay_type_display", read_only=True)
     employee_no = serializers.CharField(source="user.employee_no", read_only=True, default=None)
     title = serializers.CharField(source="user.title", read_only=True)
 
@@ -65,6 +66,7 @@ class SalaryProfileSerializer(serializers.ModelSerializer):
         model = SalaryProfile
         fields = [
             "id", "user", "user_name", "employee_no", "title",
+            "pay_type", "pay_type_label", "monthly_salary",
             "hourly_wage", "insured_salary", "dependents",
             "voluntary_pension_rate", "hire_date", "resign_date", "is_active", "note",
         ]
@@ -88,6 +90,12 @@ class SalaryProfileSerializer(serializers.ModelSerializer):
         hire, resign = val("hire_date"), val("resign_date")
         if hire and resign and resign < hire:
             raise serializers.ValidationError({"resign_date": "離職日不能早於到職日"})
+
+        # ⚠️ 這裡刻意**不擋**「選了月薪制但還沒填金額」。
+        # 擋下去會變成雞生蛋：月薪欄位要切成月薪制之後才出現，
+        # 但切的當下還沒有金額可填——使用者卡在下拉選單前面出不去。
+        # 改成放行，然後在薪資單上出現警示、確認整月時擋下來（見 calc_service
+        # 與 PayrollPeriodViewSet.confirm），錯誤才會出現在看得到的地方。
         return data
 
 
@@ -116,6 +124,19 @@ class PayrollRecordSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.name", read_only=True)
     employee_no = serializers.CharField(source="user.employee_no", read_only=True, default=None)
     title = serializers.CharField(source="user.title", read_only=True)
+    # 前端要知道這個人是時薪還月薪，才知道哪些欄位該顯示
+    pay_type = serializers.CharField(source="user.salary_profile.pay_type", read_only=True, default="hourly")
+    pay_type_label = serializers.CharField(
+        source="user.salary_profile.get_pay_type_display", read_only=True, default="時薪制",
+    )
+    profile_monthly_salary = serializers.DecimalField(
+        source="user.salary_profile.monthly_salary", max_digits=12, decimal_places=2,
+        read_only=True, default=None,
+    )
+    # 實際採用的平日每小時工資額。月薪制是 月薪 ÷ 240 換算出來的——
+    # 加班費、請假扣款都用它，所以要讓會計師看得到那個數字是多少。
+    # ★ 由後端算，不讓前端自己除：顯示與計算必須是同一個數
+    effective_hourly_wage = serializers.SerializerMethodField()
     lines = PayrollLineSerializer(many=True, read_only=True)
 
     class Meta:
@@ -129,12 +150,20 @@ class PayrollRecordSerializer(serializers.ModelSerializer):
             "holiday_hours", "unpaid_leave_hours",
             "late_minutes", "early_leave_minutes",
             "insured_days", "charge_health_insurance",
-            "hourly_wage", "insured_salary", "dependents", "note",
+            "hourly_wage", "monthly_salary", "insured_salary", "dependents", "note",
+            "pay_type", "pay_type_label", "profile_monthly_salary",
+            "effective_hourly_wage",
             # 輸出（唯讀——每次存檔都會重算覆蓋）
             "gross", "deduction", "net", "employer_cost", "detail", "warnings",
             "lines",
         ]
         read_only_fields = ["gross", "deduction", "net", "employer_cost", "detail", "warnings"]
+
+
+    def get_effective_hourly_wage(self, obj):
+        policy = self.context.get("payroll_policy") or PayrollPolicy.get_active()
+        profile = getattr(obj.user, "salary_profile", None)
+        return str(calc_service.resolve_wage(obj, profile, policy))
 
 
 class PayrollRecordWriteSerializer(serializers.ModelSerializer):
@@ -156,7 +185,7 @@ class PayrollRecordWriteSerializer(serializers.ModelSerializer):
             "holiday_hours", "unpaid_leave_hours",
             "late_minutes", "early_leave_minutes",
             "insured_days", "charge_health_insurance",
-            "hourly_wage", "insured_salary", "dependents", "note",
+            "hourly_wage", "monthly_salary", "insured_salary", "dependents", "note",
         ]
 
     def validate_insured_days(self, value):

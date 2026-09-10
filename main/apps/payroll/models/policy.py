@@ -43,6 +43,13 @@ class PayrollPolicy(TimeStampedModel):
         "每日正常工時", max_digits=4, decimal_places=2, default=Decimal("8"),
         help_text="勞基法 §30：每日不得超過 8 小時",
     )
+    # 月薪制的「平日每小時工資額」＝月薪 ÷ 240（30 天 × 8 小時），
+    # 這是勞基法施行細則的算法，加班費與請假扣款都以它為基準
+    monthly_wage_divisor = models.DecimalField(
+        "月薪換算時薪的除數", max_digits=6, decimal_places=2, default=Decimal("240"),
+        help_text="平日每小時工資額 ＝ 月薪 ÷ 這個數。法定為 240（30 天 × 8 小時）",
+    )
+
     # 8:00–17:30 扣掉 1 小時休息＝8.5 小時，其中 8 小時是正常工時，
     # 多出來的 0.5 小時每天都會發生——所以做成預設值自動帶出來，
     # 而不是要會計師每個月自己乘一次

@@ -201,8 +201,13 @@ class SalaryProfileViewSet(BaseModelViewSet):
           要再按一次「產生薪資單」。所以這裡自己套用，不要求他多按一步。
           已確認／已發放的月份不動（那是凍結的歷史）。
         """
+        # 計薪方式換了 → 工時基準的規則也換了（時薪制自動帶固定加班、
+        # 月薪制不帶）。光比天數看不出這件事，所以要明確告訴 sync_records
+        before = serializer.instance.pay_type
         serializer.save()
-        apply_profile_to_drafts(serializer.instance)
+        apply_profile_to_drafts(
+            serializer.instance, force_hours=serializer.instance.pay_type != before,
+        )
 
     @action(detail=False, methods=["post"])
     def sync(self, request):
@@ -352,7 +357,7 @@ class PayrollPeriodViewSet(BaseModelViewSet):
                 if span is None:
                     continue
                 for field, value in hour_defaults(
-                    period, workdays_for(period, profile, span, first, last)
+                    period, workdays_for(period, profile, span, first, last), profile,
                 ).items():
                     setattr(record, field, value)
                 if deep:
@@ -429,6 +434,19 @@ class PayrollPeriodViewSet(BaseModelViewSet):
                 "這個月沒有任何薪資單——請先到「員工設定」確認有在職員工，"
                 "或按「同步員工名冊」"
             )
+        # 月薪制卻沒填金額的人，薪水會是 0。草稿時只警示（不然改不動），
+        # 但確認等於「這個月就這樣發了」——那一刻一定要擋
+        blank = [
+            r.user.name
+            for r in period.records.select_related("user", "user__salary_profile")
+            if calc_service.missing_monthly_salary(r, getattr(r.user, "salary_profile", None))
+        ]
+        if blank:
+            raise BusinessRuleError(
+                f"{'、'.join(blank)} 選了月薪制但還沒填月薪金額，薪水會算成 0。"
+                "請先到「員工設定」把月薪填上再確認。"
+            )
+
         with transaction.atomic():
             for record in period.records.prefetch_related("lines"):
                 recalculate(record, policy)
@@ -505,12 +523,21 @@ def workdays_for(period, profile, span, first, last):
     return workday_service.workdays_in_range(start, end)
 
 
-def hour_defaults(period, workdays):
-    """工時基準值＝天數 × 每日工時。這就是「不用手算每月工時」的那一步。"""
+def hour_defaults(period, workdays, profile=None):
+    """工時基準值＝天數 × 每日工時。這就是「不用手算每月工時」的那一步。
+
+    ⚠️ **月薪制不自動帶固定加班**。談「月薪 35,000」或「實拿 35,000」時，
+       那個數字就是講定的全部；自動塞 10 小時加班進去，實發就跟談好的對不上，
+       而且每個月都要手動歸零一次。真的加班了再由會計師輸入。
+
+       時薪制才帶——「一天 8 小時 ＋ 0.5 加班」是排班常態，
+       每個月自己乘一次才是浪費時間。
+    """
+    daily_ot = Decimal("0") if (profile and profile.is_monthly) else period.daily_ot_hours
     return {
         "work_days": workdays,
         "normal_hours": calc_service.round_half_hour(workdays * period.normal_hours_per_day),
-        "ot_weekday_1_hours": calc_service.round_half_hour(workdays * period.daily_ot_hours),
+        "ot_weekday_1_hours": calc_service.round_half_hour(workdays * daily_ot),
     }
 
 
@@ -526,7 +553,7 @@ def insurance_defaults(period, profile):
     }
 
 
-def sync_records(period, *, policy=None, rebaseline_users=None):
+def sync_records(period, *, policy=None, rebaseline_users=None, force_hours=False):
     """把這個月的薪資單「對齊」現在的名冊。**不覆蓋任何手 key 的工時。**
 
     三件事，都是安全的（沒有東西會被破壞）：
@@ -540,6 +567,8 @@ def sync_records(period, *, policy=None, rebaseline_users=None):
 
     `rebaseline_users`：只有這幾個人的工時可以被重帶。改了某人的到職／離職日
     時傳他自己——他的在職期間真的變了，舊天數已經沒有意義。
+    `force_hours`：即使天數沒變也要重帶。改**計薪方式**時用——
+    時薪制會自動帶每日固定加班、月薪制不帶，光看天數看不出這個差別。
     ⚠️ 不能只看「天數跟記錄裡的不一樣」就重帶：改期間的應上班天數也會讓
        天數不一樣，那時候重帶就會洗掉會計師 key 到一半的資料。
     """
@@ -566,7 +595,7 @@ def sync_records(period, *, policy=None, rebaseline_users=None):
         if record is None:
             record = PayrollRecord.objects.create(
                 period=period, user=profile.user,
-                **hour_defaults(period, workdays),
+                **hour_defaults(period, workdays, profile),
                 **insurance_defaults(period, profile),
             )
             created += 1
@@ -575,8 +604,8 @@ def sync_records(period, *, policy=None, rebaseline_users=None):
             # 在職期間變了（改了到職／離職日）→ 工時基準也要跟著變，
             # 因為舊的天數已經沒有意義了。純粹改時薪、眷屬口數則不動工時
             may_rebaseline = rebaseline_users is None or profile.user_id in rebaseline_users
-            if may_rebaseline and not _same(record.work_days, workdays):
-                changes.update(hour_defaults(period, workdays))
+            if may_rebaseline and (force_hours or not _same(record.work_days, workdays)):
+                changes.update(hour_defaults(period, workdays, profile))
             if any(not _same(getattr(record, f), v) for f, v in changes.items()):
                 for field, value in changes.items():
                     setattr(record, field, value)
@@ -590,7 +619,7 @@ def sync_records(period, *, policy=None, rebaseline_users=None):
     return {"created": created, "updated": updated, "removed": removed}
 
 
-def apply_profile_to_drafts(profile):
+def apply_profile_to_drafts(profile, *, force_hours=False):
     """一位員工的設定改了 → 把所有**草稿**月份對齊。
 
     已確認／已發放的月份不動——那是凍結的歷史。
@@ -599,7 +628,10 @@ def apply_profile_to_drafts(profile):
     for period in PayrollPeriod.objects.filter(status=PayrollStatus.DRAFT):
         # 只允許重帶**這個人**的工時：他的到職／離職日變了，天數才有意義地變了。
         # 其他人的工時可能是會計師 key 到一半的，不能碰
-        sync_records(period, policy=policy, rebaseline_users={profile.user_id})
+        sync_records(
+            period, policy=policy,
+            rebaseline_users={profile.user_id}, force_hours=force_hours,
+        )
 
 
 class PayrollRecordViewSet(BaseModelViewSet):
@@ -613,10 +645,20 @@ class PayrollRecordViewSet(BaseModelViewSet):
     write_permission = "edit_payroll"
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("user", "period").prefetch_related("lines")
+        qs = (
+            super().get_queryset()
+            .select_related("user", "period", "user__salary_profile")
+            .prefetch_related("lines")
+        )
         if period := self.request.query_params.get("period"):
             qs = qs.filter(period_id=period)
         return qs.order_by("user__employee_no", "user__username")
+
+    def get_serializer_context(self):
+        # 法規參數一份就好——每筆各查一次會變成 N 次查詢
+        context = super().get_serializer_context()
+        context["payroll_policy"] = PayrollPolicy.get_active()
+        return context
 
     def perform_update(self, serializer):
         guard_unlocked(serializer.instance.period)

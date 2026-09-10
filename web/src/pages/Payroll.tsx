@@ -44,6 +44,7 @@ import {
   inputClass,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
+import { ApiError } from "@/api/client";
 import type {
   CalcRow,
   CalendarDay,
@@ -74,6 +75,22 @@ import {
   useSalaryProfiles,
   useSyncProfiles,
 } from "@/api/hooks/usePayroll";
+
+/**
+ * 從錯誤裡挖出「使用者看得懂的那一句」。
+ *
+ * 後端的驗證錯誤長這樣：detail 是罐頭字「資料驗證失敗」，
+ * 真正有用的話在 errors[].message。只顯示 detail 的話，使用者看到的是
+ * 「資料驗證失敗」——等於沒說。
+ */
+function errMsg(e: unknown, fallback = "存檔失敗") {
+  if (e instanceof ApiError) {
+    const parts = e.otherErrors();
+    if (parts.length) return parts.join("；");
+    return e.body.detail || fallback;
+  }
+  return e instanceof Error ? e.message : fallback;
+}
 
 /** 金額：一律整數、千分位。薪資單上不會出現 0.5 元 */
 function nt(value: string | number | null | undefined) {
@@ -197,6 +214,12 @@ function DetailTable({ rows, gross, deduction, net, employerCost }: {
   );
 }
 
+const PAY_TYPES = [
+  { value: "hourly", label: "時薪制" },
+  { value: "monthly_gross", label: "月薪制（薪資總額）" },
+  { value: "monthly_net", label: "月薪制（實際領取）" },
+];
+
 // ── 月曆：讓會計師確認「這個月哪幾天要上班」────────────────────────
 // 直接把整個月攤開比只給一個數字可信：她比系統清楚實際排班，
 // 看到 9/25 標著「中秋節」才有辦法判斷這 20 天對不對。
@@ -303,8 +326,27 @@ const HOUR_FIELDS: Array<[keyof PayrollRecord, string]> = [
   ["early_leave_minutes", "早退（分鐘）"],
 ];
 
+/** 這個月實際工作的時數（正常＋各段加班）——用來換算「每工作一小時值多少」 */
+function workedHours(record: PayrollRecord) {
+  return (
+    Number(record.normal_hours) +
+    Number(record.ot_weekday_1_hours) +
+    Number(record.ot_weekday_2_hours) +
+    Number(record.ot_restday_1_hours) +
+    Number(record.ot_restday_2_hours) +
+    Number(record.ot_restday_3_hours) +
+    Number(record.holiday_hours)
+  );
+}
+
+/** 這張薪資單實際採用的月薪：本月覆寫優先，否則用員工設定的 */
+function monthlyOf(record: PayrollRecord) {
+  return record.monthly_salary ?? record.profile_monthly_salary;
+}
+
 function RecordCard({ record, locked }: { record: PayrollRecord; locked: boolean }) {
   const [open, setOpen] = useState(false);
+  const policy = usePayrollPolicy();
   const [lineForm, setLineForm] = useState<{ kind: "earning" | "deduction"; label: string; amount: string } | null>(null);
   const save = useSaveRecord();
   const saveLine = useSaveLine();
@@ -316,8 +358,7 @@ function RecordCard({ record, locked }: { record: PayrollRecord; locked: boolean
     save.mutate(
       { id: record.id, [field]: value } as never,
       {
-        onError: (e: unknown) =>
-          toast.error(e instanceof Error ? e.message : "存檔失敗，請確認數字格式"),
+        onError: (e: unknown) => toast.error(errMsg(e, "存檔失敗，請確認數字格式")),
       },
     );
   };
@@ -337,7 +378,14 @@ function RecordCard({ record, locked }: { record: PayrollRecord; locked: boolean
             )}
           </span>
           <span className="block text-sm text-ink-3">
-            正常 {hrs(record.normal_hours)} 小時 ／ 加班{" "}
+            <span className="mr-2 rounded bg-page px-1.5 py-0.5 text-xs">
+              {record.pay_type_label}
+            </span>
+            {record.pay_type !== "hourly" && (
+              <span className="mr-2">加班基準 {record.effective_hourly_wage}／時</span>
+            )}
+            {record.pay_type === "hourly" && <>正常 {hrs(record.normal_hours)} 小時 ／ </>}
+            加班{" "}
             {hrs(
               Number(record.ot_weekday_1_hours) +
                 Number(record.ot_weekday_2_hours) +
@@ -374,10 +422,68 @@ function RecordCard({ record, locked }: { record: PayrollRecord; locked: boolean
       {open && (
         <div className="mt-3 space-y-4 border-t border-line pt-3">
           <div>
-            <p className="mb-2 text-sm font-bold text-ink-2">
+            <p className="mb-1 text-sm font-bold text-ink-2">
               出勤（照打卡表填，改完自動重算）
               <span className="ml-1 font-normal text-ink-3">時數以 0.5 小時為單位</span>
             </p>
+            {/* 月薪制的人沒有「時薪」這個欄位，但加班與請假都是按時薪算的——
+                不把那個數字寫出來，他就沒辦法驗算加班費 */}
+            <div className="mb-2 rounded-lg bg-page px-2.5 py-1.5 text-sm text-ink-2">
+              {record.pay_type === "hourly" ? (
+                <p>
+                  下面的工時、加班與請假一律按
+                  <span className="font-semibold text-ink">
+                    {" "}
+                    時薪 {record.effective_hourly_wage} 元{" "}
+                  </span>
+                  計算
+                  {record.hourly_wage === null && (
+                    <span className="text-ink-3">（來自「員工設定」）</span>
+                  )}
+                  。
+                </p>
+              ) : (
+                <>
+                  <p>
+                    下面的加班與請假按
+                    <span className="font-semibold text-ink">
+                      {" "}
+                      平日每小時工資額 {record.effective_hourly_wage} 元{" "}
+                    </span>
+                    計算
+                    {monthlyOf(record) && (
+                      <span className="text-ink-3">
+                        （月薪 {nt(monthlyOf(record))} ÷{" "}
+                        {hrs(policy.data?.monthly_wage_divisor ?? 240)}，勞基法施行細則的算法）
+                      </span>
+                    )}
+                    。
+                  </p>
+                  {/* ⚠️ 這一段是為了防止一個很容易犯的誤讀：把 145.83 當成
+                      「他一小時值多少」，然後覺得月薪制的人比時薪 196 的人領得少。
+                      240＝30 天 × 8 小時是**曆日**基礎（含例假日），
+                      但他實際只上 20 天。 */}
+                  <p className="mt-1 text-ink-3">
+                    ⚠️ 這<span className="font-semibold">不是</span>他每工作一小時的工資。
+                    {hrs(policy.data?.monthly_wage_divisor ?? 240)} ＝ 30 天 × 8 小時，
+                    是含例假日的曆日基礎，只用來算加班費與請假扣款。
+                    {workedHours(record) > 0 && monthlyOf(record) && (
+                      <>
+                        　本月實際工作 {hrs(workedHours(record))} 小時，
+                        相當於每工作 1 小時{" "}
+                        <span className="font-semibold text-ink-2">
+                          {(Number(record.gross) / workedHours(record)).toLocaleString("zh-TW", {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          元
+                        </span>
+                        。
+                      </>
+                    )}
+                  </p>
+                </>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {HOUR_FIELDS.map(([field, label]) => (
                 <label key={String(field)} className="block">
@@ -431,7 +537,12 @@ function RecordCard({ record, locked }: { record: PayrollRecord; locked: boolean
             </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {([
-                ["hourly_wage", "時薪"],
+                record.pay_type === "hourly"
+                  ? (["hourly_wage", "時薪"] as [keyof PayrollRecord, string])
+                  : ([
+                      "monthly_salary",
+                      record.pay_type === "monthly_net" ? "月薪（實領）" : "月薪（總額）",
+                    ] as [keyof PayrollRecord, string]),
                 ["insured_salary", "投保薪資"],
                 ["dependents", "健保眷屬口數"],
               ] as Array<[keyof PayrollRecord, string]>).map(([field, label]) => (
@@ -547,8 +658,7 @@ function RecordCard({ record, locked }: { record: PayrollRecord; locked: boolean
                   } as never,
                   {
                     onSuccess: () => setLineForm(null),
-                    onError: (e: unknown) =>
-                      toast.error(e instanceof Error ? e.message : "新增失敗"),
+                    onError: (e: unknown) => toast.error(errMsg(e, "新增失敗")),
                   },
                 )
               }
@@ -594,7 +704,7 @@ function PeriodTab() {
         { id: period.id, deep },
         {
           onSuccess: (r) => toast.success(r?.detail ?? okMsg),
-          onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "操作失敗"),
+          onError: (e: unknown) => toast.error(errMsg(e, "操作失敗")),
         },
       );
     };
@@ -656,8 +766,7 @@ function PeriodTab() {
                     disabled={locked}
                     onCommit={(v) =>
                       savePeriod.mutate({ id: period.id, [field]: v } as never, {
-                        onError: (e: unknown) =>
-                          toast.error(e instanceof Error ? e.message : "存檔失敗"),
+                        onError: (e: unknown) => toast.error(errMsg(e, "存檔失敗")),
                       })
                     }
                   />
@@ -898,7 +1007,7 @@ function CreatePeriodModal({ open, onClose }: { open: boolean; onClose: () => vo
                 toast.success(`${year} 年 ${month} 月已建立`);
                 onClose();
               },
-              onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "建立失敗"),
+              onError: (e: unknown) => toast.error(errMsg(e, "建立失敗")),
             },
           )
         }
@@ -940,8 +1049,7 @@ function ImportHolidayHint({ year, holidayCount }: { year: number; holidayCount:
         onClick={() =>
           doImport.mutate(year, {
             onSuccess: (r) => toast.success(r.detail),
-            onError: (e: unknown) =>
-              toast.error(e instanceof Error ? e.message : "匯入失敗"),
+            onError: (e: unknown) => toast.error(errMsg(e, "匯入失敗")),
           })
         }
       >
@@ -983,8 +1091,7 @@ function CalendarTab() {
                 onClick={() =>
                   doImport.mutate(year, {
                     onSuccess: (r) => toast.success(r.detail),
-                    onError: (e: unknown) =>
-                      toast.error(e instanceof Error ? e.message : "匯入失敗"),
+                    onError: (e: unknown) => toast.error(errMsg(e, "匯入失敗")),
                   })
                 }
               >
@@ -1102,8 +1209,7 @@ function CalendarTab() {
               onClick={() =>
                 save.mutate(adding as never, {
                   onSuccess: () => setAdding(null),
-                  onError: (e: unknown) =>
-                    toast.error(e instanceof Error ? e.message : "新增失敗"),
+                  onError: (e: unknown) => toast.error(errMsg(e, "新增失敗")),
                 })
               }
             >
@@ -1130,7 +1236,7 @@ function ProfileTab() {
 
   const commit = (p: SalaryProfile, field: string, raw: string) =>
     save.mutate({ id: p.id, [field]: raw === "" ? null : raw } as never, {
-      onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "存檔失敗"),
+      onError: (e: unknown) => toast.error(errMsg(e, "存檔失敗")),
     });
 
   const minWage = policy.data?.min_hourly_wage;
@@ -1146,7 +1252,7 @@ function ProfileTab() {
               onClick={() =>
                 sync.mutate(undefined, {
                   onSuccess: (r) => toast.success(r.detail),
-                  onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "同步失敗"),
+                  onError: (e: unknown) => toast.error(errMsg(e, "同步失敗")),
                 })
               }
             >
@@ -1216,8 +1322,7 @@ function ProfileTab() {
                     checked={p.is_active}
                     onChange={(e) =>
                       save.mutate({ id: p.id, is_active: e.target.checked } as never, {
-                        onError: (err: unknown) =>
-                          toast.error(err instanceof Error ? err.message : "存檔失敗"),
+                        onError: (err: unknown) => toast.error(errMsg(err, "存檔失敗")),
                       })
                     }
                     className="size-4"
@@ -1227,15 +1332,37 @@ function ProfileTab() {
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <label className="block">
-                  <span className="mb-1 block text-sm text-ink-3">時薪</span>
-                  <NumberInput
-                    value={p.hourly_wage}
-                    // 留空時直接把實際會用到的金額寫在格子裡——
-                    // 「用最低時薪」四個字沒有回答「那到底是多少」
-                    placeholder={minWageHint}
-                    onCommit={(v) => commit(p, "hourly_wage", v)}
+                  <span className="mb-1 block text-sm text-ink-3">計薪方式</span>
+                  <Select
+                    value={p.pay_type}
+                    onChange={(v) => commit(p, "pay_type", v)}
+                    options={PAY_TYPES}
+                    className="w-full"
                   />
                 </label>
+                {p.pay_type === "hourly" ? (
+                  <label className="block">
+                    <span className="mb-1 block text-sm text-ink-3">時薪</span>
+                    <NumberInput
+                      value={p.hourly_wage}
+                      // 留空時直接把實際會用到的金額寫在格子裡——
+                      // 「用最低時薪」四個字沒有回答「那到底是多少」
+                      placeholder={minWageHint}
+                      onCommit={(v) => commit(p, "hourly_wage", v)}
+                    />
+                  </label>
+                ) : (
+                  <label className="block">
+                    <span className="mb-1 block text-sm text-ink-3">
+                      {p.pay_type === "monthly_net" ? "月薪（實際領取）" : "月薪（薪資總額）"}
+                    </span>
+                    <NumberInput
+                      value={p.monthly_salary}
+                      placeholder={p.pay_type === "monthly_net" ? "拿到手的錢" : "未扣勞健保前"}
+                      onCommit={(v) => commit(p, "monthly_salary", v)}
+                    />
+                  </label>
+                )}
                 <label className="block">
                   <span className="mb-1 block text-sm text-ink-3">投保薪資</span>
                   <Select
@@ -1260,6 +1387,30 @@ function ProfileTab() {
                   />
                 </label>
               </div>
+              {p.pay_type !== "hourly" && !p.monthly_salary && (
+                <p
+                  className="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-sm"
+                  style={{ background: "color-mix(in srgb, var(--color-atrisk) 14%, transparent)" }}
+                >
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  <span>
+                    <span className="font-semibold">還沒填月薪金額</span>
+                    ，這個人的薪水會算成 0。填在左邊那一格；沒填的話整月薪資無法「確認」。
+                  </span>
+                </p>
+              )}
+              {p.pay_type !== "hourly" && (
+                <p className="mt-1.5 text-sm text-ink-3">
+                  {p.pay_type === "monthly_net"
+                    ? "填「拿到手的錢」，系統會反推出薪資總額（因為福利金是按總額算的，不能直接相加）。"
+                    : "填「還沒扣勞健保勞退前」的總額。"}
+                  加班費與請假扣款用「月薪 ÷ {policy.data?.monthly_wage_divisor ?? 240}」換算時薪
+                  {p.monthly_salary && (
+                    <>（{nt(Number(p.monthly_salary) / Number(policy.data?.monthly_wage_divisor ?? 240))} 元／小時）</>
+                  )}
+                  。
+                </p>
+              )}
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <label className="block">
                   <span className="mb-1 block text-sm text-ink-3">到職日</span>
@@ -1297,6 +1448,7 @@ const POLICY_GROUPS: Array<{ title: string; note: string; fields: Array<[string,
       ["min_hourly_wage", "最低時薪"],
       ["normal_hours_per_day", "每日正常工時", "勞基法 §30：不得超過 8 小時"],
       ["default_daily_ot_hours", "每日固定加班時數", "8:00–17:30 扣 1 小時休息＝8.5，多的 0.5 算加班"],
+      ["monthly_wage_divisor", "月薪換算時薪的除數", "法定 240（30 天 × 8 小時）；月薪制的加班費與請假扣款用它換算"],
     ],
   },
   {
@@ -1540,6 +1692,96 @@ function LawTab() {
       </Card>
 
       <Card className="p-3">
+        <SectionTitle>三種計薪方式怎麼算</SectionTitle>
+        <p className="mb-2 text-sm text-ink-3">
+          差別<span className="font-semibold">只在「應發總額」怎麼來的</span>——
+          之後的勞健保、福利金、雇主負擔全部共用上面那套法規公式。
+        </p>
+        <div className="space-y-2">
+          <div className="rounded-lg border border-line p-3">
+            <p className="text-base font-bold text-ink">時薪制</p>
+            <p className="mt-0.5 font-mono text-sm text-ink-2">
+              應發 ＝ 正常工時 × 時薪 ＋ 各段加班費
+            </p>
+          </div>
+          <div className="rounded-lg border border-line p-3">
+            <p className="text-base font-bold text-ink">月薪制（薪資總額）</p>
+            <p className="mt-0.5 font-mono text-sm text-ink-2">
+              應發 ＝ 你填的月薪（＋加班費）
+            </p>
+            <p className="mt-1 text-sm text-ink-3">
+              填的是<span className="font-semibold">還沒扣勞健保勞退前</span>的數字。
+              扣完之後拿到手的錢由系統算出來。
+            </p>
+          </div>
+          <div className="rounded-lg border border-line p-3">
+            <p className="text-base font-bold text-ink">月薪制（實際領取）</p>
+            <p className="mt-0.5 font-mono text-sm text-ink-2">
+              應發 ＝（實領 ＋ 勞保 ＋ 健保 ＋ 勞退自提）÷（1 −{" "}
+              {num(d.welfare_fund_rate)}%）
+            </p>
+            <p className="mt-1 text-sm text-ink-3">
+              老闆跟員工談的常常是「每月實拿三萬五」。填實領，系統
+              <span className="font-semibold">反推</span>薪資總額。
+              <br />
+              為什麼要解方程而不是直接把扣款加回去：勞保、健保、勞退自提都是按
+              <span className="font-semibold">投保薪資</span>算的固定金額，加回去就好；
+              但<span className="font-semibold">員工福利金是按應發總額 × {num(d.welfare_fund_rate)}%</span>
+              ——總額還沒算出來，福利金就加不回去，只能解方程。
+            </p>
+          </div>
+        </div>
+        <div className="mt-2 rounded-lg bg-page p-3 text-sm">
+          <p className="font-semibold text-ink">
+            ⚠️ 「平日每小時工資額」不是「他一小時值多少」
+          </p>
+          <p className="mt-1 text-ink-2">
+            月薪制的<span className="font-semibold">平日每小時工資額 ＝ 月薪 ÷{" "}
+            {num(d.monthly_wage_divisor)}</span>（勞基法施行細則），
+            <span className="font-semibold">只用來算加班費與請假扣款</span>。
+            {num(d.monthly_wage_divisor)} ＝ 30 天 × 8 小時，是含例假日的
+            <span className="font-semibold">曆日</span>基礎——但人一個月只上 20 幾天班。
+          </p>
+          <p className="mt-1.5 text-ink-2">
+            所以拿它跟時薪制的時薪比會得到相反的結論。以本月 20 個工作天為例：
+          </p>
+          <table className="mt-1 w-full text-sm">
+            <thead>
+              <tr className="text-left text-sm text-ink-3">
+                <th className="py-1 pr-2">　</th>
+                <th className="py-1 pr-2">帳面上的「時薪」</th>
+                <th className="py-1 pr-2">月領（不含加班）</th>
+                <th className="py-1">每工作 1 小時實得</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums text-ink">
+              <tr className="border-t border-line/60">
+                <td className="py-1 pr-2">時薪制 {nt(d.min_hourly_wage)}</td>
+                <td className="py-1 pr-2">{nt(d.min_hourly_wage)}</td>
+                <td className="py-1 pr-2">{nt(num(d.min_hourly_wage) * 160)}</td>
+                <td className="py-1 font-semibold">{nt(d.min_hourly_wage)}</td>
+              </tr>
+              <tr className="border-t border-line/60">
+                <td className="py-1 pr-2">月薪制 35,000</td>
+                <td className="py-1 pr-2">{(35000 / num(d.monthly_wage_divisor)).toFixed(2)}</td>
+                <td className="py-1 pr-2">35,000</td>
+                <td className="py-1 font-semibold">{(35000 / 160).toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-1 text-ink-3">
+            帳面上 {(35000 / num(d.monthly_wage_divisor)).toFixed(2)} 看起來比{" "}
+            {nt(d.min_hourly_wage)} 低，但每實際工作一小時反而多——
+            因為月薪是給「一個月」的，含例假日。
+          </p>
+          <p className="mt-1.5 text-ink-2">
+            不滿整月時，月薪按 <span className="font-semibold">÷ 30 × 在職日數</span> 折算，
+            跟勞保同一套天數。
+          </p>
+        </div>
+      </Card>
+
+      <Card className="p-3">
         <SectionTitle>「健保雇主計費人數 {num(d.health_employer_head_factor)}」是什麼？</SectionTitle>
         <p className="text-base leading-relaxed text-ink">
           這個數字<span className="font-semibold">只用在計算公司要出多少健保費</span>，
@@ -1749,7 +1991,7 @@ function PolicyTab() {
   const commit = (field: string, raw: string) =>
     save.mutate({ [field]: raw } as never, {
       onSuccess: () => toast.success("已更新，記得回月薪資按「重算薪資」"),
-      onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "存檔失敗"),
+      onError: (e: unknown) => toast.error(errMsg(e, "存檔失敗")),
     });
 
   return (

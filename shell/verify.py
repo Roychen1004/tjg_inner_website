@@ -765,6 +765,73 @@ def main():
                   after.get("normal_hours"))
 
         # raw=True：回的是 xlsx 二進位，不能拿去 json.loads
+        # ── 三種計薪方式（D57 第八輪）────────────────────────────
+        # 「實領」那種要解方程反推薪資總額，算錯的話員工拿到的錢就跟
+        # 談好的不一樣。⚠️ 這段一定要在刪除期間**之前**——否則查不到薪資單，
+        # 檢查會靜默跳過，那比沒測還糟
+        # 挑一個「這個月真的有薪資單」的人來測。
+        # ⚠️ 兩個條件：
+        #   · 不能挑名冊第一個——那個人可能填了離職日，這個月不在職
+        #   · 從**後面**挑（名冊按員工編號排，後面是工廠員工）——
+        #     經理、會計師這些人的薪資設定是老闆實際在維護的，
+        #     驗收腳本不該去動它們，就算最後會還原也一樣
+        profiles = acc.get("/salary-profiles")
+        present = {r["user"] for r in rows} if isinstance(rows, list) else set()
+        target = next(
+            (p for p in reversed(profiles) if p["user"] in present),
+            None,
+        ) if isinstance(profiles, list) else None
+        check("找得到一位有薪資單的員工來測計薪方式", target is not None, len(present))
+        if target:
+            keep = {k: target[k] for k in ("pay_type", "monthly_salary", "insured_salary")}
+            # 切成月薪制時金額還沒填是正常的（月薪欄位切過去才會出現），
+            # 所以這裡**不擋**——改成薪資單警示 ＋ 確認整月時擋
+            acc.patch(f"/salary-profiles/{target['id']}", {"pay_type": "monthly_net"})
+            check("切成月薪制時不會被擋（金額稍後再填）", acc.status == 200, acc.status)
+            blank = acc.get(f"/payroll-records?period={period_id}")
+            blank_rec = next(
+                (r for r in blank if r["user"] == target["user"]), None,
+            ) if isinstance(blank, list) else None
+            check("沒填月薪時薪資單上有警示",
+                  blank_rec is not None
+                  and any("還沒填月薪" in w for w in blank_rec.get("warnings", [])),
+                  blank_rec.get("warnings") if blank_rec else None)
+            acc.post(f"/payroll-periods/{period_id}/confirm")
+            check("★ 沒填月薪時不准確認整月", acc.status == 400, acc.status)
+
+            acc.patch(f"/salary-profiles/{target['id']}", {
+                "pay_type": "monthly_net", "monthly_salary": "35000", "insured_salary": "38200",
+            })
+            check("改成月薪制（實際領取）", acc.status == 200, acc.status)
+
+            fresh = acc.get(f"/payroll-records?period={period_id}")
+            mine = next((r for r in fresh if r["user"] == target["user"]), None) if isinstance(fresh, list) else None
+            if mine:
+                check("★ 月薪制不自動帶固定加班（談好多少就是多少）",
+                      float(mine.get("ot_weekday_1_hours", -1)) == 0,
+                      mine.get("ot_weekday_1_hours"))
+                mine = acc.get(f"/payroll-records/{mine['id']}")
+                check("★ 月薪（實際領取）：實發剛好等於填的 35,000",
+                      float(mine.get("net", 0)) == 35000, mine.get("net"))
+                check("反推的算式有寫出來（不能只給一個數字）",
+                      any("反推" in x["label"] for x in mine.get("detail", [])),
+                      [x["label"] for x in mine.get("detail", [])][:3])
+
+                acc.patch(f"/salary-profiles/{target['id']}",
+                          {"pay_type": "monthly_gross", "monthly_salary": "40000"})
+                mine = acc.get(f"/payroll-records/{mine['id']}")
+                check("★ 月薪（薪資總額）：應發剛好等於填的 40,000",
+                      float(mine.get("gross", 0)) == 40000, mine.get("gross"))
+                # 月薪制沒有「時薪」欄位，但加班與請假都按時薪算——
+                # 那個數字要顯示得出來，而且要跟算式裡用的是同一個
+                divisor = 240
+                check("★ 月薪制看得到換算後的時薪（40,000 ÷ 240）",
+                      abs(float(mine.get("effective_hourly_wage", 0)) - 40000 / divisor) < 0.01,
+                      mine.get("effective_hourly_wage"))
+
+            acc.patch(f"/salary-profiles/{target['id']}", keep)
+            check("計薪方式可以改回時薪制", acc.status == 200, acc.status)
+
         book = acc.get(f"/payroll-periods/{period_id}/xlsx", raw=True)
         body = book.get("_body", b"") if isinstance(book, dict) else b""
         check("Excel 下載得到，而且真的是 xlsx（PK 開頭）",
@@ -773,8 +840,8 @@ def main():
         acc.delete(f"/payroll-periods/{period_id}")
         check("薪資驗證資料清除", acc.status == 204, acc.status)
 
-    profiles = acc.get("/salary-profiles")
-    names = [p["user_name"] for p in profiles] if isinstance(profiles, list) else []
+    roster = acc.get("/salary-profiles")
+    names = [p["user_name"] for p in roster] if isinstance(roster, list) else []
     check("員工設定名冊不含系統管理員", "系統管理員" not in names, names[:3])
 
     # ── H. 儀表板 ──────────────────────────────────────────────────
