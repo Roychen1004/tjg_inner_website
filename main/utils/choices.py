@@ -205,3 +205,26 @@ class TemplateAppliesTo(models.TextChoices):
     PROJECT_MAIN = "project_main", "專案主線"
     STEEL_BATCH = "steel_batch", "鋼構構件批次"
     CIVIL_WORK_ITEM = "civil_work_item", "土建工項"
+
+
+class PayrollStatus(models.TextChoices):
+    """薪資期間的狀態（D57）。
+
+    確認後鎖定——薪資是錢的歷程，算完給出去就不該再被無聲改掉。
+    要改必須退回草稿，退回這件事本身會留紀錄。
+    """
+
+    DRAFT = "draft", "草稿"
+    CONFIRMED = "confirmed", "已確認"
+    PAID = "paid", "已發放"
+
+
+class PayrollLineKind(models.TextChoices):
+    """薪資單上手動加的一列（D57）。
+
+    法規算得出來的（工資、加班、勞健保、福利金）由系統產生，不進這張表；
+    這裡放的是規則以外的錢：獎金、津貼、補發、借支、代扣。
+    """
+
+    EARNING = "earning", "加項"
+    DEDUCTION = "deduction", "扣項"

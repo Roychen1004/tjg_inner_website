@@ -61,6 +61,14 @@ PERMISSION_ROLES = {
     # 行政事項（D53）：頁面所有人都看得到，增刪改只有經理（與系統管理員）；
     # 被指派的員工「勾完成」不在這張表——那是資料層的關係，檢查在 view 裡
     "edit_affairs": [Role.OWNER],
+
+    # 薪資（D57）：整個分頁只有經理、會計師（與系統管理員）看得到。
+    # 比 view_money 更嚴：金流看的是公司對外的錢，薪資看的是同事領多少——
+    # 那是連「看得到金額」的人都不該順便看到的東西，所以另立一個權限碼，
+    # 不共用 view_money。
+    "view_payroll": [Role.OWNER, Role.FINANCE],
+    # 算薪水是會計師的日常，所以編輯權跟著會計師走（與 edit_milestone 同層級）
+    "edit_payroll": [Role.OWNER, Role.FINANCE],
 }
 
 # 舊碼名的相容別名——view_amounts 散在序列化器與附件權限裡，
@@ -81,6 +89,8 @@ NAV_ROLES = {
     # 行政（D53）：公司例行／臨時事務的日曆，所有登入者都看得到
     "affairs": None,
     "finance": ["view_money"],
+    # 薪資（D57）：經理、會計師、系統管理員；員工與檢視角色連分頁都看不到
+    "payroll": ["view_payroll"],
     # 統計（D52）：產能區塊要 view_productivity、金額區塊要 view_money——
     # 任一權限就看得到頁面，頁內各區塊再各自把關
     "stats": ["view_productivity", "view_money"],

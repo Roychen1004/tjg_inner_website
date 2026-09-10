@@ -4,6 +4,7 @@ import {
   Boxes,
   Building2,
   CalendarDays,
+  Calculator,
   ClipboardCheck,
   FolderKanban,
   LayoutDashboard,
@@ -38,6 +39,8 @@ const NAV_ITEMS: Array<{
   // D53：行政——公司非案子的例行／臨時事務，大家都看得到，經理維護
   { key: "affairs", label: "行政", icon: CalendarDays },
   { key: "finance", label: "金流", icon: Wallet },
+  // D57：薪資——只有經理、會計師與系統管理員看得到，員工連分頁都不會出現
+  { key: "payroll", label: "薪資", icon: Calculator },
   // D52：產能與成本統計——經理／系統管理員看全部，會計只看金額區塊
   { key: "stats", label: "統計", icon: BarChart3 },
   { key: "settings", label: "設定", icon: SlidersHorizontal },

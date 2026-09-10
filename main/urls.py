@@ -28,6 +28,7 @@ urlpatterns = [
     path(f"{API}/", include("main.apps.payables.api.urls")),
     path(f"{API}/", include("main.apps.analytics.api.urls")),
     path(f"{API}/", include("main.apps.affairs.api.urls")),
+    path(f"{API}/", include("main.apps.payroll.api.urls")),
 ]
 
 if settings.DEBUG:

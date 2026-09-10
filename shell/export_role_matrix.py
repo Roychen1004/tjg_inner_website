@@ -45,9 +45,11 @@ ROLES = [
     ("系統管理員", None, "admin",
      "/dashboard", "一人。開帳號、重設密碼、救資料——權限等同經理再加上系統維護"),
     ("經理", Role.OWNER, "manager",
-     "/dashboard", "老闆／經理。什麼頁面都看得到、什麼都能改，含公司現有現金與產能統計"),
+     "/dashboard", "老闆／經理。什麼頁面都看得到、什麼都能改，"
+                   "含公司現有現金、產能統計與薪資"),
     ("會計師", Role.FINANCE, "accountant",
-     "/dashboard", "會計。什麼頁面都看得到，但只能改金流（應收、應付、登錄付款）與自己的任務"),
+     "/dashboard", "會計。什麼頁面都看得到，但只能改金流（應收、應付、登錄付款）、"
+                   "算薪水（D57）與自己的任務"),
     ("員工", Role.STAFF, "drafter／clerk／worker01–10",
      "/mywork", "繪圖師、行政人員、工廠員工。除金流外都看得到（唯讀、看不到金額），"
                 "能動的是指派給自己的任務與行政事項的完成回報"),
@@ -115,6 +117,13 @@ ROWS = [
     ("金流", "公司現有現金", (PERM, "view_cash_balance"), "view_cash_balance",
      "連會計師都看不到——這是公司底牌"),
 
+    ("薪資", "月薪資（每個人領多少、每一行怎麼算出來的）", (PAGE, "payroll"), "edit_payroll",
+     "★ 比金流更嚴：金流是公司對外的錢，薪資是同事領多少——"
+     "所以另立一個權限碼，不跟 view_money 共用"),
+    ("薪資", "員工薪資設定（時薪、投保級距、眷屬口數）", (PAGE, "payroll"), "edit_payroll", ""),
+    ("薪資", "法規參數（最低工資、加班倍率、勞健保費率）", (PAGE, "payroll"), "edit_payroll",
+     "每年修法都會動，所以做成可編輯欄位而不是程式常數"),
+
     ("統計", "產能與工數（員工做了多少）", (PERM, "view_productivity"), None,
      "涉及員工表現評比，只有經理"),
     ("統計", "金額類統計（單價走勢、流程花費）", (PERM, "view_money"), None, ""),
@@ -135,6 +144,8 @@ PERMISSION_NOTE = {
     "view_money": "看得到金流分頁與所有金額欄位",
     "view_cash_balance": "看／改公司現有現金",
     "view_productivity": "看產能與工數統計",
+    "view_payroll": "看薪資分頁（每位同事的薪水）",
+    "edit_payroll": "算薪水、改薪資設定與法規參數",
     "edit_project": "新增、修改、刪除案子與流程",
     "edit_tracking": "改排程、狀態、批次過站",
     "delete_project": "刪除案子",

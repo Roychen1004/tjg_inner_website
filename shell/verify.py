@@ -22,12 +22,32 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import datetime
 from http.cookiejar import CookieJar
+from zoneinfo import ZoneInfo
 
 BASE = os.environ.get("BASE", "http://localhost:30080")
 API = f"{BASE}/api/v0.1"
 PASSWORD = os.environ.get("SEED_DEMO_PASSWORD", "28494320")
+
+
+# ⚠️ 這支腳本跑在宿主機上，但系統的時區是 Asia/Taipei（settings.TIME_ZONE）。
+# 台北的凌晨 0–8 點，UTC 的宿主機還停在前一天——拿宿主機的日期去建測試資料，
+# 「只看未來」的現金流預測就會把它濾掉，驗收會在每天那 8 小時無故失敗。
+# 所以這裡的「今天」一律用系統時區算，不用宿主機的。
+TZ = ZoneInfo(os.environ.get("TIME_ZONE", "Asia/Taipei"))
+
+
+class _Today:
+    """讓既有的 `date.today()` 呼叫點不用改，但拿到的是系統時區的今天"""
+
+    @staticmethod
+    def today():
+        return datetime.now(TZ).date()
+
+
+date = _Today()
+
 # 員工端驗收要用哪個帳號。密碼被改過時可換人：WORKER=worker02 python3 shell/verify.py
 WORKER = os.environ.get("WORKER", "worker01")
 
@@ -193,12 +213,12 @@ def main():
     # ── A. 導航與角色（D40 權限矩陣；D52 加「統計」）─────────────────
     print("\n▌A. 導航與角色（7 分頁、4 角色）")
     me = owner.get("/auth/me")
-    check("經理導航是 8 個分頁（含行政與統計）",
-          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "finance", "stats", "settings"],
+    check("經理導航是 9 個分頁（含行政、薪資與統計）",
+          me.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "finance", "payroll", "stats", "settings"],
           me.get("visible_nav"))
     me_f = finance.get("/auth/me")
-    check("會計師看得到全部 8 個分頁（設定唯讀；統計只有金額區塊）",
-          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "finance", "stats", "settings"],
+    check("會計師看得到全部 9 個分頁（設定唯讀；統計只有金額區塊）",
+          me_f.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "finance", "payroll", "stats", "settings"],
           me_f.get("visible_nav"))
     check("產能統計限經理（D52）：經理有、會計沒有 view_productivity",
           me.get("permissions", {}).get("view_productivity")
@@ -210,12 +230,24 @@ def main():
           and not me_f.get("permissions", {}).get("manage_masters"),
           me_f.get("permissions"))
 
+    # D57 薪資：只有經理、會計師與系統管理員。這條錯了等於全公司都看得到
+    # 彼此領多少，所以在驗收裡明確擋一次，不能只靠前端不畫那個分頁
+    check("經理與會計師看得到薪資分頁",
+          "payroll" in me.get("visible_nav", []) and "payroll" in me_f.get("visible_nav", []),
+          [me.get("visible_nav"), me_f.get("visible_nav")])
+
     staff = Client("drafter").login()
     me_s = staff.get("/auth/me")
     check("員工看得到金流以外的 6 個分頁（含行政），登入直達 /mywork",
           me_s.get("visible_nav") == ["dashboard", "projects", "tracking", "mywork", "affairs", "settings"]
           and me_s.get("default_route") == "/mywork",
           {k: me_s.get(k) for k in ("visible_nav", "default_route")})
+    check("員工沒有薪資分頁，也沒有 view_payroll",
+          "payroll" not in me_s.get("visible_nav", [])
+          and not me_s.get("permissions", {}).get("view_payroll"),
+          me_s.get("visible_nav"))
+    staff.get("/payroll-records")
+    check("員工直接打薪資 API 被擋（不是只有前端不顯示）", staff.status == 403, staff.status)
 
     # 固定一個驗收用的檢視帳號，跑完停用——員工刪不掉（歷史會斷），
     # 每次建一個新的會在名冊裡越積越多
@@ -238,6 +270,7 @@ def main():
     else:
         nav = viewer.get("/auth/me").get("visible_nav", [])
         check("檢視角色沒有金流分頁", "finance" not in nav and "dashboard" in nav, nav)
+        check("檢視角色沒有薪資分頁", "payroll" not in nav, nav)
 
     # ── B. 建案一頁完成 ─────────────────────────────────────────────
     print("\n▌B. 建案一頁完成（勾流程＋請款分期）")
@@ -689,6 +722,60 @@ def main():
     owner.delete(f"/affair-tasks/{real_task['id']}")
     owner.delete(f"/affair-categories/{cat['id']}")
     check("行政驗證資料清除", owner.status == 204, owner.status)
+
+    # ── G5. D57（薪資：算得對不對、按鈕還在不在）────────────────────
+    # ⚠️ 這一段存在的理由：重構時曾經把 recalc 這個 action 整段刪掉，
+    #    畫面上按下去拿到 404 的 HTML，前端只報「JSON Parse error」。
+    #    端點會不會消失，只有真的打一次才知道。
+    print("\n▌G5. D57（薪資）")
+    acc = Client("accountant", ACCOUNTS.get("accountant", PASSWORD)).login()
+    ym = date.today()
+    probe_year, probe_month = (ym.year + 1, 1)      # 用明年一月，不會撞到實際在用的月份
+    exist = acc.get("/payroll-periods")
+    for row in exist if isinstance(exist, list) else []:
+        if row["year"] == probe_year and row["month"] == probe_month:
+            if row["status"] != "draft":
+                acc.post(f"/payroll-periods/{row['id']}/reopen")
+            acc.delete(f"/payroll-periods/{row['id']}")
+
+    period = acc.post("/payroll-periods", {"year": probe_year, "month": probe_month})
+    check("建立薪資月份", acc.status == 201, f"{acc.status} {period}")
+    period_id = period.get("id")
+    if period_id:
+        records = acc.get(f"/payroll-records?period={period_id}")
+        rows = records if isinstance(records, list) else []
+        check("建立月份時薪資單就自動產生了（不必按產生鈕）", len(rows) > 0, len(rows))
+        if rows:
+            first = rows[0]
+            check("工時已帶入預設值", float(first["normal_hours"]) > 0, first["normal_hours"])
+            check("算式明細有攤開來（這是這個功能存在的理由）",
+                  any(d.get("formula") for d in first.get("detail", [])),
+                  [d.get("label") for d in first.get("detail", [])][:3])
+
+            # 改一個工時，確認兩顆按鈕的行為真的不一樣
+            acc.patch(f"/payroll-records/{first['id']}", {"normal_hours": "123"})
+            acc.post(f"/payroll-periods/{period_id}/recalc")
+            after = acc.get(f"/payroll-records/{first['id']}")
+            check("重算薪資：端點存在且回 JSON", acc.status == 200, acc.status)
+            check("重算薪資不會動到工時", float(after.get("normal_hours", 0)) == 123,
+                  after.get("normal_hours"))
+            acc.post(f"/payroll-periods/{period_id}/reset-hours")
+            after = acc.get(f"/payroll-records/{first['id']}")
+            check("重設工時會把工時重新帶入", float(after.get("normal_hours", 0)) != 123,
+                  after.get("normal_hours"))
+
+        # raw=True：回的是 xlsx 二進位，不能拿去 json.loads
+        book = acc.get(f"/payroll-periods/{period_id}/xlsx", raw=True)
+        body = book.get("_body", b"") if isinstance(book, dict) else b""
+        check("Excel 下載得到，而且真的是 xlsx（PK 開頭）",
+              acc.status == 200 and body[:2] == b"PK" and len(body) > 5000,
+              f"{acc.status} / {len(body)} bytes")
+        acc.delete(f"/payroll-periods/{period_id}")
+        check("薪資驗證資料清除", acc.status == 204, acc.status)
+
+    profiles = acc.get("/salary-profiles")
+    names = [p["user_name"] for p in profiles] if isinstance(profiles, list) else []
+    check("員工設定名冊不含系統管理員", "系統管理員" not in names, names[:3])
 
     # ── H. 儀表板 ──────────────────────────────────────────────────
     print("\n▌H. 儀表板")
